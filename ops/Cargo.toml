@@ -1,0 +1,23 @@
+[package]
+name = "cordia-ops"
+version = "0.1.0"
+edition = "2021"
+description = "Cordia Ops Console — local operator dashboard (TUI) for Cordia services over Tailscale"
+license = "UNLICENSED"
+publish = false
+
+[dependencies]
+ratatui = "0.29"
+crossterm = "0.28"
+# http-only over the tailnet: no TLS backend is pulled in on purpose.
+reqwest = { version = "0.12", default-features = false, features = ["blocking", "json"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+anyhow = "1"
+
+[profile.release]
+opt-level = "z"
+lto = true
+codegen-units = 1
+strip = true
+panic = "abort"

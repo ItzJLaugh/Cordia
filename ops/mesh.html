@@ -1,0 +1,257 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Cordia Mesh — Neural Topology</title>
+<style>
+  :root{
+    --bg:#0A0E0C; --panel:rgba(255,255,255,.045); --line:rgba(255,255,255,.09);
+    --ink:#e8ece6; --muted:#757a6c; --accent:#2FD07A; --warn:#c2ab5c; --danger:#F0603A;
+  }
+  *{margin:0;padding:0;box-sizing:border-box}
+  html,body{height:100%;overflow:hidden;background:var(--bg);color:var(--ink);
+    font-family:Inter,system-ui,sans-serif;-webkit-font-smoothing:antialiased}
+  #mesh{position:fixed;inset:0}
+  .hud{position:fixed;z-index:10;backdrop-filter:blur(20px) saturate(140%);
+    -webkit-backdrop-filter:blur(20px) saturate(140%);
+    background:var(--panel);border:1px solid var(--line);border-radius:14px}
+  #title{top:20px;left:20px;padding:14px 18px}
+  #title h1{font-size:15px;font-weight:600;letter-spacing:.02em}
+  #title p{font-size:11.5px;color:var(--muted);margin-top:3px}
+  #detail{top:20px;right:20px;width:280px;padding:16px 18px;display:none}
+  #detail h2{font-size:14px;font-weight:600;margin-bottom:8px}
+  #detail .row{display:flex;justify-content:space-between;font-size:12px;
+    padding:5px 0;border-top:1px solid var(--line)}
+  #detail .row span:first-child{color:var(--muted)}
+  #detail .dot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:6px}
+  #legend{bottom:20px;left:20px;padding:12px 16px;font-size:11.5px;color:var(--muted)}
+  #legend .item{display:flex;align-items:center;gap:8px;margin-top:6px}
+  #legend .sw{width:10px;height:10px;border-radius:50%}
+  #status{bottom:20px;right:20px;padding:10px 14px;font-size:11.5px;color:var(--muted)}
+  #status b{color:var(--accent);font-weight:600}
+</style>
+</head>
+<body>
+<canvas id="mesh"></canvas>
+
+<div class="hud" id="title">
+  <h1>Cordia Mesh</h1>
+  <p>physical ontology of the agentic network</p>
+</div>
+
+<div class="hud" id="detail"></div>
+
+<div class="hud" id="legend">
+  <div class="item"><span class="sw" style="background:#2FD07A"></span> device (tailscale)</div>
+  <div class="item"><span class="sw" style="background:#8fb573"></span> agent / service</div>
+  <div class="item"><span class="sw" style="background:#c2ab5c"></span> orchestrator</div>
+  <div class="item"><span class="sw" style="background:#3c4034"></span> offline</div>
+</div>
+
+<div class="hud" id="status">—</div>
+
+<script type="importmap">
+{"imports":{"three":"https://unpkg.com/three@0.160.0/build/three.module.js"}}
+</script>
+<script type="module">
+import * as THREE from 'three';
+
+/* ============================================================
+   MESH MODEL — the truth of the network, as data.
+   Two shells:
+     r = 1.0  devices   (tailscale machines — physical endpoints)
+     r = 0.55 agents    (processes — live ON a device, route via hive/soul)
+   Center:  SOUL (orchestrator — all intent passes through it)
+   Edges: only where a REAL route exists.
+   ============================================================ */
+
+// deterministic point on sphere from string hash — stable layout, no RNG drift
+function hashPoint(name, r){
+  let h1 = 0, h2 = 0;
+  for(let i = 0; i < name.length; i++){
+    h1 = (h1 * 31 + name.charCodeAt(i)) >>> 0;
+    h2 = (h2 * 17 + name.charCodeAt(i) * 13) >>> 0;
+  }
+  const theta = (h1 % 360) * Math.PI / 180;
+  const phi   = ((h2 % 180) - 90) * Math.PI / 180;
+  return new THREE.Vector3(
+    r * Math.cos(phi) * Math.cos(theta),
+    r * Math.sin(phi),
+    r * Math.cos(phi) * Math.sin(theta)
+  );
+}
+
+// ---- live data (static snapshot now; wired to endpoints next phase) ----
+const MESH = {
+  devices: [
+    {name:'srv1737015-cordia', role:'VPS — control plane', online:true},
+    {name:'jacksonslaptop',    role:'operator machine',     online:false},
+  ],
+  agents: [
+    {name:'soul',      role:'orchestrator', host:'srv1737015-cordia', online:true, center:true},
+    {name:'hive',      role:'message bus',  host:'srv1737015-cordia', online:true},
+    {name:'engineer',  role:'building dept — claude-code backed', host:'srv1737015-cordia', online:true},
+    {name:'training',  role:'backend :9995', host:'srv1737015-cordia', online:true},
+  ],
+  edges: [ // only real routes
+    ['jacksonslaptop','srv1737015-cordia','tailscale'],
+    ['soul','hive','dispatch'],
+    ['engineer','hive','messages'],
+    ['soul','engineer','task_assign'],
+    ['engineer','srv1737015-cordia','runs-on'],
+    ['hive','srv1737015-cordia','runs-on'],
+    ['soul','srv1737015-cordia','runs-on'],
+    ['training','srv1737015-cordia','runs-on'],
+    ['training','hive','corpus'],
+  ],
+};
+
+/* ============================ scene ============================ */
+const canvas = document.getElementById('mesh');
+const renderer = new THREE.WebGLRenderer({canvas, antialias:true, alpha:true});
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(48, 1, .01, 100);
+camera.position.set(0, .45, 2.6);
+
+scene.add(new THREE.AmbientLight(0xffffff, .55));
+const key = new THREE.DirectionalLight(0xdff5e6, 1.1);
+key.position.set(2, 3, 2); scene.add(key);
+
+// faint reference sphere + equator ring — the "unit circle" ontology
+const shellGeo = new THREE.SphereGeometry(1, 40, 28);
+const shell = new THREE.Mesh(shellGeo, new THREE.MeshBasicMaterial({
+  color:0x2FD07A, wireframe:true, transparent:true, opacity:.05}));
+scene.add(shell);
+const equator = new THREE.Mesh(
+  new THREE.TorusGeometry(1, .0015, 8, 128),
+  new THREE.MeshBasicMaterial({color:0x2FD07A, transparent:true, opacity:.14}));
+equator.rotation.x = Math.PI/2; scene.add(equator);
+
+/* nodes */
+const nodeByName = {};
+const nodeGroup = new THREE.Group(); scene.add(nodeGroup);
+
+function makeNode(n, kind){
+  const r = kind === 'device' ? 1.0 : (n.center ? 0 : .55);
+  const pos = n.center ? new THREE.Vector3(0,0,0) : hashPoint(n.name, r);
+  const color = !n.online ? 0x3c4034
+    : n.center ? 0xc2ab5c
+    : kind === 'device' ? 0x2FD07A : 0x8fb573;
+  const size = n.center ? .055 : kind === 'device' ? .042 : .034;
+  const mesh = new THREE.Mesh(
+    new THREE.SphereGeometry(size, 24, 18),
+    new THREE.MeshStandardMaterial({color, emissive:color, emissiveIntensity:.55,
+      roughness:.35, metalness:.1}));
+  mesh.position.copy(pos);
+  mesh.userData = {...n, kind, baseColor:color};
+  nodeGroup.add(mesh);
+  nodeByName[n.name] = mesh;
+  return mesh;
+}
+MESH.devices.forEach(d => makeNode(d, 'device'));
+MESH.agents.forEach(a => makeNode(a, 'agent'));
+
+/* labels */
+function label(text, pos){
+  const c = document.createElement('canvas'); const s = 4;
+  c.width = 512; c.height = 128;
+  const g = c.getContext('2d');
+  g.font = '600 44px Inter, sans-serif';
+  g.fillStyle = '#e8ece6'; g.textAlign = 'center'; g.textBaseline = 'middle';
+  g.fillText(text, 256, 64);
+  const t = new THREE.CanvasTexture(c);
+  const sp = new THREE.Sprite(new THREE.SpriteMaterial({map:t, transparent:true, depthTest:false}));
+  sp.scale.set(.34, .085, 1);
+  sp.position.copy(pos).add(new THREE.Vector3(0, .075, 0));
+  return sp;
+}
+Object.values(nodeByName).forEach(m => nodeGroup.add(label(m.userData.name, m.position)));
+
+/* edges + pulse packets */
+const edgeGroup = new THREE.Group(); scene.add(edgeGroup);
+const pulses = [];
+MESH.edges.forEach(([a, b, kind]) => {
+  const ma = nodeByName[a], mb = nodeByName[b];
+  if(!ma || !mb) return;
+  const mid = ma.position.clone().add(mb.position).multiplyScalar(.5).normalize()
+    .multiplyScalar(ma.position.length() * .82); // slight arc toward center
+  const curve = new THREE.QuadraticBezierCurve3(ma.position, mid, mb.position);
+  const line = new THREE.Line(
+    new THREE.BufferGeometry().setFromPoints(curve.getPoints(40)),
+    new THREE.LineBasicMaterial({color:0x8fb573, transparent:true, opacity:.22}));
+  edgeGroup.add(line);
+  // one pulse packet per live edge
+  const pk = new THREE.Mesh(new THREE.SphereGeometry(.009, 10, 8),
+    new THREE.MeshBasicMaterial({color:0x2FD07A}));
+  edgeGroup.add(pk);
+  pulses.push({curve, pk, t: Math.random(), speed: .12 + Math.random()*.1,
+               active: ma.userData.online && mb.userData.online});
+  pk.visible = pulses[pulses.length-1].active;
+});
+
+/* interaction */
+const ray = new THREE.Raycaster(); const mouse = new THREE.Vector2();
+let selected = null, dragging = false, px = 0, py = 0, vx = .0016, vy = 0;
+const detail = document.getElementById('detail');
+
+addEventListener('pointerdown', e => { dragging = true; px = e.clientX; py = e.clientY; });
+addEventListener('pointerup', () => dragging = false);
+addEventListener('pointermove', e => {
+  if(dragging){
+    vx = (e.clientX - px) * .00012; vy = (e.clientY - py) * .00012;
+    px = e.clientX; py = e.clientY;
+  }
+  mouse.x = (e.clientX / innerWidth) * 2 - 1;
+  mouse.y = -(e.clientY / innerHeight) * 2 + 1;
+});
+addEventListener('click', () => {
+  ray.setFromCamera(mouse, camera);
+  const hit = ray.intersectObjects(nodeGroup.children.filter(o => o.isMesh))[0];
+  if(selected){ selected.material.emissiveIntensity = .55; selected = null; }
+  if(hit){
+    selected = hit.object;
+    selected.material.emissiveIntensity = 1.4;
+    const u = selected.userData;
+    detail.style.display = 'block';
+    detail.innerHTML = `<h2>${u.name}</h2>
+      <div class="row"><span>type</span><span>${u.center ? 'orchestrator' : u.kind}</span></div>
+      <div class="row"><span>role</span><span>${u.role || '—'}</span></div>
+      ${u.host ? `<div class="row"><span>host</span><span>${u.host}</span></div>` : ''}
+      <div class="row"><span>state</span><span><span class="dot" style="background:${u.online ? '#2FD07A' : '#3c4034'}"></span>${u.online ? 'online' : 'offline'}</span></div>
+      <div class="row"><span>position</span><span>${u.center ? 'origin' : u.kind === 'device' ? 'sphere r=1.0' : 'inner r=0.55'}</span></div>`;
+  } else detail.style.display = 'none';
+});
+
+/* loop */
+const statusEl = document.getElementById('status');
+const onD = MESH.devices.filter(d => d.online).length;
+const onA = MESH.agents.filter(a => a.online).length;
+statusEl.innerHTML = `<b>${onD}</b>/${MESH.devices.length} devices · <b>${onA}</b>/${MESH.agents.length} agents online`;
+
+function resize(){
+  renderer.setSize(innerWidth, innerHeight);
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+}
+addEventListener('resize', resize); resize();
+
+const clock = new THREE.Clock();
+(function tick(){
+  requestAnimationFrame(tick);
+  const dt = clock.getDelta();
+  nodeGroup.rotation.y += vx; nodeGroup.rotation.x += vy;
+  edgeGroup.rotation.copy(nodeGroup.rotation);
+  vx *= .96; vy *= .96; if(!dragging) vx += .00002; // idle drift
+  nodeGroup.rotation.x = Math.max(-.9, Math.min(.9, nodeGroup.rotation.x));
+  pulses.forEach(p => {
+    if(!p.active) return;
+    p.t = (p.t + p.speed * dt) % 1;
+    p.pk.position.copy(p.curve.getPoint(p.t)).applyEuler(nodeGroup.rotation);
+  });
+  renderer.render(scene, camera);
+})();
+</script>
+</body>
+</html>
