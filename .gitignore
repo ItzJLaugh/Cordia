@@ -1,0 +1,16 @@
+# secrets & env
+.env
+.venv/
+venv/
+# python
+__pycache__/
+*.pyc
+*.pyo
+# logs
+*.log
+# os
+.DS_Store
+# build
+target/
+node_modules/
+*.bak

@@ -1,0 +1,100 @@
+/* ============================================================
+   Cordia Flower — animated logo + loader
+   Geometric flower: petals rotating around a core.
+   Crisp vector edges (high-res at any size, it's CSS/SVG).
+   ============================================================ */
+
+.cordia-flower{
+  --flower-size:44px;
+  --petal-color:var(--sage,#8fb573);
+  --core-color:var(--olive,#3d4a2a);
+  position:relative;
+  width:var(--flower-size);
+  height:var(--flower-size);
+  flex:none;
+}
+.cordia-flower .petal{
+  position:absolute;top:50%;left:50%;
+  width:calc(var(--flower-size)*.16);
+  height:calc(var(--flower-size)*.44);
+  margin:calc(var(--flower-size)*-.44) 0 0 calc(var(--flower-size)*-.08);
+  border-radius:50% 50% 50% 50% / 62% 62% 38% 38%;
+  background:linear-gradient(180deg,var(--petal-color),color-mix(in srgb,var(--petal-color) 55%,var(--core-color)));
+  transform-origin:50% 100%;
+  box-shadow:0 0 calc(var(--flower-size)*.08) color-mix(in srgb,var(--petal-color) 45%,transparent);
+  animation:petalPulse 3.2s ease-in-out infinite;
+}
+.cordia-flower .petal:nth-child(1){transform:rotate(0deg)}
+.cordia-flower .petal:nth-child(2){transform:rotate(60deg)}
+.cordia-flower .petal:nth-child(3){transform:rotate(120deg)}
+.cordia-flower .petal:nth-child(4){transform:rotate(180deg)}
+.cordia-flower .petal:nth-child(5){transform:rotate(240deg)}
+.cordia-flower .petal:nth-child(6){transform:rotate(300deg)}
+.cordia-flower .petal:nth-child(2){animation-delay:.25s}
+.cordia-flower .petal:nth-child(3){animation-delay:.5s}
+.cordia-flower .petal:nth-child(4){animation-delay:.75s}
+.cordia-flower .petal:nth-child(5){animation-delay:1s}
+.cordia-flower .petal:nth-child(6){animation-delay:1.25s}
+@keyframes petalPulse{
+  0%,100%{filter:brightness(1)}
+  50%{filter:brightness(1.35)}
+}
+.cordia-flower .core{
+  position:absolute;top:50%;left:50%;
+  width:calc(var(--flower-size)*.2);
+  height:calc(var(--flower-size)*.2);
+  margin:calc(var(--flower-size)*-.1) 0 0 calc(var(--flower-size)*-.1);
+  border-radius:50%;
+  background:radial-gradient(circle at 38% 34%,color-mix(in srgb,var(--core-color) 60%,#fff),var(--core-color));
+  box-shadow:0 0 calc(var(--flower-size)*.14) color-mix(in srgb,var(--core-color) 60%,transparent);
+  animation:coreBreathe 3.2s ease-in-out infinite;
+}
+@keyframes coreBreathe{
+  0%,100%{transform:scale(1)}
+  50%{transform:scale(1.18)}
+}
+
+/* spinning variant — the loader */
+.cordia-flower.spin{animation:flowerSpin 2.6s cubic-bezier(.6,.1,.3,.9) infinite}
+@keyframes flowerSpin{
+  0%{transform:rotate(0deg)}
+  55%{transform:rotate(200deg)}
+  100%{transform:rotate(360deg)}
+}
+
+/* large hero variant */
+.cordia-flower.lg{--flower-size:96px}
+.cordia-flower.xl{--flower-size:140px}
+
+/* ---------- loading overlay ---------- */
+.cordia-loader{
+  position:fixed;inset:0;z-index:200;
+  display:flex;flex-direction:column;align-items:center;justify-content:center;gap:26px;
+  background:rgba(247,248,244,.88);
+  backdrop-filter:blur(14px);
+  -webkit-backdrop-filter:blur(14px);
+  opacity:0;pointer-events:none;transition:opacity .35s;
+}
+.cordia-loader.show{opacity:1;pointer-events:all}
+.cordia-loader .load-word{
+  font-family:var(--serif,Georgia,serif);font-size:13px;letter-spacing:.4em;text-transform:uppercase;
+  color:var(--olive,#3d4a2a);
+}
+.cordia-loader .load-word::after{
+  content:"…";display:inline-block;width:2ch;text-align:left;
+  animation:ellip 1.4s steps(4) infinite;
+}
+@keyframes ellip{0%{content:""}25%{content:"."}50%{content:".."}75%{content:"..."}}
+
+/* ---------- wordmark ---------- */
+.cordia-wordmark{
+  font-family:'Marcellus',var(--serif,Georgia,serif);
+  font-weight:400;
+  letter-spacing:.14em;
+  color:var(--ink,#141610);
+  line-height:1;
+}
+.cordia-wordmark .c-cap{
+  background:linear-gradient(120deg,var(--olive-deep,#2a3319),var(--sage-deep,#5e8a4a) 70%);
+  -webkit-background-clip:text;background-clip:text;color:transparent;
+}

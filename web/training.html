@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Cordia Training — Certification</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Marcellus&family=Source+Serif+4:opsz,wght@8..60,400;8..60,500;8..60,600&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="assets/cordia.css">
+<link rel="stylesheet" href="assets/cordia-logo.css">
+<link rel="stylesheet" href="assets/training.css">
+</head>
+<body>
+
+<nav class="topbar">
+  <div class="topbar-inner">
+    <a class="brand" href="space.html">
+      <div class="cordia-flower">
+        <div class="petal"></div><div class="petal"></div><div class="petal"></div>
+        <div class="petal"></div><div class="petal"></div><div class="petal"></div>
+        <div class="core"></div>
+      </div>
+      <div><div class="brand-word">Cordia</div><div class="brand-sub">Training</div></div>
+    </a>
+    <div class="topnav">
+      <a href="space.html">Your Space</a>
+      <a href="#" id="signOut" class="btn-ghost">Sign out</a>
+    </div>
+  </div>
+</nav>
+
+<div class="shell">
+
+  <div class="train-head">
+    <div>
+      <span class="small-caps">Cordia Training &amp; Certification</span>
+      <h2>Learn to Command Agents</h2>
+      <p class="muted" style="margin-top:8px;max-width:64ch">Fifteen domain tracks, three certification tiers, one claim:
+      AI competence is the ability to state what you want, recognize when you didn't get it,
+      and know what not to do. Free text measures how you think — that's what we certify.</p>
+    </div>
+    <div class="th-right">
+      <input class="search-box" id="courseSearch" placeholder="Search tracks &amp; courses…">
+    </div>
+  </div>
+
+  <div class="glass coming-soon">
+    <div class="cs-badge">COMING SOON</div>
+    <div class="cs-body">
+      <h3>Interactive LLM Environments</h3>
+      <p>Domain-specific training where you don't just learn about agents — you command them.
+      Practice instructing an agent that instructs other agents, inside live sandboxed environments
+      built for real intentional activity. This is what Cordia tests and certifies.</p>
+      <ul class="cs-list">
+        <li>Command a SOUL-tier orchestrator and route intent to department agents</li>
+        <li>Watch your delegation propagate through the mesh in real time</li>
+        <li>Earn certification by demonstrating judgment, not memorization</li>
+      </ul>
+      <div style="margin-top:18px">
+        <a class="btn btn-gold" href="certification.html" id="certLink" style="display:none">View certification</a>
+      </div>
+    </div>
+  </div>
+
+  <span class="small-caps">The three tiers</span>
+  <div class="tier-grid" id="tierGrid"></div>
+
+  <div style="display:flex;align-items:baseline;gap:18px;margin:40px 0 6px;flex-wrap:wrap">
+    <span class="small-caps">The fifteen domain tracks</span>
+    <span class="muted" style="font-family:var(--sans);font-size:12.5px">Same five item archetypes in every track — that's what makes cross-domain comparison possible.</span>
+  </div>
+  <div class="track-grid" id="trackGrid"></div>
+
+</div>
+
+<script src="assets/curriculum-tiers.js"></script>
+<script src="assets/curriculum-tracks-a.js"></script>
+<script src="assets/curriculum-tracks-b.js"></script>
+<script src="assets/curriculum-tracks-c.js"></script>
+<script>
+if(sessionStorage.getItem('cordia-auth') !== '1') location.replace('index.html');
+const API = (location.hostname === 'localhost' || location.hostname === '127.0.0.1'
+  ? 'http://127.0.0.1:9995'
+  : location.protocol + '//' + location.hostname + (location.protocol === 'https:' ? '' : ':9995'));
+document.getElementById('signOut').onclick = e => {
+  e.preventDefault();
+  const t = localStorage.getItem('cordia-token');
+  if(t){ try{ fetch(API + '/auth/logout', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({token:t})}).catch(()=>{}); }catch(_){}}
+  localStorage.removeItem('cordia-token');
+  sessionStorage.removeItem('cordia-auth');
+  location.replace('index.html');
+};
+
+/* tiers */
+document.getElementById('tierGrid').innerHTML = TIERS.map(t => `
+  <div class="glass tier card-hover" onclick="location.href='tier.html?tier=${t.id}'">
+    <div class="tier-banner" style="background:linear-gradient(120deg,${t.g[0]},${t.g[1]})">
+      <img class="tb-badge" src="${t.badge}" alt="${t.code} emblem" loading="lazy">
+      <span class="tb-code">${t.code}</span>
+    </div>
+    <div class="tier-body">
+      <h3>${t.name}</h3>
+      <p class="tier-claim">"${t.claim}"</p>
+      <div class="tier-meta"><span>${t.courses.length} courses</span><span class="pill gold">${t.mix.split(',')[0].trim()} free text</span></div>
+    </div>
+  </div>`).join('');
+
+/* tracks */
+function renderTracks(list){
+  document.getElementById('trackGrid').innerHTML = list.map(T => `
+    <div class="glass course card-hover" onclick="location.href='environment.html?track=${T.id}'">
+      <div class="track-img" style="background-image:url('${T.img}')">
+        <span class="ti-num">${String(T.n).padStart(2,'0')}</span>
+        <span class="ti-level">${T.courses.length} courses</span>
+      </div>
+      <div class="course-body">
+        <h3>${T.name}</h3>
+        <p>${T.cog.split('.')[0]}.</p>
+        <div class="course-meta">
+          <span>Environment: ${T.env.title}</span>
+          <span class="cm-cert pill">open</span>
+        </div>
+      </div>
+    </div>`).join('');
+}
+renderTracks(TRACKS);
+
+document.getElementById('courseSearch').oninput = e => {
+  const q = e.target.value.toLowerCase();
+  renderTracks(TRACKS.filter(T =>
+    (T.name + T.cog + T.fail + T.courses.join(' ')).toLowerCase().includes(q)));
+};
+</script>
+</body>
+</html>

@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Cordia Training — Environment</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Marcellus&family=Source+Serif+4:opsz,wght@8..60,400;8..60,500;8..60,600&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="assets/cordia.css">
+<link rel="stylesheet" href="assets/cordia-logo.css">
+<link rel="stylesheet" href="assets/cordia-items.css">
+<style>
+.env-head{padding:44px 0 6px}
+.env-head .crumbs{font-family:var(--sans);font-size:12px;color:var(--grey);margin-bottom:14px}
+.env-head .crumbs a{color:var(--sage-deep)}
+.env-banner{height:140px;border-radius:var(--radius);position:relative;display:flex;align-items:flex-end;padding:22px 28px;margin-bottom:26px;overflow:hidden}
+.env-banner h2{color:#fff;font-size:clamp(24px,3vw,34px)}
+.env-banner .eb-num{position:absolute;top:14px;right:22px;font-family:var(--serif);font-size:56px;color:rgba(255,255,255,.25);line-height:1}
+.env-grid{display:grid;grid-template-columns:300px 1fr;gap:26px;padding-bottom:90px}
+@media(max-width:900px){.env-grid{grid-template-columns:1fr}}
+.env-side .glass{padding:24px;margin-bottom:18px}
+.env-side h4{font-family:var(--sans);font-size:11px;font-weight:700;letter-spacing:.16em;text-transform:uppercase;color:var(--grey);margin-bottom:10px}
+.env-side p{font-family:var(--sans);font-size:13px;color:var(--ink-soft);line-height:1.65}
+.env-side .sig{border-left:3px solid var(--gold);padding-left:14px}
+.env-setup{padding:26px 30px;margin-bottom:22px;font-size:16.5px;line-height:1.7}
+.env-setup .small-caps{display:block;margin-bottom:10px}
+.course-list{padding:20px 24px}
+.course-list a{display:block;font-family:var(--sans);font-size:13px;padding:9px 0;border-bottom:1px solid var(--line);color:var(--ink-soft)}
+.course-list a:last-child{border:none}
+.course-list a:hover{color:var(--olive-deep);text-decoration:none;padding-left:4px;transition:padding .15s}
+.evalnote{margin-top:22px;padding:18px 24px;font-family:var(--sans);font-size:12.5px;color:var(--grey);line-height:1.6}
+</style>
+</head>
+<body>
+
+<nav class="topbar">
+  <div class="topbar-inner">
+    <a class="brand" href="space.html">
+      <div class="cordia-flower">
+        <div class="petal"></div><div class="petal"></div><div class="petal"></div>
+        <div class="petal"></div><div class="petal"></div><div class="petal"></div>
+        <div class="core"></div>
+      </div>
+      <div><div class="brand-word">Cordia</div><div class="brand-sub">Training</div></div>
+    </a>
+    <div class="topnav">
+      <a href="space.html">Your Space</a>
+      <a href="#" id="signOut" class="btn-ghost">Sign out</a>
+    </div>
+  </div>
+</nav>
+
+<div class="shell">
+  <div class="env-head">
+    <div class="crumbs"><a href="training.html">Training</a> / <span id="crumbTrack"></span></div>
+    <div class="env-banner" id="envBanner">
+      <span class="eb-num" id="ebNum"></span>
+      <h2 id="trackName"></h2>
+    </div>
+  </div>
+
+  <div class="env-grid">
+    <div class="env-side">
+      <div class="glass sig">
+        <h4>Cognitive signature</h4>
+        <p id="cogSig"></p>
+      </div>
+      <div class="glass sig" style="border-color:var(--danger)">
+        <h4>How this domain mis-articulates</h4>
+        <p id="failSig"></p>
+      </div>
+      <div class="glass course-list">
+        <h4 style="margin-bottom:6px">Courses in this track</h4>
+        <div id="courseList"></div>
+      </div>
+    </div>
+
+    <div class="env-main">
+      <div class="glass env-setup">
+        <span class="small-caps">The environment</span>
+        <span id="envSetup"></span>
+      </div>
+
+      <div id="itemFlow"></div>
+
+      <div class="glass evalnote"><b style="color:var(--olive-deep)">Evaluation design:</b> <span id="evalNote"></span></div>
+    </div>
+  </div>
+</div>
+
+<script src="assets/curriculum-tracks-a.js"></script>
+<script src="assets/curriculum-tracks-b.js"></script>
+<script src="assets/curriculum-tracks-c.js"></script>
+<script src="assets/cordia-items.js"></script>
+<script>
+if(sessionStorage.getItem('cordia-auth') !== '1') location.replace('index.html');
+const API = (location.hostname === 'localhost' || location.hostname === '127.0.0.1'
+  ? 'http://127.0.0.1:9995'
+  : location.protocol + '//' + location.hostname + (location.protocol === 'https:' ? '' : ':9995'));
+document.getElementById('signOut').onclick = e => {
+  e.preventDefault();
+  const t = localStorage.getItem('cordia-token');
+  if(t){ try{ fetch(API + '/auth/logout', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({token:t})}).catch(()=>{}); }catch(_){}}
+  localStorage.removeItem('cordia-token');
+  sessionStorage.removeItem('cordia-auth');
+  location.replace('index.html');
+};
+
+const params = new URLSearchParams(location.search);
+const trackId = params.get('track') || 'software';
+const T = TRACKS.find(t => t.id === trackId) || TRACKS[3];
+
+document.getElementById('crumbTrack').textContent = T.name;
+document.getElementById('trackName').textContent = T.name;
+document.getElementById('ebNum').textContent = String(T.n).padStart(2,'0');
+document.getElementById('envBanner').style.background = `linear-gradient(120deg,${T.g[0]},${T.g[1]})`;
+document.getElementById('cogSig').textContent = T.cog;
+document.getElementById('failSig').textContent = T.fail;
+document.getElementById('envSetup').textContent = T.env.setup;
+document.getElementById('evalNote').textContent = T.evalnote;
+document.getElementById('courseList').innerHTML =
+  T.courses.map(c => `<a href="course.html?track=${T.id}&course=${encodeURIComponent(c)}">${c}</a>`).join('');
+
+document.title = `Cordia — ${T.name}`;
+
+/* ---- the item flow: A → C(v1→revise→v2) → D → E ---- */
+const flow = document.getElementById('itemFlow');
+
+/* Archetype A — cold intent, always first, unprimed */
+flow.appendChild(CordiaItems.textBlock(T.id, 'A',
+  'Cold intent — before you touch anything',
+  T.env.promptA,
+  'Never scored for correctness. Scored later for specificity, falsifiability, and whether your stated success criterion survives contact with the outcome. No options given — options would destroy the measurement.'));
+
+/* Archetype C — LIVE agent, then artifact v1, then revision → v2 */
+flow.appendChild(CordiaItems.liveAgentPanel(T.id, T.id));
+
+/* Archetype C — live task: artifact v1, then revision → v2 */
+flow.appendChild(CordiaItems.textBlock(T.id, 'C1',
+  'The task — artifact v1',
+  T.env.artifact,
+  'Work the environment. This is your first artifact. (The live LLM sandbox is coming soon — for now, produce the artifact the task asks for.)'));
+flow.appendChild(CordiaItems.textBlock(T.id, 'C2',
+  'Revision — what would you change?',
+  'Looking at your v1: what would you change, and why?',
+  'The revision field is the gold signal — the self-labeled articulation gap. The delta between v1 and v2 is the measurement.'));
+
+/* Archetype D — escalation hybrid */
+flow.appendChild(CordiaItems.escalationBlock(T.id));
+
+/* Archetype E — critique the seeded output */
+flow.appendChild(CordiaItems.critiqueBlock(T.id,
+  T.env.critiqueText || null, T.env.critiqueAnswer));
+
+/* progress ribbon */
+const p = CordiaItems.progress(T.id);
+const rib = document.createElement('div');
+rib.className = 'glass';
+rib.style.cssText = 'margin-top:26px;padding:16px 24px;font-family:var(--sans);font-size:13px;display:flex;justify-content:space-between;align-items:center';
+rib.innerHTML = `<span><b style="font-family:var(--serif);font-size:16px;color:var(--olive-deep)">${p} / 6</b> &nbsp;response blocks captured for this environment</span>
+<span class="pill gold">corpus record</span>`;
+flow.appendChild(rib);
+</script>
+</body>
+</html>

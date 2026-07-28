@@ -1,0 +1,252 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Cordia — Sign In</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Marcellus&family=Source+Serif+4:opsz,wght@8..60,400;8..60,500;8..60,600&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="assets/cordia.css">
+<link rel="stylesheet" href="assets/cordia-logo.css">
+<style>
+body{display:flex;align-items:center;justify-content:center;padding:40px 20px;position:relative;overflow-x:hidden}
+#stars{position:fixed;inset:0;z-index:0}
+.auth-card{width:100%;max-width:460px;position:relative;z-index:2;animation:rise .7s cubic-bezier(.22,.8,.3,1)}
+@keyframes rise{from{opacity:0;transform:translateY(24px)}to{opacity:1;transform:none}}
+.auth-head{text-align:center;margin-bottom:30px}
+.auth-head .cordia-flower{margin:0 auto 22px}
+.auth-word{
+  font-family:var(--serif);font-size:44px;letter-spacing:.18em;text-transform:uppercase;
+  color:var(--ink);
+}
+.auth-word .c-cap{
+  background:linear-gradient(120deg,var(--olive-deep),var(--sage-deep) 70%);
+  -webkit-background-clip:text;background-clip:text;color:transparent;
+}
+.auth-head p{color:var(--grey);font-size:15.5px;margin-top:10px;letter-spacing:.03em}
+.auth-body{padding:38px 38px 30px;position:relative;overflow:hidden}
+.auth-body::before{ /* holo sheen sweeping across the card */
+  content:"";position:absolute;top:0;left:-70%;width:45%;height:100%;
+  background:linear-gradient(105deg,transparent,rgba(143,181,115,.09),transparent);
+  animation:sheen 5.5s ease-in-out infinite;pointer-events:none;
+}
+@keyframes sheen{0%,55%{left:-70%}85%,100%{left:140%}}
+.auth-tabs{display:flex;gap:8px;margin-bottom:28px;background:rgba(50,62,35,.06);border-radius:12px;padding:5px}
+.auth-tabs button{
+  flex:1;padding:10px;border:none;border-radius:9px;cursor:pointer;
+  font-family:var(--sans);font-size:13.5px;font-weight:600;color:var(--grey);
+  background:transparent;transition:background .2s,color .2s;
+}
+.auth-tabs button.active{background:#fff;color:var(--olive-deep);box-shadow:0 3px 12px rgba(42,51,25,.12)}
+.auth-error{
+  display:none;background:rgba(168,70,46,.08);border:1px solid rgba(168,70,46,.3);
+  color:var(--danger);font-family:var(--sans);font-size:13px;
+  padding:11px 15px;border-radius:10px;margin-bottom:18px;
+}
+.auth-foot{text-align:center;margin-top:22px;font-family:var(--sans);font-size:13px;color:var(--grey)}
+.auth-foot a{font-weight:600}
+.demo-note{
+  margin-top:26px;padding-top:20px;border-top:1px solid var(--line);
+  font-family:var(--sans);font-size:12px;color:var(--grey-light);text-align:center;line-height:1.7;
+}
+.demo-note code{font-family:var(--mono);font-size:11px;background:rgba(50,62,35,.07);padding:2px 7px;border-radius:5px}
+</style>
+</head>
+<body>
+
+<canvas id="stars"></canvas>
+
+<!-- flower loader overlay -->
+<div class="cordia-loader" id="loader">
+  <div class="cordia-flower lg spin">
+    <div class="petal"></div><div class="petal"></div><div class="petal"></div>
+    <div class="petal"></div><div class="petal"></div><div class="petal"></div>
+    <div class="core"></div>
+  </div>
+  <div class="load-word">Entering your space</div>
+</div>
+
+<div class="auth-card">
+  <div class="auth-head">
+    <div class="cordia-flower lg">
+      <div class="petal"></div><div class="petal"></div><div class="petal"></div>
+      <div class="petal"></div><div class="petal"></div><div class="petal"></div>
+      <div class="core"></div>
+    </div>
+    <div class="auth-word"><span class="c-cap">C</span>ordia</div>
+    <p>The agentic mesh for freelance work</p>
+  </div>
+
+  <div class="glass-strong auth-body">
+    <div class="auth-tabs">
+      <button id="tabLogin" class="active" type="button">Sign in</button>
+      <button id="tabSignup" type="button">Create account</button>
+    </div>
+
+    <div class="auth-error" id="authError"></div>
+
+    <form id="authForm" autocomplete="off">
+      <div class="field" id="nameField" style="display:none">
+        <label for="name">Full name</label>
+        <input id="name" type="text" placeholder="Ada Lovelace">
+      </div>
+      <div class="field">
+        <label for="email">Email</label>
+        <input id="email" type="email" placeholder="you@studio.com" required>
+      </div>
+      <div class="field">
+        <label for="password">Password</label>
+        <input id="password" type="password" placeholder="••••••••" required minlength="6">
+      </div>
+      <div class="field" id="codeField" style="display:none">
+        <label for="code">Verification code</label>
+        <input id="code" type="text" inputmode="numeric" placeholder="6-digit code" maxlength="6">
+        <div id="devCodeNote" style="display:none;font-family:var(--sans);font-size:12px;color:var(--gold);margin-top:8px"></div>
+      </div>
+      <button class="btn btn-primary" type="submit" style="width:100%" id="submitBtn">Sign in</button>
+    </form>
+
+    <div class="auth-foot">
+      <span id="footText">New to Cordia? <a href="#" id="footLink">Create an account</a></span>
+    </div>
+
+    <div class="demo-note">
+      Secured with email verification. Passwords are hashed server-side —<br>
+      never stored in your browser.
+    </div>
+  </div>
+</div>
+
+<script>
+/* starfield — soft sage points */
+const cv = document.getElementById('stars'), cx = cv.getContext('2d');
+function sizeCv(){ cv.width = innerWidth; cv.height = innerHeight; }
+sizeCv(); addEventListener('resize', sizeCv);
+const stars = Array.from({length: 120}, () => ({
+  x: Math.random()*innerWidth, y: Math.random()*innerHeight,
+  r: Math.random()*1.4+.3, s: Math.random()*.22+.05, p: Math.random()*Math.PI*2
+}));
+(function draw(){
+  cx.clearRect(0,0,cv.width,cv.height);
+  for(const s of stars){
+    s.p += .02;
+    cx.globalAlpha = .3 + Math.sin(s.p)*.22;
+    cx.beginPath(); cx.arc(s.x, s.y, s.r, 0, Math.PI*2);
+    cx.fillStyle = '#7a9a63'; cx.fill();
+    s.y -= s.s; if(s.y < -4) s.y = cv.height + 4;
+  }
+  requestAnimationFrame(draw);
+})();
+
+/* auth logic — server-side accounts + email 2FA */
+const API = (location.hostname === 'localhost' || location.hostname === '127.0.0.1'
+  ? 'http://127.0.0.1:9995'
+  : location.protocol + '//' + location.hostname + (location.protocol === 'https:' ? '' : ':9995'));
+
+/* --- session restore: 14-day token in localStorage means "remembered" --- */
+(function restore(){
+  const token = localStorage.getItem('cordia-token');
+  if(!token) return;
+  fetch(API + '/auth/me', {headers: {'Authorization': 'Bearer ' + token}})
+    .then(r => r.json())
+    .then(d => {
+      if(d.ok && d.user){
+        sessionStorage.setItem('cordia-auth','1');
+        sessionStorage.setItem('cordia-user', d.user.email);
+        localStorage.setItem('cordia-learner', d.user.email);
+        location.replace('space.html');
+      } else {
+        // token expired or revoked — clean up silently
+        localStorage.removeItem('cordia-token');
+      }
+    })
+    .catch(() => {}); // backend down → stay on login page
+})();
+const tabLogin = document.getElementById('tabLogin');
+const tabSignup = document.getElementById('tabSignup');
+const nameField = document.getElementById('nameField');
+const codeField = document.getElementById('codeField');
+const devCodeNote = document.getElementById('devCodeNote');
+const submitBtn = document.getElementById('submitBtn');
+const footText = document.getElementById('footText');
+const errBox = document.getElementById('authError');
+const loader = document.getElementById('loader');
+let mode = 'login';
+let awaitingCode = false;
+
+function setMode(m){
+  mode = m;
+  awaitingCode = false;
+  codeField.style.display = 'none';
+  tabLogin.classList.toggle('active', m==='login');
+  tabSignup.classList.toggle('active', m==='signup');
+  nameField.style.display = m==='signup' ? 'block' : 'none';
+  submitBtn.textContent = m==='login' ? 'Sign in' : 'Create account';
+  footText.innerHTML = m==='login'
+    ? 'New to Cordia? <a href="#" id="footLink">Create an account</a>'
+    : 'Already have an account? <a href="#" id="footLink">Sign in</a>';
+  errBox.style.display = 'none';
+}
+tabLogin.onclick = () => setMode('login');
+tabSignup.onclick = () => setMode('signup');
+footText.onclick = e => { if(e.target.id==='footLink'){ e.preventDefault(); setMode(mode==='login'?'signup':'login'); } };
+
+async function api(path, body){
+  const r = await fetch(API + path, {
+    method: 'POST', headers: {'Content-Type':'application/json'},
+    body: JSON.stringify(body)
+  });
+  return r.json();
+}
+
+function showErr(msg){ errBox.textContent = msg; errBox.style.display = 'block'; }
+
+function enterSpace(token, email){
+  sessionStorage.setItem('cordia-auth','1');
+  sessionStorage.setItem('cordia-user', email);
+  localStorage.setItem('cordia-token', token);
+  localStorage.setItem('cordia-learner', email);
+  loader.classList.add('show');
+  setTimeout(() => location.replace('space.html'), 1400);
+}
+
+document.getElementById('authForm').onsubmit = async e => {
+  e.preventDefault();
+  const email = document.getElementById('email').value.trim().toLowerCase();
+  const pass = document.getElementById('password').value;
+  const name = document.getElementById('name').value.trim();
+  const code = document.getElementById('code').value.trim();
+  submitBtn.disabled = true;
+  try {
+    if(!awaitingCode){
+      // step 1: credentials → server emails (or dev-echoes) a code
+      const d = await api(mode === 'signup' ? '/auth/signup' : '/auth/login',
+        mode === 'signup' ? {email, name, password: pass} : {email, password: pass});
+      if(!d.ok){ showErr(d.msg || 'Something went wrong.'); return; }
+      awaitingCode = true;
+      codeField.style.display = 'block';
+      submitBtn.textContent = 'Verify code';
+      if(d.dev_code){
+        devCodeNote.style.display = 'block';
+        devCodeNote.textContent = `Dev mode (email not configured): your code is ${d.dev_code}`;
+      } else {
+        devCodeNote.style.display = 'none';
+      }
+      document.getElementById('code').focus();
+    } else {
+      // step 2: verify code → session token
+      if(!code){ showErr('Enter the 6-digit code.'); return; }
+      const d = await api(mode === 'signup' ? '/auth/verify-signup' : '/auth/verify-login',
+        {email, code});
+      if(!d.ok){ showErr(d.msg || 'Verification failed.'); return; }
+      enterSpace(d.token, email);
+    }
+  } catch(err){
+    showErr('Server unreachable — is the backend running?');
+  } finally {
+    submitBtn.disabled = false;
+  }
+};
+</script>
+</body>
+</html>

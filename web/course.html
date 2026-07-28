@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Cordia Training — Course</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Marcellus&family=Source+Serif+4:opsz,wght@8..60,400;8..60,500;8..60,600&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="assets/cordia.css">
+<link rel="stylesheet" href="assets/cordia-logo.css">
+<style>
+.course-head{padding:44px 0 8px}
+.crumbs{font-family:var(--sans);font-size:12px;color:var(--grey);margin-bottom:16px}
+.crumbs a{color:var(--sage-deep)}
+.course-hero{padding:36px 40px;margin-bottom:24px;position:relative;overflow:hidden}
+.course-hero h2{font-size:clamp(26px,3.2vw,36px);margin:10px 0 14px}
+.course-hero .ch-track{font-family:var(--sans);font-size:12px;font-weight:700;letter-spacing:.18em;text-transform:uppercase;color:var(--gold)}
+.course-hero p{font-family:var(--sans);font-size:14.5px;color:var(--grey);max-width:70ch;line-height:1.65}
+.mod-grid{display:grid;grid-template-columns:1fr 320px;gap:24px;padding-bottom:90px}
+@media(max-width:900px){.mod-grid{grid-template-columns:1fr}}
+.mod-list .glass{padding:22px 26px;margin-bottom:14px;display:flex;gap:18px;align-items:flex-start}
+.mod-num{flex-shrink:0;width:38px;height:38px;border-radius:11px;display:flex;align-items:center;justify-content:center;
+  font-family:var(--serif);font-size:17px;color:#fff;background:linear-gradient(135deg,var(--sage-deep),var(--olive-deep))}
+.mod-body h4{font-size:16px;margin-bottom:5px}
+.mod-body p{font-family:var(--sans);font-size:13px;color:var(--grey);line-height:1.6}
+.mod-side .glass{padding:24px;margin-bottom:16px}
+.mod-side h4{font-family:var(--sans);font-size:11px;font-weight:700;letter-spacing:.16em;text-transform:uppercase;color:var(--grey);margin-bottom:12px}
+.mod-side p{font-family:var(--sans);font-size:13px;color:var(--ink-soft);line-height:1.65;margin-bottom:10px}
+.cta-box{text-align:center}
+.cta-box .btn{width:100%;margin-bottom:10px}
+</style>
+</head>
+<body>
+
+<nav class="topbar">
+  <div class="topbar-inner">
+    <a class="brand" href="space.html">
+      <div class="cordia-flower">
+        <div class="petal"></div><div class="petal"></div><div class="petal"></div>
+        <div class="petal"></div><div class="petal"></div><div class="petal"></div>
+        <div class="core"></div>
+      </div>
+      <div><div class="brand-word">Cordia</div><div class="brand-sub">Training</div></div>
+    </a>
+    <div class="topnav">
+      <a href="space.html">Your Space</a>
+      <a href="#" id="signOut" class="btn-ghost">Sign out</a>
+    </div>
+  </div>
+</nav>
+
+<div class="shell">
+  <div class="course-head">
+    <div class="crumbs"><a href="training.html">Training</a> / <span id="crumbTrack"></span> / <span id="crumbCourse"></span></div>
+    <div class="glass-strong course-hero">
+      <div class="ch-track" id="heroTrack"></div>
+      <h2 id="courseName"></h2>
+      <p id="courseDesc"></p>
+    </div>
+  </div>
+
+  <div class="mod-grid">
+    <div class="mod-list" id="modList"></div>
+    <div class="mod-side">
+      <div class="glass">
+        <h4>About this track</h4>
+        <p id="sideCog"></p>
+      </div>
+      <div class="glass cta-box">
+        <h4>Ready to work?</h4>
+        <p style="font-family:var(--sans);font-size:13px;color:var(--grey);margin-bottom:16px">The hands-on assessment for this track lives in its environment — cold intent, live task, escalation, critique.</p>
+        <a class="btn btn-gold" id="envLink">Enter the environment</a>
+        <a class="btn btn-outline" href="training.html">All tracks</a>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="assets/curriculum-tracks-a.js"></script>
+<script src="assets/curriculum-tracks-b.js"></script>
+<script src="assets/curriculum-tracks-c.js"></script>
+<script>
+if(sessionStorage.getItem('cordia-auth') !== '1') location.replace('index.html');
+const API = (location.hostname === 'localhost' || location.hostname === '127.0.0.1'
+  ? 'http://127.0.0.1:9995'
+  : location.protocol + '//' + location.hostname + (location.protocol === 'https:' ? '' : ':9995'));
+document.getElementById('signOut').onclick = e => {
+  e.preventDefault();
+  const t = localStorage.getItem('cordia-token');
+  if(t){ try{ fetch(API + '/auth/logout', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({token:t})}).catch(()=>{}); }catch(_){}}
+  localStorage.removeItem('cordia-token');
+  sessionStorage.removeItem('cordia-auth');
+  location.replace('index.html');
+};
+
+const params = new URLSearchParams(location.search);
+const trackId = params.get('track') || 'software';
+const courseName = params.get('course') || '';
+const T = TRACKS.find(t => t.id === trackId) || TRACKS[3];
+
+document.getElementById('crumbTrack').textContent = T.name;
+document.getElementById('crumbCourse').textContent = courseName;
+document.getElementById('heroTrack').textContent = T.name;
+document.getElementById('courseName').textContent = courseName;
+document.getElementById('sideCog').textContent = T.cog;
+document.getElementById('envLink').href = `environment.html?track=${T.id}`;
+document.title = `Cordia — ${courseName}`;
+
+/* course description: from track failure signature — the problem this course attacks */
+document.getElementById('courseDesc').textContent =
+  `This course is part of the ${T.name} track. The track exists because this domain characteristically mis-articulates intent in a specific way: ${T.fail}`;
+
+/* module scaffold — full module content requires the item bank (see whats-needed).
+   Four standard modules per course per the curriculum architecture. */
+const modules = [
+  {t:"The construct", d:"What this course actually measures — and why selected-response can't measure it."},
+  {t:"The failure signature in practice", d:"Worked examples of how this domain mis-articulates, drawn from the track environment."},
+  {t:"The skill, trained", d:"Deliberate practice against the failure signature, with corpus-captured attempts."},
+  {t:"Assessment", d:"The archetype items for this course — cold intent, select-and-justify, live task, escalation, critique."}
+];
+document.getElementById('modList').innerHTML = modules.map((m,i) => `
+  <div class="glass">
+    <div class="mod-num">${i+1}</div>
+    <div class="mod-body"><h4>${m.t}</h4><p>${m.d}</p></div>
+  </div>`).join('');
+</script>
+</body>
+</html>

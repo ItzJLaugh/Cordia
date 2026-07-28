@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Cordia — Course Player</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Marcellus&family=Source+Serif+4:opsz,wght@8..60,400;8..60,500;8..60,600&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="assets/cordia.css">
+<link rel="stylesheet" href="assets/cordia-logo.css">
+<link rel="stylesheet" href="assets/cordia-items.css">
+<style>
+.learn-wrap{max-width:820px;margin:0 auto;padding:44px 28px 90px}
+.crumbs{font-family:var(--sans);font-size:12px;color:var(--grey);margin-bottom:18px}
+.crumbs a{color:var(--sage-deep)}
+.mod-nav{display:flex;gap:8px;margin:18px 0 26px;flex-wrap:wrap}
+.mod-pill{font-family:var(--sans);font-size:12px;font-weight:600;padding:7px 16px;border-radius:18px;
+  border:1px solid var(--line);background:#fff;cursor:pointer;color:var(--grey);transition:all .15s}
+.mod-pill.active{background:linear-gradient(135deg,var(--sage-deep),var(--olive-deep));color:#fff;border-color:transparent}
+.mod-pill.done{border-color:var(--sage-deep);color:var(--olive-deep)}
+.teach{font-size:17.5px;line-height:1.75;color:var(--ink-soft)}
+.teach h3{font-size:24px;margin-bottom:14px}
+.teach p{margin-bottom:16px}
+.teach blockquote{
+  border-left:3px solid var(--gold);padding:12px 18px;margin:20px 0;
+  font-style:italic;color:var(--olive-deep);background:rgba(160,138,60,.06);border-radius:0 12px 12px 0;
+}
+.exercise-head{
+  display:flex;align-items:center;gap:12px;margin:34px 0 6px;
+  font-family:var(--sans);font-size:13px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;color:var(--gold);
+}
+.rubric-note{
+  margin-top:14px;padding:16px 20px;border-radius:12px;
+  background:rgba(94,138,74,.06);border:1px solid rgba(94,138,74,.25);
+  font-family:var(--sans);font-size:12.5px;color:var(--ink-soft);line-height:1.65;
+}
+.rubric-note b{color:var(--olive-deep)}
+.mod-complete{margin-top:30px;text-align:center}
+</style>
+</head>
+<body>
+
+<nav class="topbar">
+  <div class="topbar-inner">
+    <a class="brand" href="space.html">
+      <div class="cordia-flower">
+        <div class="petal"></div><div class="petal"></div><div class="petal"></div>
+        <div class="petal"></div><div class="petal"></div><div class="petal"></div>
+        <div class="core"></div>
+      </div>
+      <div><div class="brand-word">Cordia</div><div class="brand-sub">Learning</div></div>
+    </a>
+    <div class="topnav">
+      <a href="training.html">Training</a>
+      <a href="#" id="signOut" class="btn-ghost">Sign out</a>
+    </div>
+  </div>
+</nav>
+
+<div class="learn-wrap">
+  <div class="crumbs"><a href="training.html">Training</a> / <span id="crumbCourse"></span></div>
+  <h2 id="courseTitle"></h2>
+  <div class="mod-nav" id="modNav"></div>
+  <div id="modBody"></div>
+</div>
+
+<script src="assets/course-content-aie1.js"></script>
+<script src="assets/cordia-items.js"></script>
+<script>
+if(sessionStorage.getItem('cordia-auth') !== '1') location.replace('index.html');
+const API = (location.hostname === 'localhost' || location.hostname === '127.0.0.1'
+  ? 'http://127.0.0.1:9995'
+  : location.protocol + '//' + location.hostname + (location.protocol === 'https:' ? '' : ':9995'));
+document.getElementById('signOut').onclick = e => {
+  e.preventDefault();
+  const t = localStorage.getItem('cordia-token');
+  if(t){ try{ fetch(API + '/auth/logout', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({token:t})}).catch(()=>{}); }catch(_){}}
+  localStorage.removeItem('cordia-token');
+  sessionStorage.removeItem('cordia-auth');
+  location.replace('index.html');
+};
+
+const course = COURSE_AIE1;
+document.getElementById('crumbCourse').textContent = course.code + ' — ' + course.title;
+document.getElementById('courseTitle').textContent = course.title;
+document.title = 'Cordia — ' + course.title;
+
+const trackKey = course.id; // corpus track key for response storage
+let current = 0;
+
+function renderNav(){
+  document.getElementById('modNav').innerHTML = course.modules.map((m,i) => {
+    const done = m.exercises.every((ex,j) => CordiaItems.get(trackKey, `m${i}e${j}`));
+    return `<button class="mod-pill ${i===current?'active':''} ${done?'done':''}" data-i="${i}">${i+1}. ${m.short}</button>`;
+  }).join('');
+  document.querySelectorAll('.mod-pill').forEach(b => b.onclick = () => { current = +b.dataset.i; render(); });
+}
+
+function render(){
+  const m = course.modules[current];
+  const body = document.getElementById('modBody');
+  body.innerHTML = '';
+  const teach = document.createElement('div');
+  teach.className = 'glass teach';
+  teach.style.padding = '32px 38px';
+  teach.innerHTML = `<h3>${m.title}</h3>` + m.html;
+  body.appendChild(teach);
+
+  m.exercises.forEach((ex,j) => {
+    const head = document.createElement('div');
+    head.className = 'exercise-head';
+    head.textContent = `Exercise ${current+1}.${j+1} — ${ex.kind}`;
+    body.appendChild(head);
+    const scenario = document.createElement('div');
+    scenario.className = 'item-block';
+    scenario.innerHTML = `<p style="font-size:15.5px;line-height:1.7;color:var(--ink-soft)">${ex.prompt}</p>`;
+    body.appendChild(scenario);
+    body.appendChild(CordiaItems.textBlock(trackKey, `m${current}e${j}`,
+      'Your response', 'Write what you would actually say or do…', ''));
+
+  });
+
+  const nav = document.createElement('div');
+  nav.className = 'mod-complete';
+  const isLast = current === course.modules.length - 1;
+  nav.innerHTML = `<button class="btn ${isLast ? 'btn-gold' : 'btn-primary'}" id="nextBtn">
+    ${isLast ? 'Finish certification' : 'Next module →'}</button>`;
+  body.appendChild(nav);
+  document.getElementById('nextBtn').onclick = async () => {
+    if(isLast){
+      const r = await fetch(API + '/train/certification', {headers:{'Authorization':'Bearer ' + (localStorage.getItem('cordia-token')||'')}});
+      const d = await r.json();
+      if(d.ok){ location.href = 'certification.html'; }
+      else { alert(d.error || 'Could not generate certification result.'); }
+    } else {
+      current++; render(); window.scrollTo({top:0, behavior:'smooth'});
+    }
+  };
+  renderNav();
+}
+render();
+</script>
+</body>
+</html>

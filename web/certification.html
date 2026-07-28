@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Cordia — Certification</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Marcellus&family=Source+Serif+4:opsz,wght@8..60,400;8..60,500;8..60,600&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="assets/cordia.css">
+<link rel="stylesheet" href="assets/cordia-logo.css">
+<style>
+.wrap{max-width:900px;margin:0 auto;padding:42px 26px 90px}
+.hero{padding:28px 34px;margin-bottom:18px}
+.hero h2{margin:0 0 8px}
+.big{font-size:58px;line-height:1;font-family:var(--serif)}
+.pass{color:var(--success)} .fail{color:var(--danger)}
+.meta{font-family:var(--sans);font-size:13px;color:var(--grey);line-height:1.6}
+.section{padding:24px 28px;margin-top:16px}
+.section h3{margin-bottom:10px}
+.qrow{padding:14px 0;border-top:1px solid var(--line)}
+.qrow:first-child{border-top:none}
+.bad{color:var(--danger)} .good{color:var(--success)}
+.small{font-family:var(--sans);font-size:12.5px;color:var(--grey)}
+</style>
+</head>
+<body>
+<nav class="topbar"><div class="topbar-inner"><a class="brand" href="space.html"><div class="cordia-flower"><div class="petal"></div><div class="petal"></div><div class="petal"></div><div class="petal"></div><div class="petal"></div><div class="petal"></div><div class="core"></div></div><div><div class="brand-word">Cordia</div><div class="brand-sub">Certification</div></div></a><div class="topnav"><a href="training.html">Training</a><a href="#" id="signOut" class="btn-ghost">Sign out</a></div></div></nav>
+<div class="wrap">
+  <div class="glass hero">
+    <div class="small-caps">CordiaAIE-1 evaluation</div>
+    <h2>Your certification result</h2>
+    <div class="big" id="score">—</div>
+    <div class="meta" id="meta">Loading…</div>
+  </div>
+  <div class="glass section">
+    <h3>Analysis</h3>
+    <div id="analysis" class="meta"></div>
+  </div>
+  <div class="glass section">
+    <h3>Question breakdown</h3>
+    <div id="questions"></div>
+  </div>
+</div>
+<script>
+if(sessionStorage.getItem('cordia-auth') !== '1') location.replace('index.html');
+const API = (location.hostname === 'localhost' || location.hostname === '127.0.0.1' ? 'http://127.0.0.1:9995' : location.protocol + '//' + location.hostname + (location.protocol === 'https:' ? '' : ':9995'));
+document.getElementById('signOut').onclick = e => { e.preventDefault(); const t=localStorage.getItem('cordia-token'); if(t){ fetch(API+'/auth/logout',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token:t})}).catch(()=>{});} localStorage.removeItem('cordia-token'); sessionStorage.removeItem('cordia-auth'); location.replace('index.html'); };
+async function go(){
+  const r = await fetch(API + '/train/certification', {headers:{'Authorization':'Bearer ' + (localStorage.getItem('cordia-token')||'')}});
+  const d = await r.json();
+  if(!d.ok){ document.getElementById('meta').textContent = d.error || 'could not load result'; return; }
+  document.title = 'Cordia — ' + (d.passed ? 'Pass' : 'Needs work');
+  document.getElementById('score').textContent = `${d.percent}%`;
+  document.getElementById('score').className = 'big ' + (d.passed ? 'pass' : 'fail');
+  document.getElementById('meta').innerHTML = `${d.passed ? '<b class="good">Passed</b>' : '<b class="bad">Did not pass</b>'} · ${d.score}/${d.max_score} points`;
+  document.getElementById('analysis').innerHTML = '<ul>' + d.analysis.map(x => `<li>${x}</li>`).join('') + '</ul>';
+  document.getElementById('questions').innerHTML = d.questions.map(q => `
+    <div class="qrow">
+      <div><b>${q.block}</b> · ${q.kind} · <b>${q.level}/3</b></div>
+      <div class="small">${q.reason}</div>
+      <div class="small">${q.why}</div>
+    </div>`).join('');
+}
+go();
+</script>
+</body>
+</html>

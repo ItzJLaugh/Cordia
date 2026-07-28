@@ -1,0 +1,67 @@
+/* cordia item blocks — the five archetypes' shared UI */
+.item-block{
+  background:var(--glass-strong);
+  backdrop-filter:blur(28px) saturate(1.35);
+  -webkit-backdrop-filter:blur(28px) saturate(1.35);
+  border:1px solid var(--glass-border);
+  border-radius:var(--radius);
+  box-shadow:var(--shadow-md);
+  padding:24px 28px;margin-bottom:20px;
+}
+.ib-label{
+  font-family:var(--sans);font-size:15px;font-weight:600;color:var(--olive-deep);
+  display:flex;align-items:center;gap:11px;margin-bottom:10px;
+}
+.ib-tag{
+  flex-shrink:0;width:28px;height:28px;border-radius:9px;
+  display:inline-flex;align-items:center;justify-content:center;
+  font-family:var(--serif);font-size:15px;color:#fff;
+  background:linear-gradient(135deg,var(--sage-deep),var(--olive-deep));
+  box-shadow:0 4px 12px rgba(61,74,42,.3);
+}
+.ib-hint{font-family:var(--sans);font-size:12.5px;color:var(--grey);line-height:1.6;margin-bottom:14px;max-width:70ch}
+.ib-input{
+  width:100%;padding:14px 16px;border-radius:var(--radius-sm);
+  background:rgba(255,255,255,.8);border:1px solid var(--line);
+  font-family:var(--body);font-size:15px;color:var(--ink);line-height:1.6;
+  resize:vertical;transition:border-color .18s,box-shadow .18s;
+}
+.ib-input:focus{outline:none;border-color:var(--sage-deep);box-shadow:0 0 0 4px rgba(143,181,115,.18);background:#fff}
+.ib-foot{display:flex;align-items:center;justify-content:flex-end;gap:14px;margin-top:12px}
+.ib-saved{font-family:var(--sans);font-size:12px;color:var(--success)}
+.ib-save{padding:9px 22px;font-size:13px}
+.ib-opts{display:flex;flex-direction:column;gap:9px;margin-bottom:14px}
+.ib-opt{
+  display:flex;align-items:flex-start;gap:11px;padding:13px 16px;border-radius:var(--radius-sm);
+  border:1px solid var(--line);background:rgba(255,255,255,.6);cursor:pointer;
+  font-family:var(--sans);font-size:14px;color:var(--ink-soft);transition:border-color .15s,background .15s;
+}
+.ib-opt:hover{border-color:var(--sage-deep);background:#fff}
+.ib-opt input{margin-top:3px;accent-color:var(--sage-deep)}
+.ib-artifact{
+  margin:14px 0;padding:18px 20px;border-radius:var(--radius-sm);
+  background:rgba(50,62,35,.05);border:1px solid var(--line);
+  font-size:15px;line-height:1.7;color:var(--ink-soft);
+}
+.ib-artifact-label{
+  font-family:var(--sans);font-size:10.5px;font-weight:700;letter-spacing:.16em;
+  text-transform:uppercase;color:var(--grey);margin-bottom:8px;
+}
+.ib-reveal{margin-top:14px;padding:9px 20px;font-size:13px}
+.ib-answer{
+  margin-top:14px;padding:18px 20px;border-radius:var(--radius-sm);
+  background:rgba(160,138,60,.07);border:1px solid rgba(160,138,60,.3);
+  font-size:14.5px;line-height:1.7;color:var(--ink-soft);
+}
+
+
+/* mic button (speech capture) */
+.ib-mic{
+  width:38px;height:38px;border-radius:50%;border:1px solid var(--line);
+  background:#fff;font-size:16px;cursor:pointer;margin-right:auto;
+  transition:all .2s;flex-shrink:0;
+}
+.ib-mic:hover{border-color:var(--sage-deep)}
+.ib-mic.recording{background:var(--danger);border-color:var(--danger);
+  animation:pulse-rec 1.2s ease-in-out infinite}
+@keyframes pulse-rec{0%,100%{box-shadow:0 0 0 0 rgba(168,70,46,.5)}50%{box-shadow:0 0 0 8px rgba(168,70,46,0)}}

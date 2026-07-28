@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Cordia — Your Space</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Marcellus&family=Source+Serif+4:opsz,wght@8..60,400;8..60,500;8..60,600&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="assets/cordia-logo.css">
+<link rel="stylesheet" href="assets/cordia.css">
+<style>
+body{overflow-x:hidden}
+#cosmos{position:fixed;inset:0;z-index:0}
+.space-wrap{position:relative;z-index:2;min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:90px 24px 60px;text-align:center}
+.space-title{margin-bottom:14px;animation:fadeDown .9s cubic-bezier(.22,.8,.3,1)}
+.space-title h1{font-size:clamp(34px,4.5vw,56px)}
+.space-title p{color:var(--muted);font-size:17px;margin-top:10px}
+@keyframes fadeDown{from{opacity:0;transform:translateY(-18px)}to{opacity:1;transform:none}}
+.bubble-field{position:relative;width:min(1100px,94vw);height:min(58vh,540px);margin-top:30px}
+.bubble{position:absolute;display:flex;flex-direction:column;align-items:center;justify-content:center;border-radius:50%;cursor:pointer;user-select:none;text-align:center;background:radial-gradient(circle at 32% 28%,rgba(255,255,255,.95) 0%,rgba(255,255,255,.55) 34%,rgba(235,242,225,.35) 62%,rgba(215,228,200,.22) 100%);border:1.5px solid rgba(255,255,255,.8);box-shadow:inset 0 -18px 40px rgba(120,150,90,.12),inset 0 12px 30px rgba(255,255,255,.7),0 24px 60px rgba(60,75,45,.18);backdrop-filter:blur(6px);transition:box-shadow .35s;will-change:transform}
+.bubble::before{content:"";position:absolute;top:11%;left:16%;width:26%;height:16%;border-radius:50%;background:radial-gradient(ellipse at center,rgba(255,255,255,.95),transparent 70%);transform:rotate(-18deg)}
+.bubble:hover{box-shadow:inset 0 -18px 40px rgba(120,150,90,.16),inset 0 12px 30px rgba(255,255,255,.8),0 34px 90px rgba(94,138,74,.32)}
+.bubble .b-label{font-family:var(--serif);font-weight:700;color:var(--olive-deep);line-height:1.15;padding:0 12%}
+.bubble .b-sub{font-family:var(--sans);font-size:10.5px;letter-spacing:.2em;text-transform:uppercase;color:var(--muted);margin-top:9px}
+.bubble .b-arrow{margin-top:12px;font-family:var(--sans);font-size:13px;color:var(--sage-deep);opacity:0;transform:translateY(6px);transition:opacity .3s,transform .3s}
+.bubble:hover .b-arrow{opacity:1;transform:none}
+.bubble.disabled{cursor:not-allowed;background:radial-gradient(circle at 32% 28%,rgba(200,214,235,.9) 0%,rgba(180,198,228,.5) 34%,rgba(160,180,215,.3) 62%,rgba(140,162,200,.2) 100%);border-color:rgba(180,200,230,.8);box-shadow:inset 0 -18px 40px rgba(80,110,160,.14),inset 0 12px 30px rgba(255,255,255,.7),0 18px 44px rgba(70,95,140,.14);filter:saturate(.55)}
+.bubble.disabled .b-label{color:#4a5f80}
+.bubble.disabled .b-sub{color:#7a8aa5}
+.bubble.disabled:hover{box-shadow:inset 0 -18px 40px rgba(80,110,160,.14),inset 0 12px 30px rgba(255,255,255,.7),0 18px 44px rgba(70,95,140,.14)}
+.bubble .b-soon{margin-top:12px;font-family:var(--sans);font-size:10.5px;font-weight:700;letter-spacing:.18em;text-transform:uppercase;color:#5a7ab0;background:rgba(255,255,255,.55);padding:4px 12px;border-radius:12px}
+#b1{width:clamp(210px,24vw,290px);height:clamp(210px,24vw,290px);left:10%;top:22%}
+#b1 .b-label{font-size:clamp(20px,2.2vw,27px)}
+#b3{width:clamp(220px,25vw,300px);height:clamp(220px,25vw,300px);right:12%;top:18%}
+#b3 .b-label{font-size:clamp(20px,2.1vw,26px)}
+.sat{position:absolute;border-radius:50%;pointer-events:none;background:radial-gradient(circle at 35% 30%,rgba(255,255,255,.85),rgba(220,228,246,.25));border:1px solid rgba(255,255,255,.6);box-shadow:0 10px 30px rgba(60,75,45,.12)}
+.space-hint{margin-top:26px;font-family:var(--sans);font-size:12.5px;color:var(--faint);letter-spacing:.06em;animation:fadeDown 1.2s .4s cubic-bezier(.22,.8,.3,1) backwards}
+.user-chip{position:fixed;top:16px;right:20px;z-index:60;display:flex;align-items:center;gap:10px;font-family:var(--sans);font-size:13px;color:var(--ink-soft);padding:8px 14px;border-radius:30px}
+.user-chip .dot{width:8px;height:8px;border-radius:50%;background:var(--success)}
+.user-chip a{font-size:12px}
+@media (max-width:760px){.bubble-field{height:auto;display:flex;flex-direction:column;gap:26px;align-items:center;margin-top:36px}.bubble{position:relative!important;left:auto!important;right:auto!important;top:auto!important}}
+</style>
+</head>
+<body>
+<canvas id="cosmos"></canvas>
+<nav class="topbar">
+  <div class="topbar-inner">
+    <a class="brand" href="space.html">
+      <div class="cordia-flower">
+        <div class="petal"></div><div class="petal"></div><div class="petal"></div>
+        <div class="petal"></div><div class="petal"></div><div class="petal"></div>
+        <div class="core"></div>
+      </div>
+      <div><div class="brand-word">Cordia</div><div class="brand-sub">Your Space</div></div>
+    </a>
+  </div>
+</nav>
+<div class="user-chip glass">
+  <span class="dot"></span>
+  <span id="userEmail">operator</span>
+  <a href="#" id="signOut">Sign out</a>
+</div>
+<div class="space-wrap">
+  <div class="space-title">
+    <span class="small-caps">Welcome to your space</span>
+    <h1>Where to, <span style="color:var(--sage-deep)">operator?</span></h1>
+    <p>Two worlds orbit here. Choose one.</p>
+  </div>
+  <div class="bubble-field" id="field">
+    <div class="bubble disabled" id="b1">
+      <div class="b-label"><b>Bloom</b></div>
+      <div class="b-sub">bloom.cordiacode.com</div>
+      <div class="b-soon">Coming soon</div>
+    </div>
+    <div class="bubble" id="b3" data-go="training.html">
+      <div class="b-label"><b>Training<br>&amp; Certification</b></div>
+      <div class="b-sub">Courses & certification</div>
+      <div class="b-arrow">Enter →</div>
+    </div>
+  </div>
+  <div class="space-hint">drift with the current · click a bubble to travel</div>
+</div>
+<div class="cordia-loader" id="loader">
+  <div class="cordia-flower lg spin">
+    <div class="petal"></div><div class="petal"></div><div class="petal"></div>
+    <div class="petal"></div><div class="petal"></div><div class="petal"></div>
+    <div class="core"></div>
+  </div>
+  <div class="load-word">Traveling</div>
+</div>
+<script>
+if(sessionStorage.getItem('cordia-auth') !== '1') location.replace('index.html');
+document.getElementById('userEmail').textContent = sessionStorage.getItem('cordia-user') || 'operator';
+const API = (location.hostname === 'localhost' || location.hostname === '127.0.0.1' ? 'http://127.0.0.1:9995' : location.protocol + '//' + location.hostname + (location.protocol === 'https:' ? '' : ':9995'));
+document.getElementById('signOut').onclick = e => {
+  e.preventDefault();
+  const t = localStorage.getItem('cordia-token');
+  if(t){ try{ fetch(API + '/auth/logout', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({token:t})}).catch(()=>{}); }catch(_){}}
+  localStorage.removeItem('cordia-token');
+  sessionStorage.removeItem('cordia-auth');
+  location.replace('index.html');
+};
+const cv = document.getElementById('cosmos'), cx = cv.getContext('2d');
+function sizeCv(){ cv.width = innerWidth; cv.height = innerHeight; }
+sizeCv(); addEventListener('resize', sizeCv);
+const stars = Array.from({length: 170}, () => ({x: Math.random()*innerWidth, y: Math.random()*innerHeight, r: Math.random()*1.5+.3, tw: Math.random()*Math.PI*2, sp: Math.random()*.12+.03}));
+const nebulae = [{x:.18,y:.28,r:.42,h:'120,150,90',a:.10},{x:.82,y:.68,r:.48,h:'150,180,120',a:.08},{x:.55,y:.12,r:.30,h:'110,170,130',a:.07}];
+(function drawCosmos(){
+  cx.clearRect(0,0,cv.width,cv.height);
+  for(const n of nebulae){
+    const g = cx.createRadialGradient(n.x*cv.width,n.y*cv.height,0,n.x*cv.width,n.y*cv.height,n.r*Math.max(cv.width,cv.height));
+    g.addColorStop(0,`rgba(${n.h},${n.a})`); g.addColorStop(1,'rgba(255,255,255,0)');
+    cx.fillStyle = g; cx.fillRect(0,0,cv.width,cv.height);
+  }
+  for(const s of stars){
+    s.tw += .025; cx.globalAlpha = .3 + Math.sin(s.tw)*.28;
+    cx.beginPath(); cx.arc(s.x,s.y,s.r,0,Math.PI*2);
+    cx.fillStyle = '#4a5a95'; cx.fill();
+    s.y -= s.sp; if(s.y < -4) s.y = cv.height + 4;
+  }
+  cx.globalAlpha = 1; requestAnimationFrame(drawCosmos);
+})();
+const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
+const bubbles = [...document.querySelectorAll('.bubble')].map((el,i) => ({el, phase: Math.random()*Math.PI*2, phase2: Math.random()*Math.PI*2, ampX: 14 + i*5, ampY: 18 + i*4, speed: .35 + i*.07, hover: false}));
+bubbles.forEach(b => {
+  b.el.addEventListener('mouseenter', () => b.hover = true);
+  b.el.addEventListener('mouseleave', () => b.hover = false);
+  b.el.addEventListener('click', () => {
+    if(b.el.classList.contains('disabled') || !b.el.dataset.go) return;
+    document.getElementById('loader').classList.add('show');
+    setTimeout(() => location.href = b.el.dataset.go, 700);
+  });
+});
+(function drift(){
+  if(!reduced){
+    const t = performance.now()/1000;
+    bubbles.forEach(b => {
+      const x = Math.sin(t*b.speed + b.phase)*b.ampX;
+      const y = Math.cos(t*b.speed*.8 + b.phase2)*b.ampY;
+      b.el.style.transform = `translate(${b.hover?0:x}px,${b.hover?0:y}px)`;
+    });
+  }
+  requestAnimationFrame(drift);
+})();
+</script>
+</body>
+</html>

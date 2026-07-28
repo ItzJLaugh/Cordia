@@ -1,0 +1,104 @@
+{
+  "aie1": {
+    "course_title": "Saying What You Mean",
+    "threshold_pass": 3,
+    "modules": [
+      {
+        "module": 1,
+        "title": "Spot the Gap",
+        "questions": {
+          "m0e0": {
+            "kind": "cold intent",
+            "anchors": ["rule", "decision rule", "what counts as", "if", "then", "check", "flag", "stop", "overlaps", "do not auto-resolve"],
+            "negative": ["fix the problem", "make it better", "handle it", "do it", "be careful"],
+            "why": "Learner should translate a vague problem into a concrete instruction with a rule."
+          },
+          "m0e1": {
+            "kind": "critique seeded output",
+            "anchors": ["agent wasn't wrong", "had no definition", "invented one", "better means", "rewrite the instruction"],
+            "negative": ["agent was dumb", "agent failed", "should have known"],
+            "why": "Learner should blame the missing definition, not the agent."
+          },
+          "m0e2": {
+            "kind": "light escalation",
+            "anchors": ["decision rule", "approve automatically", "otherwise ask", "escalate if", "human"],
+            "negative": ["handle it", "use judgment", "as needed"],
+            "why": "Learner should specify when the agent may decide and when a human must."
+          }
+        }
+      },
+      {
+        "module": 2,
+        "title": "Name the Target",
+        "questions": {
+          "m1e0": {
+            "kind": "cold intent",
+            "anchors": ["success =", "criteria", "under 150 words", "single yes/no question", "reference", "if no reply", "flag it"],
+            "negative": ["professional", "friendly", "good", "clean it up"],
+            "why": "Learner should define success in checkable terms, including what happens if it fails."
+          },
+          "m1e1": {
+            "kind": "select + justify",
+            "anchors": ["checkable", "specific items", "medication", "incomplete", "self-flagging", "discretion"],
+            "negative": ["summarize", "general status", "sound good"],
+            "why": "Learner should select the instruction with explicit verification targets."
+          },
+          "m1e2": {
+            "kind": "live task with revision",
+            "anchors": ["threshold", "budget", "seasonal", "approval", "exclude", "before the order went out"],
+            "negative": ["low", "use judgment", "best effort", "reorder anything running low"],
+            "why": "Learner should connect success criteria to a gate that prevents the wrong order."
+          }
+        }
+      },
+      {
+        "module": 3,
+        "title": "Delegate on Purpose",
+        "questions": {
+          "m2e0": {
+            "kind": "cold intent",
+            "anchors": ["escalate", "payment terms", "liability", "termination", "if unsure escalate", "proceed"],
+            "negative": ["weird", "routine", "handle all unusual cases"],
+            "why": "Learner should set the exact checkpoint trigger for a manager-layer agent."
+          },
+          "m2e1": {
+            "kind": "select + justify",
+            "anchors": ["bottleneck", "hard to reverse", "inspection appointment", "drywall", "specific date"],
+            "negative": ["approve everything", "any date", "all decisions"],
+            "why": "Learner should place the checkpoint only where a mistake is expensive or irreversible."
+          },
+          "m2e2": {
+            "kind": "escalation",
+            "anchors": ["cancellation", "complaint", "contract change", "stop", "human"],
+            "negative": ["use judgment", "handle itself", "as needed"],
+            "why": "Learner should stop the chain on externally consequential changes."
+          }
+        }
+      },
+      {
+        "module": 4,
+        "title": "Close the Loop",
+        "questions": {
+          "m3e0": {
+            "kind": "live task with revision",
+            "anchors": ["remove items", "add", "only use budget review", "not the general thread", "decision needed"],
+            "negative": ["redo it", "fix it", "wrong"],
+            "why": "Learner should revise by naming exact deltas and recurrence rules."
+          },
+          "m3e1": {
+            "kind": "critique seeded output",
+            "anchors": ["major change", "new medication", "12 hours", "definition", "redefine"],
+            "negative": ["just add", "patch this", "minor note"],
+            "why": "Learner should update the definition, not only patch one output."
+          },
+          "m3e2": {
+            "kind": "escalation + revision, layered",
+            "anchors": ["coordinator", "scope", "upstream", "wrong input", "check what scope"],
+            "negative": ["just tell the estimator", "fix output only"],
+            "why": "Learner should identify the layer that caused the wrong output."
+          }
+        }
+      }
+    ]
+  }
+}
