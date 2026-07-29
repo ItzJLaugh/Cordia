@@ -101,6 +101,52 @@ def structural_weight(item_name: str) -> float:
     return STRUCTURAL_WEIGHT.get(item_name, DEFAULT_STRUCTURAL_WEIGHT)
 
 
+class Registry:
+    """One scoreable item set: which items exist, where they land in the
+    matrix, and what to score them against.
+
+    The scorer takes a Registry rather than importing module globals, so the
+    same engine can score the abstract 6S sub-items or a concrete exam's
+    blocks (see aie_map.py) without duplicating the matrix logic.
+    """
+
+    def __init__(self, name: str, version: str, item_map: dict[str, tuple[str, str]],
+                 anchors: dict[str, list[str]], checks: dict[str, list[str]],
+                 weights: dict[str, float] | None = None,
+                 default_weight: float = DEFAULT_STRUCTURAL_WEIGHT,
+                 case_sensitive_items: frozenset[str] = frozenset()):
+        self.name = name
+        self.version = version
+        self.item_map = item_map
+        self.anchors = anchors
+        self.checks = checks
+        self.weights = weights or {}
+        self.default_weight = default_weight
+        # items whose structural check depends on capitalisation
+        self.case_sensitive_items = case_sensitive_items
+
+    def weight(self, item: str) -> float:
+        return self.weights.get(item, self.default_weight)
+
+    def coverage(self) -> dict[tuple[str, str], int]:
+        cov = {(d, t): 0 for d in DIMENSIONS for t in TIERS}
+        for _item, (dim, tier) in self.item_map.items():
+            if (dim, tier) in cov:
+                cov[(dim, tier)] += 1
+        return cov
+
+
+DEFAULT_REGISTRY = Registry(
+    name="6s-abstract",
+    version=RUBRIC_VERSION,
+    item_map=ITEM_MAP,
+    anchors=FAILURE_ANCHORS,
+    checks=STRUCTURAL_CHECKS,
+    weights=STRUCTURAL_WEIGHT,
+    case_sensitive_items=frozenset({"S31_named_owner"}),
+)
+
+
 def implemented_items() -> list[str]:
     return sorted(ITEM_MAP)
 

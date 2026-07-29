@@ -222,8 +222,74 @@ something worse happened, restore the section-4 dump or roll back the snapshot.
 
 ---
 
+## 8. Shadow scoring on the CordiaAIE exam
+
+Wired into `training_backend.py`. Three additions, 40 lines, zero deletions:
+a soft import, one `submit()` call in `_respond`, and a new read-only endpoint.
+
+**What a learner sees: nothing.** `cordaie_scoring.py` still produces every
+visible number. `/train/respond` returns the identical payload it always did.
+
+**What ops sees: nothing.** `/train/status` is byte-identical, so the Rust TUI
+cannot be affected. The 6S health lives on a separate endpoint.
+
+### Restart and verify
+
+```bash
+systemctl restart cordia-training     # confirm the real unit name first
+journalctl -u cordia-training -n 30 --no-pager
+```
+
+If the `sixs` package or `psycopg2` is missing, you will see
+`6S shadow scoring unavailable (...); exam unaffected` on stderr and the exam
+runs exactly as before. That is the designed degradation, not a failure.
+
+Check the exam still works, then check 6S separately:
+
+```bash
+curl -s localhost:9995/train/status | head -c 300;   echo
+curl -s localhost:9995/train/6s/status | python3 -m json.tool
+```
+
+Expect `shadow_mode: true`, `learner_visible: false`, a live worker, and
+`tables` counts that climb as learners submit.
+
+### Kill switch
+
+Shadow scoring is off with one environment variable — no code change, no
+redeploy:
+
+```bash
+echo 'CORDIA_6S_SHADOW=0' >> /etc/cordia/cordia.env
+systemctl restart cordia-training
+```
+
+`CORDIA_6S_QUEUE_MAX` (default 256) bounds the in-memory queue. When it fills,
+jobs are dropped and counted rather than blocking a submission.
+
+### Why this cannot slow the exam down
+
+`submit()` enqueues and returns — no scoring, no file reads, no database calls
+on the request thread. A single daemon worker does the work behind a
+`BaseException` handler. Measured in `backend/sixs/test_shadow.py`: 0.7 ms to
+return with the database pointed at a dead port.
+
+Run those tests on the box after deploying — they need no database:
+
+```bash
+cd /opt/cordia && python3 backend/sixs/test_shadow.py
+```
+
+Expect `27/27 checks passed`.
+
+---
+
 ## What is deliberately NOT here
 
-No `/score` endpoint, no `/grade` endpoint, no `training.html` changes, no
-systemd unit for a scorer service. Those are STEP 2+ and start only after this
-gate passes and the row counts are reviewed.
+No `/score` or `/grade` HTTP endpoint for external callers, no `training.html`
+changes, no learner-visible matrix, no radar or heatmap rendering. Those are
+STEP 2 and STEP 3, and they start only after this gate passes and the row
+counts are reviewed.
+
+The 6S numbers are being recorded, not shown. They stay that way until
+validation clears and the version string loses `-unvalidated`.

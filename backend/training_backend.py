@@ -8,8 +8,20 @@ from collections import deque
 from http.server import HTTPServer, BaseHTTPRequestHandler
 
 sys.path.insert(0, '/opt/cordia/backend')
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))   # dev/local runs
 import cordia_auth as auth
 import cordaie_scoring as scoring
+
+# 6S shadow scoring — passive observer, never authoritative.
+# cordaie_scoring above stays the only source of learner-visible numbers. If
+# the sixs package is absent, psycopg2 is missing, or no DSN is configured,
+# this import fails softly and the exam behaves exactly as it did before.
+try:
+    from sixs import shadow as sixs_shadow
+except BaseException as _sixs_err:            # noqa: BLE001 - must never be fatal
+    sixs_shadow = None
+    print(f'6S shadow scoring unavailable ({type(_sixs_err).__name__}: {_sixs_err}); '
+          f'exam unaffected', file=sys.stderr)
 
 PORT = 9995
 DATA = '/var/lib/cordia/corpus'
@@ -172,6 +184,8 @@ class H(BaseHTTPRequestHandler):
             self._research()
         elif p == '/train/certification':
             self._certification()
+        elif p == '/train/6s/status':
+            self._sixs_status()
         else:
             self._json({'error': 'not found'}, 404)
 
@@ -318,6 +332,26 @@ class H(BaseHTTPRequestHandler):
             self._json({'ok': False, 'msg': err}, 401 if 'sign in' in err else 403); return
         self._json({'ok': True, **result})
 
+    def _sixs_status(self):
+        """Read-only health of the 6S shadow scorer.
+
+        Deliberately a NEW endpoint rather than extra keys on /train/status:
+        the ops TUI deserialises that response, and leaving it byte-identical
+        means ops cannot be affected by this feature at all.
+        """
+        if sixs_shadow is None:
+            self._json({'ok': False, 'available': False,
+                        'reason': 'sixs package not importable',
+                        'shadow_mode': True, 'learner_visible': False})
+            return
+        try:
+            out = sixs_shadow.status()
+            out['tables'] = sixs_shadow.table_counts()
+            self._json({'ok': True, 'available': True, **out})
+        except BaseException as e:            # noqa: BLE001
+            self._json({'ok': False, 'available': True,
+                        'error': f'{type(e).__name__}: {e}'[:200]})
+
     def _respond(self, body):
         track = re.sub(r'[^a-z0-9-]', '', str(body.get('track', '')))[:40]
         block = re.sub(r'[^A-Za-z0-9]', '', str(body.get('block', '')))[:8]
@@ -332,6 +366,12 @@ class H(BaseHTTPRequestHandler):
         rec = {'id': uuid.uuid4().hex[:12], 'track': track, 'block': block,
                'value': value, 'learner': learner, 'ts': time.time()}
         append(CORPUS, rec)
+        # Shadow-score in the background. submit() only enqueues and returns —
+        # it does no scoring, no I/O and no database work on this thread, and
+        # swallows everything, so the learner response below is unaffected in
+        # both latency and outcome.
+        if sixs_shadow is not None:
+            sixs_shadow.submit(rec, lambda: _course_rows(track, learner))
         self._json({'ok': True, 'id': rec['id']})
 
     def _rate(self, body):
