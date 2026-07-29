@@ -185,6 +185,27 @@ def status() -> dict[str, Any]:
     return out
 
 
+def recent_scores(limit: int = 50, learner: str | None = None) -> dict[str, Any]:
+    """Read back what the scorer recorded. Never raises; returns an error dict.
+
+    Admin-facing. These are unvalidated numbers — see rubric.py — so they are
+    returned for inspection and offline analysis, not for display to the
+    learner they describe.
+    """
+    if not configured():
+        return {"error": "CORDIA_PG_DSN not set", "scores": []}
+    try:
+        from . import store
+        rows = store.recent_scores(limit=limit, learner=learner)
+        for r in rows:
+            for k in ("scored_at", "created_at"):
+                if r.get(k) is not None:
+                    r[k] = r[k].isoformat()
+        return {"scores": rows, "count": len(rows)}
+    except BaseException as exc:                # noqa: BLE001
+        return {"error": f"{type(exc).__name__}: {exc}"[:200], "scores": []}
+
+
 def table_counts() -> dict[str, Any]:
     """Row counts, or an error string. Only called by the status endpoint."""
     if not configured():

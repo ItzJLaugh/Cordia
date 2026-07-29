@@ -186,6 +186,8 @@ class H(BaseHTTPRequestHandler):
             self._certification()
         elif p == '/train/6s/status':
             self._sixs_status()
+        elif p == '/train/6s/scores':
+            self._sixs_scores()
         else:
             self._json({'error': 'not found'}, 404)
 
@@ -351,6 +353,39 @@ class H(BaseHTTPRequestHandler):
         except BaseException as e:            # noqa: BLE001
             self._json({'ok': False, 'available': True,
                         'error': f'{type(e).__name__}: {e}'[:200]})
+
+    def _sixs_scores(self):
+        """Read back recorded 6S matrices. Requires a signed-in session.
+
+        Inspection endpoint, not a result endpoint. The learner's actual
+        certification outcome still comes from /train/certification via
+        cordaie_scoring. These numbers are unvalidated (see sixs/rubric.py) and
+        the response says so on every payload.
+
+        A signed-in user sees only their own rows. Reading everyone's rows
+        requires being listed in CORDIA_6S_ADMIN (comma-separated emails).
+        """
+        token = self.headers.get('Authorization', '').replace('Bearer ', '').strip()
+        me = auth.whoami(token) if token else None
+        if not me:
+            self._json({'ok': False, 'msg': 'sign in required'}, 401); return
+        if sixs_shadow is None:
+            self._json({'ok': False, 'available': False,
+                        'reason': 'sixs package not importable'}); return
+        q = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+        try:
+            limit = int(q.get('limit', ['50'])[0])
+        except (ValueError, TypeError):
+            limit = 50
+        admins = {e.strip().lower() for e in
+                  os.environ.get('CORDIA_6S_ADMIN', '').split(',') if e.strip()}
+        is_admin = str(me.get('email', '')).lower() in admins
+        learner = q.get('learner', [None])[0] if is_admin else me.get('email')
+        out = sixs_shadow.recent_scores(limit=limit, learner=learner)
+        self._json({'ok': 'error' not in out,
+                    'shadow_mode': True, 'learner_visible': False,
+                    'note': 'unvalidated heuristic scores — not a certification result',
+                    'scope': learner or 'all', 'admin': is_admin, **out})
 
     def _respond(self, body):
         track = re.sub(r'[^a-z0-9-]', '', str(body.get('track', '')))[:40]
