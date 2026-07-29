@@ -52,7 +52,7 @@ from collections import Counter
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from sixs import store                             # noqa: E402
-from sixs.rubric import ITEM_MAP                   # noqa: E402
+from sixs.aie_map import registry_for             # noqa: E402
 
 DATA = os.environ.get("CORDIA_CORPUS_DIR", "/var/lib/cordia/corpus")
 CORPUS = os.path.join(DATA, "corpus.jsonl")
@@ -119,8 +119,14 @@ def report() -> dict:
         "distinct_blocks": len(blocks),
         "rating_level_distribution": dict(levels),
         "top_tracks": dict(tracks.most_common(8)),
-        "blocks_mappable_to_6s_items": sorted(set(blocks) & set(ITEM_MAP)),
-        "blocks_not_mappable_to_6s_items": len(set(blocks) - set(ITEM_MAP)),
+        "blocks_mappable_to_6s_items": sorted(
+            b for (t, b) in {(str(c.get("track","")), str(c.get("block",""))) for c in corpus}
+            if (lambda reg: reg is not None and b in reg.item_map)(registry_for(t))
+        ),
+        "blocks_not_mappable_to_6s_items": len({
+            (t, b) for (t, b) in {(str(c.get("track","")), str(c.get("block",""))) for c in corpus}
+            if (lambda reg: reg is None or b not in reg.item_map)(registry_for(t))
+        }),
     }
     return out
 
