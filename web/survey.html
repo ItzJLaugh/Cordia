@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Cordia — One Step Before Your Assessment</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Newsreader:opsz,wght@6..72,400;6..72,500;6..72,600&family=Work+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Marcellus&family=Source+Serif+4:opsz,wght@8..60,400;8..60,500;8..60,600&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="assets/cordia.css">
+<link rel="stylesheet" href="assets/cordia-ui.css">
+<style>
+.wrap{max-width:760px;margin:0 auto;padding:44px 24px 80px}
+.hero{padding:26px 30px;margin-bottom:20px;text-align:center}
+.hero h1{font-size:clamp(26px,3vw,36px)}
+.hero p{font-family:var(--sans);color:var(--grey);font-size:14px;margin-top:10px;max-width:56ch;margin-left:auto;margin-right:auto}
+.q{padding:20px 24px;margin-bottom:14px}
+.q h4{font-family:var(--sans);font-size:15px;font-weight:600;margin-bottom:4px}
+.q .why{font-family:var(--sans);font-size:11.5px;color:var(--grey-light);margin-bottom:14px}
+.opts{display:grid;gap:8px}
+.opt{padding:11px 15px;border-radius:11px;border:1px solid var(--line);background:#fff;font-family:var(--sans);font-size:13.5px;cursor:pointer;box-shadow:var(--elev-2);transition:all .15s;text-align:left}
+.opt:hover{transform:translateY(-1px)}
+.opt.on{border-color:var(--olive);background:var(--sage-soft);font-weight:600}
+.scale{display:flex;gap:8px}
+.scale button{flex:1;padding:12px 0;border-radius:11px;border:1px solid var(--line);background:#fff;font-family:var(--mono);font-size:14px;cursor:pointer;box-shadow:var(--elev-2)}
+.scale button.on{background:var(--olive);color:#fff;border-color:var(--olive)}
+.scale-lbls{display:flex;justify-content:space-between;font-family:var(--sans);font-size:11px;color:var(--grey);margin-top:6px}
+textarea{width:100%;min-height:90px;padding:13px 15px;border-radius:11px;border:1px solid var(--line);font-family:var(--body);font-size:14px;box-shadow:var(--elev-2);resize:vertical}
+textarea:focus{outline:none;border-color:var(--sage);box-shadow:var(--elev-2-hover),0 0 0 4px rgba(143,163,107,.18)}
+.foot{display:flex;justify-content:space-between;align-items:center;margin-top:22px}
+#prog{font-family:var(--sans);font-size:12px;color:var(--grey)}
+</style>
+</head>
+<body>
+<header id="shellHeader"></header>
+
+<div class="wrap">
+  <div class="glass hero">
+    <span class="small-caps">Before your assessment</span>
+    <h1>Six questions. Ninety seconds.</h1>
+    <p>Your certification measured what you wrote. These questions measure what only you can know —
+    and they train the next version of the system that graded you. This is the only "payment" CordiaAIE asks.</p>
+  </div>
+
+  <div class="glass q" data-q="intent_clarity">
+    <h4>Before you started writing, how clear were you on what you wanted?</h4>
+    <div class="why">calibrates the intent-clarity model against your behavioral telemetry</div>
+    <div class="scale" data-scale></div>
+    <div class="scale-lbls"><span>guessing</span><span>knew exactly</span></div>
+  </div>
+
+  <div class="glass q" data-q="interpretation_gap">
+    <h4>Did the exercises interpret your answers the way you meant them?</h4>
+    <div class="why">the perceived intent-vs-interpretation gap — only you can see it</div>
+    <div class="opts">
+      <button class="opt" data-v="matched">They matched what I meant</button>
+      <button class="opt" data-v="partial">Partially — some answers were read differently than I intended</button>
+      <button class="opt" data-v="mismatched">Often not what I meant</button>
+    </div>
+  </div>
+
+  <div class="glass q" data-q="effort_source">
+    <h4>Where did you spend more effort?</h4>
+    <div class="why">separates formulation problems from articulation problems — different ML targets</div>
+    <div class="opts">
+      <button class="opt" data-v="what">Figuring out WHAT I wanted</button>
+      <button class="opt" data-v="how">Figuring out HOW to say it</button>
+      <button class="opt" data-v="equal">About equal</button>
+    </div>
+  </div>
+
+  <div class="glass q" data-q="confidence">
+    <h4>How confident are you that your answers would work as written?</h4>
+    <div class="why">paired with your actual scores, this trains confidence-calibration curves</div>
+    <div class="scale" data-scale></div>
+    <div class="scale-lbls"><span>not confident</span><span>fully confident</span></div>
+  </div>
+
+  <div class="glass q" data-q="role">
+    <h4>Which best describes your relationship to AI agents at work?</h4>
+    <div class="why">shapes which agent-assignment template fits your context</div>
+    <div class="opts">
+      <button class="opt" data-v="operator">I direct or manage AI agents already</button>
+      <button class="opt" data-v="managed">AI agents are used on my work by others</button>
+      <button class="opt" data-v="evaluating">I'm evaluating whether to adopt them</button>
+      <button class="opt" data-v="curious">Just learning for now</button>
+    </div>
+  </div>
+
+  <div class="glass q" data-q="transfer">
+    <h4>Would you use the agentic system Cordia compiled for you? What's missing?</h4>
+    <div class="why">free-text product signal — tells us what to build next</div>
+    <textarea id="transferText" placeholder="Honest answer, one or two sentences is enough…"></textarea>
+  </div>
+
+  <div class="foot">
+    <span id="prog">0 / 6 answered</span>
+    <button class="btn btn-primary" id="submitBtn" disabled>Unlock my assessment →</button>
+  </div>
+</div>
+
+<script>
+if(sessionStorage.getItem('cordia-auth') !== '1') location.replace('index.html');
+const token = localStorage.getItem('cordia-token') || '';
+const answers = {};
+
+/* build 1-5 scales */
+document.querySelectorAll('[data-scale]').forEach(el => {
+  for(let i=1;i<=5;i++){
+    const b = document.createElement('button');
+    b.textContent = i;
+    b.onclick = () => {
+      el.querySelectorAll('button').forEach(x => x.classList.remove('on'));
+      b.classList.add('on');
+      answers[el.closest('.q').dataset.q] = i;
+      update();
+    };
+    el.appendChild(b);
+  }
+});
+/* option groups */
+document.querySelectorAll('.q .opts').forEach(el => {
+  el.querySelectorAll('.opt').forEach(b => b.onclick = () => {
+    el.querySelectorAll('.opt').forEach(x => x.classList.remove('on'));
+    b.classList.add('on');
+    answers[el.closest('.q').dataset.q] = b.dataset.v;
+    update();
+  });
+});
+document.getElementById('transferText').oninput = e => {
+  answers.transfer = e.target.value.trim();
+  update();
+};
+
+function update(){
+  const answered = ['intent_clarity','interpretation_gap','effort_source','confidence','role']
+    .filter(k => answers[k] !== undefined).length + (answers.transfer ? 1 : 0);
+  document.getElementById('prog').textContent = `${answered} / 6 answered`;
+  document.getElementById('submitBtn').disabled = answered < 6;
+}
+
+document.getElementById('submitBtn').onclick = async () => {
+  const btn = document.getElementById('submitBtn');
+  btn.disabled = true; btn.textContent = 'Submitting…';
+  const r = await fetch('/train/survey', {
+    method:'POST',
+    headers:{'Content-Type':'application/json','Authorization':'Bearer ' + token},
+    body: JSON.stringify({answers, ts: Date.now()/1000})
+  });
+  const d = await r.json().catch(()=>({}));
+  location.replace('assessment.html');
+};
+</script>
+<script src="assets/cordia-shell.js" data-nav="certifications"></script>
+</body>
+</html>

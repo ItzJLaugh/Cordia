@@ -1,0 +1,556 @@
+/* ============================================================
+   Cordia UI — white, black, floating.
+   Design system for the reconstructed interface.
+
+   Deliberately NOT an edit of cordia.css: that file is loaded by
+   11 live pages and already carries uncommitted work. This owns the
+   --c-/--t-/--e-/--dur- namespace and is linked only by pages that
+   have been migrated.
+
+   Philosophy (from the brief): simplicity is the ultimate
+   sophistication; if users need a manual, the design has failed;
+   the parts you can't see should be as beautiful as the parts you can.
+   ============================================================ */
+
+:root{
+  /* ---- colour: six values, one of them brand ---- */
+  --c-bg:      #FFFFFF;
+  --c-surface: #FFFFFF;
+  --c-ink:     #0B0B0B;   /* near-black — pure #000 is harsh at 15px */
+  --c-ink-2:   #3A3A3A;   /* secondary body            12.0:1 */
+  --c-ink-3:   #6E6E6E;   /* meta, placeholder          5.0:1 */
+  --c-ink-4:   #8A8A8A;   /* decorative only, never text */
+  --c-moss:    #4A5A42;   /* brand accent, ~3% of pixels */
+  --c-wash:    #F6F7F4;   /* the only non-white fill */
+  --c-hair:    rgba(11,11,11,.08);  /* dividers only — never card borders */
+  --c-focus:   #0B0B0B;
+
+  /* ---- type: three families ----
+     Work Sans carries every uppercase/letterspaced label (eyebrows, meta,
+     badge subtitles) — its wider apertures hold up at 11px caps where Inter
+     tightens. Inter stays the reading UI face. Newsreader titles only. */
+  --f-ui:    'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --f-label: 'Work Sans', 'Inter', system-ui, sans-serif;
+  --f-title: 'Newsreader', 'Iowan Old Style', Georgia, serif;
+
+  --t-xs:11px; --t-sm:13px; --t-base:15px; --t-md:17px;
+  --t-lg:21px; --t-xl:27px; --t-2xl:34px; --t-3xl:clamp(38px,5vw,56px);
+  --lh-tight:1.12; --lh-title:1.22; --lh-body:1.60; --lh-loose:1.75;
+  --tr-caps:.16em;
+
+  /* ---- elevation: the only separation on borderless white.
+     Four terms per level, not two — a real object held above a surface casts
+     a tight dark contact shadow directly under it, a mid shadow that carries
+     its mass, and a wide soft cast that grounds it. Two-term shadows read as
+     a blur behind a rectangle; this reads as a held object. All offsets are
+     straight down: the light is overhead, so the page has one gravity. ---- */
+  --e-1:     0 1px 1px rgba(11,11,11,.05), 0 3px 5px -1px rgba(11,11,11,.06),
+             0 9px 16px -6px rgba(11,11,11,.09), 0 20px 34px -16px rgba(11,11,11,.10);
+  --e-2:     0 1px 2px rgba(11,11,11,.06), 0 5px 9px -2px rgba(11,11,11,.07),
+             0 16px 26px -8px rgba(11,11,11,.10), 0 34px 56px -20px rgba(11,11,11,.13);
+  --e-3:     0 2px 3px rgba(11,11,11,.07), 0 8px 14px -3px rgba(11,11,11,.08),
+             0 24px 38px -10px rgba(11,11,11,.12), 0 52px 80px -24px rgba(11,11,11,.16);
+  --e-4:     0 3px 5px rgba(11,11,11,.08), 0 14px 24px -4px rgba(11,11,11,.10),
+             0 38px 60px -12px rgba(11,11,11,.14), 0 80px 120px -28px rgba(11,11,11,.20);
+  --e-press: 0 1px 1px rgba(11,11,11,.07), 0 2px 3px -1px rgba(11,11,11,.06);
+
+  --r-sm:10px; --r-md:14px; --r-lg:20px; --r-pill:999px;
+
+  --dur-1:120ms; --dur-2:180ms; --dur-3:260ms; --dur-4:420ms;
+  --ease-out:cubic-bezier(.2,.8,.2,1);
+  --ease-in-out:cubic-bezier(.4,0,.2,1);
+  --ease-overshoot:cubic-bezier(.34,1.3,.64,1);
+  --lift-1:-2px; --lift-2:-4px; --tilt-max:4deg;
+
+  --px:.5; --py:.5;   /* pointer proximity, written by JS */
+}
+
+/* ============================================================
+   Legacy token bridge.
+
+   The pre-existing pages style themselves through cordia.css's token names
+   (--serif, --olive, --elev-1 …). Rather than rewrite ten files of inline
+   CSS — which is how the topbar drifted in the first place — repoint those
+   names at the new system. cordia-ui.css is always linked AFTER cordia.css,
+   so these win. Deleting this block reverts every legacy page at once.
+   ============================================================ */
+:root{
+  --serif:var(--f-title); --body:var(--f-ui); --sans:var(--f-ui);
+  --bg:var(--c-bg); --surface:var(--c-surface);
+  --ink:var(--c-ink); --ink-soft:var(--c-ink-2);
+  --olive:var(--c-ink); --olive-soft:var(--c-ink-2); --olive-deep:var(--c-ink);
+  --grey:var(--c-ink-3); --grey-light:var(--c-ink-4);
+  --muted:var(--c-ink-3); --faint:var(--c-ink-4);
+  --line:var(--c-hair); --glass-border:var(--c-hair);
+  --sage:var(--c-moss); --sage-deep:var(--c-moss); --sage-soft:var(--c-wash);
+  --holo:var(--c-wash); --gold:#7A5B2E; --success:var(--c-moss); --danger:#8A3E2A;
+  --glass-strong:var(--c-surface);
+  --radius:var(--r-md); --radius-sm:var(--r-sm);
+  --elev-1:var(--e-1); --elev-1-hover:var(--e-2);
+  --elev-2:var(--e-1); --elev-2-hover:var(--e-2); --elev-press:var(--e-press);
+  --shadow-md:var(--e-1); --shadow-lg:var(--e-2);
+  --bg-grad-1:var(--c-bg); --bg-grad-2:var(--c-bg);
+}
+/* legacy component shims — flat white surfaces, no frosted glass */
+.glass,.glass-strong{background:var(--c-surface); border:1px solid var(--c-hair);
+  border-radius:var(--r-md); box-shadow:var(--e-1); backdrop-filter:none}
+.small-caps{font-family:var(--f-label); font-size:var(--t-xs); font-weight:600;
+  letter-spacing:var(--tr-caps); text-transform:uppercase; color:var(--c-ink-3)}
+h1,h2,h3,.serif{font-family:var(--f-title); font-optical-sizing:auto;
+  font-weight:500; color:var(--c-ink); letter-spacing:-.01em}
+.btn-primary{background:var(--c-ink); color:#fff}
+.btn-outline,.btn-ghost{background:var(--c-surface); color:var(--c-ink);
+  border:1px solid var(--c-hair)}
+.btn-gold{background:var(--c-moss); color:#fff}
+.pill.gold{background:rgba(122,91,46,.12); color:#7A5B2E}
+.pill.green{background:rgba(74,90,66,.12); color:var(--c-moss)}
+
+*{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%}
+body{
+  margin:0; background:var(--c-bg); color:var(--c-ink);
+  font-family:var(--f-ui); font-size:var(--t-base); line-height:var(--lh-body);
+  -webkit-font-smoothing:antialiased; -moz-osx-font-smoothing:grayscale;
+}
+img,svg{display:block; max-width:100%}
+a{color:inherit; text-decoration:none}
+
+/* ---- accessibility primitives ---- */
+.vh{
+  position:absolute!important; width:1px; height:1px; margin:-1px;
+  padding:0; border:0; overflow:hidden; white-space:nowrap;
+  clip:rect(0 0 0 0); clip-path:inset(50%);
+}
+.skip{
+  position:absolute; left:16px; top:-100px; z-index:200;
+  background:var(--c-ink); color:#fff; padding:12px 18px;
+  border-radius:var(--r-sm); font-size:var(--t-sm); font-weight:600;
+  transition:top var(--dur-2) var(--ease-out);
+}
+.skip:focus{top:16px}
+
+/* Focus is the one thing this design cannot fall back on — there are no
+   borders. Double ring so it survives on white AND over badge art. */
+:where(a,button,input,summary,[tabindex]):focus-visible{
+  outline:none;
+  box-shadow:0 0 0 3px var(--c-bg), 0 0 0 5px var(--c-focus);
+  border-radius:var(--r-sm);
+}
+
+/* ---- layout ---- */
+.shell{max-width:1180px; margin:0 auto; padding:0 28px}
+
+/* ---- topbar (injected by cordia-shell.js on every page) ---- */
+.topbar{position:sticky; top:0; z-index:150; background:var(--c-surface);
+  border-bottom:1px solid var(--c-hair)}
+.topbar-inner{display:flex; align-items:center; gap:26px; height:70px}
+.brand{flex:none; display:flex; align-items:center}
+.brand img{height:28px; width:auto}
+.topnav{display:flex; align-items:center; gap:4px; margin-left:8px}
+.topnav a{font-family:var(--f-label); font-size:13px; font-weight:500;
+  color:var(--c-ink-3); padding:8px 14px; border-radius:var(--r-sm);
+  transition:color var(--dur-2) var(--ease-out), background var(--dur-2) var(--ease-out)}
+.topnav a:hover{color:var(--c-ink); background:var(--c-wash)}
+.topnav a.active{color:var(--c-ink); font-weight:600}
+.topbar .acct{margin-left:auto}
+@media (max-width:720px){
+  .topbar-inner{gap:12px}
+  .topnav a{padding:8px 9px; font-size:12px}
+}
+
+/* ---- page furniture shared by every restyled page ---- */
+.page{padding:56px 0 40px}
+.page-eyebrow{font-family:var(--f-label); font-size:var(--t-xs); font-weight:600;
+  letter-spacing:var(--tr-caps); text-transform:uppercase; color:var(--c-ink-3); margin:0 0 14px}
+.page-title{font-family:var(--f-title); font-optical-sizing:auto; font-weight:500;
+  font-size:var(--t-3xl); line-height:var(--lh-tight); letter-spacing:-.015em;
+  color:var(--c-ink); margin:0}
+.page-sub{font-size:var(--t-md); line-height:var(--lh-body); color:var(--c-ink-3);
+  margin:14px 0 0; max-width:62ch}
+.crumb{font-family:var(--f-label); font-size:var(--t-xs); letter-spacing:.1em;
+  text-transform:uppercase; color:var(--c-ink-4); margin:0 0 18px}
+.crumb a{color:var(--c-ink-3)}
+.crumb a:hover{color:var(--c-ink)}
+
+/* card: the generic floating surface, same elevation language as .win-hit */
+.card{background:var(--c-surface); border-radius:var(--r-md); box-shadow:var(--e-1);
+  padding:28px 30px}
+.card-lg{padding:34px 38px}
+.card h3{font-family:var(--f-title); font-optical-sizing:auto; font-weight:500;
+  font-size:var(--t-lg); line-height:var(--lh-title); color:var(--c-ink); margin:0 0 12px}
+.grid-2{display:grid; grid-template-columns:1fr; gap:20px}
+@media (min-width:860px){ .grid-2{grid-template-columns:1.55fr 1fr} }
+
+/* objective list — same bullet motif as .win-obj, usable outside a window */
+.objlist{list-style:none; margin:0; padding:0}
+.objlist li{position:relative; padding-left:20px; margin-bottom:12px;
+  font-size:var(--t-base); line-height:1.5; color:var(--c-ink-2)}
+.objlist li:last-child{margin-bottom:0}
+.objlist li::before{content:""; position:absolute; left:0; top:8px;
+  width:3px; height:3px; background:var(--c-moss)}
+
+/* stat row */
+.stats{display:flex; flex-wrap:wrap; gap:34px; margin:0}
+.stat{display:flex; flex-direction:column; gap:4px}
+.stat b{font-family:var(--f-title); font-optical-sizing:auto; font-weight:500;
+  font-size:var(--t-2xl); line-height:1; color:var(--c-ink)}
+.stat span{font-family:var(--f-label); font-size:var(--t-xs); font-weight:500;
+  letter-spacing:var(--tr-caps); text-transform:uppercase; color:var(--c-ink-3)}
+
+/* progress meter */
+.meter{height:6px; border-radius:var(--r-pill); background:var(--c-wash); overflow:hidden}
+.meter i{display:block; height:100%; width:0%; background:var(--c-moss);
+  transition:width var(--dur-4) var(--ease-out)}
+
+/* status pill */
+.pill{display:inline-flex; align-items:center; gap:7px; padding:5px 12px;
+  border-radius:var(--r-pill); background:var(--c-wash);
+  font-family:var(--f-label); font-size:10.5px; font-weight:600;
+  letter-spacing:.12em; text-transform:uppercase; color:var(--c-ink-3)}
+.pill.ok{background:rgba(74,90,66,.12); color:var(--c-moss)}
+.pill.warn{background:rgba(122,91,46,.12); color:#7A5B2E}
+.eyebrow{
+  font-family:var(--f-label);
+  font-size:var(--t-xs); font-weight:600; letter-spacing:var(--tr-caps);
+  text-transform:uppercase; color:var(--c-ink-3); margin:0;
+}
+
+/* ============================================================
+   Category header — pushed up in the hierarchy: it now leads the
+   section rather than competing with the card titles beneath it.
+   ============================================================ */
+.cat-head{margin:0 0 26px}
+.cat-h{
+  font-family:var(--f-title); font-optical-sizing:auto; font-weight:500;
+  font-size:var(--t-2xl); line-height:var(--lh-tight); letter-spacing:-.015em;
+  color:var(--c-ink); margin:0;
+}
+.cat-sub{
+  font-family:var(--f-ui); font-size:var(--t-base); color:var(--c-ink-3);
+  margin:8px 0 0; max-width:52ch;
+}
+/* three aspects of the thinking this category trains */
+.cat-icons{display:flex; gap:26px; margin:18px 0 0; padding:0; list-style:none}
+.cat-icons li{display:flex; align-items:center; gap:9px}
+.cat-icons svg{
+  width:26px; height:26px; flex:none;
+  stroke:var(--c-ink); stroke-width:2.4; fill:none;
+  stroke-linecap:round; stroke-linejoin:round;
+}
+.cat-icons span{
+  font-family:var(--f-label); font-size:10.5px; font-weight:500;
+  letter-spacing:.09em; text-transform:uppercase; color:var(--c-ink-3);
+  white-space:nowrap;
+}
+@media (max-width:640px){
+  .cat-icons{gap:16px}
+  .cat-icons span{display:none}
+}
+
+/* ============================================================
+   .win — the one window component.
+   Used identically for catalogue tracks and search results.
+   ============================================================ */
+.win{list-style:none; margin:0; padding:0}
+.win-hit{
+  position:relative; display:flex; flex-direction:column; height:100%; width:100%;
+  padding:22px 22px 18px; border-radius:var(--r-md);
+  background:var(--c-surface); box-shadow:var(--e-1);
+  /* .win-hit is a <button> so the whole card is one keyboard stop; buttons
+     centre their text and inherit the UA font, so both are reset here */
+  text-align:left; font:inherit; color:inherit; border:0; cursor:pointer;
+  transition:box-shadow var(--dur-2) var(--ease-out),
+             transform var(--dur-2) var(--ease-out);
+}
+/* proximity sheen — on white a highlight cannot brighten, only deepen */
+.win-hit::after{
+  content:""; position:absolute; inset:0; border-radius:inherit;
+  pointer-events:none; opacity:0;
+  background:radial-gradient(60% 60% at calc(var(--px)*100%) calc(var(--py)*100%),
+             rgba(11,11,11,.035), transparent 70%);
+  transition:opacity var(--dur-2) var(--ease-out);
+}
+.win-eyebrow{
+  font-family:var(--f-label);
+  font-size:var(--t-xs); font-weight:600; letter-spacing:var(--tr-caps);
+  text-transform:uppercase; color:var(--c-ink-3); margin-bottom:10px;
+}
+/* The brief's rule: the title is a different family, weight, size and
+   colour from everything else in the window. All four shift at once. */
+.win-title{
+  font-family:var(--f-title); font-optical-sizing:auto; font-weight:500;
+  font-size:var(--t-lg); line-height:var(--lh-title); letter-spacing:-.005em;
+  color:var(--c-ink-2); margin:0 0 16px;
+  transition:color var(--dur-2) var(--ease-out);
+  /* two lines' worth, so single- and double-line titles start their
+     objective lists at the same height across a row */
+  min-height:calc(2 * var(--t-lg) * var(--lh-title));
+}
+.win-obj{list-style:none; margin:0 0 18px; padding:0; flex:1}
+.win-obj li{
+  position:relative; padding-left:18px; margin-bottom:11px;
+  font-size:var(--t-sm); line-height:1.45; color:var(--c-ink-2);
+}
+.win-obj li:last-child{margin-bottom:0}
+.win-obj li::before{                    /* the pixel motif at text scale */
+  content:""; position:absolute; left:0; top:7px;
+  width:3px; height:3px; background:var(--c-moss);
+}
+.win-foot{
+  display:flex; align-items:center; gap:10px; padding-top:14px;
+  border-top:1px solid var(--c-hair); font-family:var(--f-label);
+  font-size:var(--t-xs); font-weight:600; letter-spacing:.06em;
+  text-transform:uppercase; color:var(--c-ink-3);
+}
+.win-go{
+  margin-left:auto; font-size:var(--t-base); color:var(--c-ink);
+  opacity:0; transform:translateX(0);
+  transition:opacity var(--dur-2) var(--ease-out),
+             transform var(--dur-2) var(--ease-out);
+}
+.win.locked .win-hit{background:var(--c-wash)}
+.win.locked .win-title{color:var(--c-ink-3)}
+
+@media (hover:hover) and (pointer:fine){
+  .win-hit:hover{box-shadow:var(--e-2); transform:translateY(var(--lift-1))}
+  .win-hit:hover::after{opacity:1}
+  .win-hit:hover .win-title{color:var(--c-ink)}
+  .win-hit:hover .win-go{opacity:1; transform:translateX(4px)}
+}
+.win-hit:active{transform:translateY(0); box-shadow:var(--e-press);
+  transition-duration:var(--dur-1)}
+
+.win-grid{
+  list-style:none; margin:0; padding:0;
+  display:grid; grid-template-columns:1fr; gap:18px;
+}
+@media (min-width:720px){ .win-grid{grid-template-columns:repeat(2,1fr)} }
+@media (min-width:1040px){ .win-grid{grid-template-columns:repeat(3,1fr)} }
+
+/* ============================================================
+   .cert — floating badge. No box, no border, no background:
+   the only visual is the badge's own drop shadow.
+   ============================================================ */
+.cert-row{
+  list-style:none; margin:0; padding:0;
+  display:flex; justify-content:center; flex-wrap:wrap;
+  gap:clamp(28px,6vw,72px);
+}
+.cert{
+  display:flex; flex-direction:column; align-items:center; text-align:center;
+  padding:10px 6px; border-radius:var(--r-md);
+}
+.cert-badge{
+  width:clamp(104px,11.5vw,140px); height:auto; color:var(--c-ink);
+  /* tight radii on purpose: the art is 30+ separate squares, and a wide blur
+     makes each one cast its own cloud, pooling into a grey smudge */
+  filter:drop-shadow(0 1px 1px rgba(11,11,11,.13))
+         drop-shadow(0 4px 6px rgba(11,11,11,.10));
+  transition:filter var(--dur-2) var(--ease-out),
+             transform var(--dur-2) var(--ease-overshoot);
+  transform:translateZ(0);
+}
+.cert-code{
+  margin-top:16px; font-family:var(--f-ui); font-size:var(--t-sm);
+  font-weight:600; color:var(--c-ink); letter-spacing:.01em;
+}
+.cert-name{
+  margin-top:3px; font-family:var(--f-label);
+  font-size:var(--t-xs); font-weight:500; letter-spacing:var(--tr-caps);
+  text-transform:uppercase; color:var(--c-ink-3);
+}
+/* Tilt lives here and only here: the badges are vector art with no text
+   inside, so rotation is free. Rotating a card full of 15px type would
+   resample it and fight the readability requirement. */
+@media (hover:hover) and (pointer:fine){
+  .cert:hover .cert-badge{
+    filter:drop-shadow(0 2px 2px rgba(11,11,11,.14))
+           drop-shadow(0 10px 16px rgba(11,11,11,.16));
+    transform:translateY(var(--lift-2)) perspective(700px)
+      rotateX(calc((var(--py) - .5) * var(--tilt-max) * -2))
+      rotateY(calc((var(--px) - .5) * var(--tilt-max) *  2));
+  }
+}
+
+/* ============================================================
+   .finder — the search input
+   ============================================================ */
+.finder{
+  position:relative; display:flex; align-items:center; gap:14px;
+  padding:18px 24px; border-radius:var(--r-lg);
+  background:var(--c-surface); box-shadow:var(--e-2);
+  transition:box-shadow var(--dur-2) var(--ease-out);
+}
+.finder:focus-within{box-shadow:var(--e-3)}
+.finder input{
+  flex:1; min-width:0; border:0; outline:0; background:transparent;
+  font-family:var(--f-ui); font-size:var(--t-md); color:var(--c-ink);
+}
+.finder input::placeholder{color:var(--c-ink-3)}
+.finder input::-webkit-search-cancel-button{-webkit-appearance:none}
+.finder svg{flex:none; color:var(--c-ink-4)}
+/* the page's only progress indicator */
+.finder-bar{
+  position:absolute; left:24px; right:24px; bottom:6px; height:2px;
+  overflow:hidden; opacity:0; transition:opacity var(--dur-2)
+}
+.finder-bar::after{
+  content:""; position:absolute; inset:0; background:var(--c-moss);
+  transform:translateX(-100%);
+}
+.finder[data-busy="1"] .finder-bar{opacity:1}
+.finder[data-busy="1"] .finder-bar::after{
+  animation:sweep 900ms var(--ease-in-out) infinite;
+}
+@keyframes sweep{to{transform:translateX(100%)}}
+
+/* ============================================================
+   Account menu. Deliberately has NO panel, sheet or container —
+   each row is an independent floating object that grows from a dot
+   into a bar, staggered top to bottom. Nothing sits behind them.
+   ============================================================ */
+.acct{position:relative; flex:none}
+.avatar{
+  width:40px; height:40px; border-radius:var(--r-pill); border:0; padding:0;
+  overflow:hidden; cursor:pointer; background:var(--c-wash);
+  box-shadow:var(--e-1);
+  transition:box-shadow var(--dur-2) var(--ease-out),
+             transform var(--dur-2) var(--ease-out);
+}
+.avatar:hover{box-shadow:var(--e-2); transform:translateY(var(--lift-1))}
+.avatar img{width:100%; height:100%; object-fit:cover}
+.avatar .initials{
+  display:flex; align-items:center; justify-content:center; width:100%; height:100%;
+  font-family:var(--f-label); font-size:13px; font-weight:600; letter-spacing:.06em;
+  color:var(--c-ink-2);
+}
+
+.acct-menu{
+  position:absolute; top:calc(100% + 16px); right:0; z-index:120;
+  display:flex; flex-direction:column; align-items:flex-end; gap:10px;
+  margin:0; padding:0; list-style:none; pointer-events:none;
+}
+.acct-menu li{display:block}
+.acct-item{
+  display:flex; align-items:center; gap:0;
+  width:44px; height:44px; padding:0; overflow:hidden; white-space:nowrap;
+  border:0; border-radius:var(--r-pill); cursor:pointer;
+  background:var(--c-surface); color:var(--c-ink);
+  font-family:var(--f-ui); font-size:var(--t-sm); font-weight:500;
+  box-shadow:var(--e-2);
+  opacity:0; transform:scale(.35);
+  transition:width var(--dur-3) var(--ease-overshoot),
+             gap var(--dur-3) var(--ease-overshoot),
+             padding var(--dur-3) var(--ease-overshoot),
+             opacity var(--dur-2) var(--ease-out),
+             transform var(--dur-3) var(--ease-overshoot),
+             box-shadow var(--dur-2) var(--ease-out);
+  transform-origin:right center;
+}
+.acct-item svg{width:17px; height:17px; flex:none; stroke:currentColor;
+  stroke-width:1.9; fill:none; stroke-linecap:round; stroke-linejoin:round}
+.acct-item span{opacity:0; transition:opacity var(--dur-2) var(--ease-out)}
+
+.acct[data-open="1"] .acct-menu{pointer-events:auto}
+.acct[data-open="1"] .acct-item{
+  opacity:1; transform:none; width:210px; padding:0 20px; gap:13px;
+}
+.acct[data-open="1"] .acct-item span{opacity:1; transition-delay:90ms}
+.acct-item:hover{box-shadow:var(--e-3); transform:translateY(var(--lift-1))!important}
+.acct-item:active{box-shadow:var(--e-press); transform:translateY(0)!important}
+
+/* stagger: top to bottom on open, bottom to top on close */
+.acct-menu li:nth-child(1) .acct-item{transition-delay:0ms}
+.acct-menu li:nth-child(2) .acct-item{transition-delay:34ms}
+.acct-menu li:nth-child(3) .acct-item{transition-delay:68ms}
+.acct-menu li:nth-child(4) .acct-item{transition-delay:102ms}
+.acct-menu li:nth-child(5) .acct-item{transition-delay:136ms}
+.acct-menu li:nth-child(6) .acct-item{transition-delay:170ms}
+.acct-menu li:nth-child(7) .acct-item{transition-delay:204ms}
+.acct:not([data-open="1"]) .acct-menu li:nth-child(1) .acct-item{transition-delay:204ms}
+.acct:not([data-open="1"]) .acct-menu li:nth-child(2) .acct-item{transition-delay:170ms}
+.acct:not([data-open="1"]) .acct-menu li:nth-child(3) .acct-item{transition-delay:136ms}
+.acct:not([data-open="1"]) .acct-menu li:nth-child(4) .acct-item{transition-delay:102ms}
+.acct:not([data-open="1"]) .acct-menu li:nth-child(5) .acct-item{transition-delay:68ms}
+.acct:not([data-open="1"]) .acct-menu li:nth-child(6) .acct-item{transition-delay:34ms}
+.acct:not([data-open="1"]) .acct-menu li:nth-child(7) .acct-item{transition-delay:0ms}
+
+@media (prefers-reduced-motion:reduce){
+  .acct-menu .acct-item{transition-delay:0ms!important}
+}
+
+/* ============================================================
+   Detail sheet
+   ============================================================ */
+.detail{position:fixed; inset:0; z-index:200; display:none;
+  align-items:center; justify-content:center; padding:26px}
+.detail.on{display:flex}
+.scrim{position:absolute; inset:0; background:rgba(11,11,11,.32);
+  opacity:0; transition:opacity var(--dur-3) var(--ease-out)}
+.detail.on .scrim{opacity:1}
+.sheet{position:relative; width:min(760px,100%); max-height:88vh; overflow:auto;
+  border-radius:var(--r-md); background:var(--c-surface); box-shadow:var(--e-4);
+  opacity:0; transform:translateY(20px) scale(.985);
+  transition:opacity var(--dur-3) var(--ease-out), transform var(--dur-3) var(--ease-out)}
+.detail.on .sheet{opacity:1; transform:none}
+.sheet-bd{padding:34px 38px 38px}
+.sheet .blk{margin-top:26px}
+.sheet .blk h3{font-family:var(--f-label); font-size:var(--t-xs); font-weight:600;
+  letter-spacing:var(--tr-caps); text-transform:uppercase; color:var(--c-ink-3); margin:0 0 10px}
+.sheet .blk p{margin:0; font-size:var(--t-base); line-height:var(--lh-body); color:var(--c-ink-2)}
+.sheet .blk.fail{padding:18px 20px; border-radius:var(--r-sm); background:var(--c-wash)}
+.sheet .win-obj{margin:0}
+.sheet .hair{height:1px; background:var(--c-hair); margin:28px 0}
+.sheet .acts{display:flex; gap:11px; flex-wrap:wrap; margin-top:32px}
+.x{position:absolute; top:16px; right:16px; z-index:5; width:36px; height:36px;
+  border-radius:var(--r-pill); border:0; cursor:pointer; background:var(--c-wash);
+  color:var(--c-ink); font-size:18px; line-height:1;
+  transition:background var(--dur-2) var(--ease-out)}
+.x:hover{background:#E9ECE3}
+
+/* ---- buttons ---- */
+.btn{
+  display:inline-flex; align-items:center; justify-content:center; gap:8px;
+  padding:13px 24px; border:0; border-radius:var(--r-sm); cursor:pointer;
+  font-family:var(--f-ui); font-size:var(--t-sm); font-weight:600;
+  background:var(--c-ink); color:#fff; box-shadow:var(--e-1);
+  transition:transform var(--dur-2) var(--ease-out),
+             box-shadow var(--dur-2) var(--ease-out);
+}
+.btn:hover{transform:translateY(var(--lift-1)); box-shadow:var(--e-2)}
+.btn:active{transform:translateY(0); box-shadow:var(--e-press);
+  transition-duration:var(--dur-1)}
+.btn-quiet{background:var(--c-surface); color:var(--c-ink); box-shadow:var(--e-1)}
+
+/* ============================================================
+   Environment adaptation
+   ============================================================ */
+
+/* Motion is disabled at the token level so no component needs an override.
+   Hover SHADOW changes are kept: they are not motion, and removing them
+   would strip the feedback channel from the users who most need it. */
+@media (prefers-reduced-motion:reduce){
+  :root{
+    --dur-1:.01ms; --dur-2:.01ms; --dur-3:.01ms; --dur-4:.01ms;
+    --lift-1:0px; --lift-2:0px; --tilt-max:0deg;
+  }
+  *,*::before,*::after{animation-duration:.01ms!important;
+    animation-iteration-count:1!important; scroll-behavior:auto!important}
+}
+
+/* A shadow-only design needs its edges back when contrast is requested. */
+@media (prefers-contrast:more){
+  .win-hit,.finder{border:1px solid var(--c-hair)}
+  .win-title{color:var(--c-ink)}
+  .win-obj li,.win-foot{color:var(--c-ink-2)}
+}
+
+/* Shadows do not render in forced-colors mode — without this the entire
+   page is invisible boxes on a flat field. */
+@media (forced-colors:active){
+  .win-hit,.finder{border:1px solid CanvasText; box-shadow:none}
+  .cert-badge{filter:none}
+  :where(a,button,input,summary,[tabindex]):focus-visible{
+    outline:2px solid Highlight; outline-offset:2px; box-shadow:none;
+  }
+}

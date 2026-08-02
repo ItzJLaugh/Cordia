@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="robots" content="noindex, nofollow">
+<title>Cordia — Rater</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Newsreader:opsz,wght@6..72,400;5..72,500;6..72,600&family=Work+Sans:wght@500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="assets/cordia-ui.css">
+<style>
+  body{padding:0 0 90px}
+  .top{display:flex;align-items:center;gap:16px;padding:20px 28px;border-bottom:1px solid var(--c-hair)}
+  .top .who{margin-left:auto;font-family:var(--f-label);font-size:12px;color:var(--c-ink-3)}
+  .top .who b{color:var(--c-ink);font-weight:600}
+  main{max-width:760px;margin:0 auto;padding:0 28px}
+  .state{padding:80px 0;text-align:center;color:var(--c-ink-3);font-size:var(--t-base)}
+  .prog{display:flex;align-items:center;gap:14px;margin:32px 0 8px;font-family:var(--f-label);font-size:12px;color:var(--c-ink-3)}
+  .prog .bar{flex:1;height:6px;border-radius:99px;background:var(--c-wash);overflow:hidden}
+  .prog .bar i{display:block;height:100%;width:0%;background:var(--c-moss);transition:width .3s var(--ease-out)}
+  .prog b{color:var(--c-ink);font-weight:600}
+  .pair-flag{display:inline-flex;align-items:center;gap:6px;margin-left:8px;padding:2px 9px;border-radius:99px;
+    background:rgba(74,90,66,.1);color:var(--c-moss);font-size:10.5px;font-weight:600;letter-spacing:.04em;text-transform:uppercase}
+  .card{margin-top:22px;padding:30px 32px;border-radius:var(--r-md);background:var(--c-surface);box-shadow:var(--e-2)}
+  .card .eyebrow{margin-bottom:14px}
+  .prompt{font-family:var(--f-title);font-optical-sizing:auto;font-weight:500;font-size:19px;line-height:1.45;color:var(--c-ink)}
+  .hair{height:1px;background:var(--c-hair);margin:24px 0}
+  .answer-label{font-family:var(--f-label);font-size:10.5px;font-weight:600;letter-spacing:.14em;text-transform:uppercase;color:var(--c-ink-3);margin-bottom:10px}
+  .answer{font-size:15px;line-height:1.65;color:var(--c-ink-2);white-space:pre-wrap}
+  .levels{display:grid;grid-template-columns:repeat(2,1fr);gap:10px;margin-top:28px}
+  @media (max-width:560px){.levels{grid-template-columns:1fr}}
+  .lvl{display:flex;flex-direction:column;align-items:flex-start;gap:3px;padding:14px 16px;border-radius:var(--r-sm);
+    background:var(--c-wash);cursor:pointer;font-family:var(--f-ui);text-align:left;box-shadow:none;
+    transition:background .16s var(--ease-out),transform .16s var(--ease-out)}
+  .lvl b{font-size:13px;color:var(--c-ink);font-weight:600}
+  .lvl span{font-size:11.5px;color:var(--c-ink-3)}
+  .lvl:hover{background:#EFF1EA;transform:translateY(-1px)}
+  .lvl:active{transform:translateY(0)}
+  .lvl.busy{opacity:.5;pointer-events:none}
+  .done{text-align:center;padding:70px 20px}
+  .done h2{font-family:var(--f-title);font-size:28px;color:var(--c-ink);margin:0 0 10px}
+  .done p{color:var(--c-ink-3);font-size:14px;margin:0 0 26px}
+  .kappa-box{margin-top:26px;padding:22px 26px;border-radius:var(--r-md);background:var(--c-surface);box-shadow:var(--e-1);text-align:left}
+  .kappa-box .row{display:flex;justify-content:space-between;padding:7px 0;font-size:13.5px;border-bottom:1px solid var(--c-hair)}
+  .kappa-box .row:last-child{border-bottom:0}
+  .kappa-box .row b{color:var(--c-ink)}
+</style>
+</head>
+<body>
+<header id="shellHeader"></header>
+
+<main id="main">
+  <div class="state" id="loading">Loading…</div>
+</main>
+
+<script>
+(function(){
+  var API = location.hostname === 'localhost' ? 'http://127.0.0.1:9995' : '';
+  var tok = localStorage.getItem('cordia-token') || '';
+  var main = document.getElementById('main');
+
+  function esc(s){ return String(s==null?'':s).replace(/[&<>"]/g,function(c){
+    return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]; }); }
+
+  function api(path, opts){
+    opts = opts || {};
+    var headers = Object.assign({Authorization:'Bearer '+tok}, opts.headers||{});
+    return fetch(API+path, Object.assign({}, opts, {headers:headers}))
+      .then(function(r){ return r.json().then(function(j){ return {status:r.status, body:j}; }); });
+  }
+
+  // block id -> real prompt/kind from the actual exam content, not a copy
+  function findExercise(block){
+    var m = /^m(\d)e(\d)$/.exec(block||'');
+    if(!m || typeof COURSE_AIE1==='undefined') return null;
+    var mod = COURSE_AIE1.modules[+m[1]];
+    var ex = mod && mod.exercises[+m[2]];
+    if(!ex) return null;
+    return {title: mod.title, kind: ex.kind, prompt: ex.prompt};
+  }
+
+  var LEVEL_LABEL = {
+    '0-missing':   ['0 — Missing',      'Restates the problem or gives no usable instruction.'],
+    '1-vague':     ['1 — Vague',        'Names an outcome, no rule an agent could actually follow.'],
+    '2-specific':  ['2 — Specific',     'Gives a concrete rule — what counts, what to do about it.'],
+    '3-falsifiable':['3 — Falsifiable', 'Adds a way to check the work after the fact.'],
+  };
+
+  var queue = [], idx = 0, ratedByMe = 0, pool = 0, rater = null;
+
+  function renderProgress(){
+    var pct = pool ? Math.round(100*ratedByMe/pool) : 0;
+    return '<div class="prog"><span><b>'+ratedByMe+'</b> / '+pool+' rated</span>'+
+      '<div class="bar"><i style="width:'+pct+'%"></i></div><span>rater <b>'+esc(rater)+'</b></span></div>';
+  }
+
+  function renderItem(){
+    if(idx >= queue.length){ return loadMore(); }
+    var item = queue[idx];
+    var ex = findExercise(item.block) || {title:'', kind:item.block, prompt:'(prompt unavailable for '+esc(item.block)+')'};
+    main.innerHTML = renderProgress() +
+      '<div class="card">'+
+        '<p class="eyebrow">'+esc(item.block)+' &middot; '+esc(ex.kind)+
+          (item.paired ? '<span class="pair-flag">completes a pair</span>' : '')+'</p>'+
+        '<p class="prompt">'+esc(ex.prompt)+'</p>'+
+        '<div class="hair"></div>'+
+        '<p class="answer-label">Submitted answer</p>'+
+        '<p class="answer">'+esc(item.value)+'</p>'+
+        '<div class="levels" id="levels">'+
+          Object.keys(LEVEL_LABEL).map(function(lvl){
+            var lab = LEVEL_LABEL[lvl];
+            return '<button class="lvl" data-lvl="'+lvl+'"><b>'+esc(lab[0])+'</b><span>'+esc(lab[1])+'</span></button>';
+          }).join('')+
+        '</div>'+
+      '</div>';
+    document.getElementById('levels').addEventListener('click', function(e){
+      var b = e.target.closest('.lvl'); if(!b) return;
+      submit(item.response_id, b.dataset.lvl);
+    });
+  }
+
+  function submit(responseId, level){
+    document.querySelectorAll('.lvl').forEach(function(b){ b.classList.add('busy'); });
+    api('/train/rate', {method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({response_id: responseId, level: level})})
+      .then(function(res){
+        if(res.status !== 200){ alert('Save failed: '+(res.body.error||res.status)); return; }
+        ratedByMe++; idx++;
+        renderItem();
+      })
+      .catch(function(){ alert('Network error — try again.'); });
+  }
+
+  function loadMore(){
+    main.innerHTML = '<div class="state">Loading next batch…</div>';
+    api('/train/rate/queue?limit=30').then(function(res){
+      if(res.status !== 200){ return fail(res); }
+      queue = res.body.items; idx = 0;
+      pool = res.body.candidate_pool_size; ratedByMe = res.body.rated_by_me;
+      if(queue.length === 0){ return showDone(); }
+      renderItem();
+    });
+  }
+
+  function showDone(){
+    main.innerHTML = renderProgress() +
+      '<div class="done"><h2>Nothing left to rate</h2>'+
+      '<p>You have graded every candidate currently in the corpus. As more real CordiaAIE '+
+      'submissions come in, they will appear here.</p>'+
+      '<div id="kappaBox"></div></div>';
+    api('/train/kappa').then(function(res){
+      var k = res.body;
+      var box = document.getElementById('kappaBox');
+      if(!k.ok){ box.innerHTML=''; return; }
+      box.innerHTML = '<div class="kappa-box">'+
+        '<div class="row"><span>Paired ratings</span><b>'+k.n_pairs+' / '+k.n_required+'</b></div>'+
+        '<div class="row"><span>Candidate pool</span><b>'+k.candidate_pool_size+'</b></div>'+
+        '<div class="row"><span>Cohen&rsquo;s kappa</span><b>'+(k.kappa==null?'—':k.kappa)+'</b></div>'+
+        '<div class="row"><span>Threshold</span><b>'+k.threshold+'</b></div>'+
+        '<div class="row"><span>Passed</span><b>'+(k.passed==null?'not yet gating':(k.passed?'yes':'no'))+'</b></div>'+
+        (k.note ? '<div class="row"><span colspan="2" style="color:var(--c-ink-3)">'+esc(k.note)+'</span></div>' : '')+
+        '</div>';
+    });
+  }
+
+  function fail(res){
+    main.innerHTML = '<div class="state">'+
+      (res.status === 401 ? 'Sign in required. <a href="index.html">Sign in</a>, then reload this page.' :
+       res.status === 403 ? esc(res.body.error || 'This account is not on the rater list.') :
+       'Error: '+esc(res.body.error || res.status))+'</div>';
+  }
+
+  // load real prompts, then real queue
+  var s = document.createElement('script');
+  s.src = 'assets/course-content-aie1.js';
+  s.onload = function(){
+    api('/auth/me').then(function(meRes){
+      if(meRes.status !== 200){ return fail(meRes); }
+      loadMore();
+    });
+  };
+  document.body.appendChild(s);
+})();
+</script>
+<script src="assets/cordia-shell.js" data-nav="certifications"></script>
+</body>
+</html>

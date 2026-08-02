@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Cordia — Pricing</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Newsreader:opsz,wght@6..72,400;6..72,500;6..72,600&family=Work+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Marcellus&family=Source+Serif+4:opsz,wght@8..60,400;8..60,500;8..60,600&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="assets/cordia.css">
+<link rel="stylesheet" href="assets/cordia-ui.css">
+<style>
+.wrap{max-width:1100px;margin:0 auto;padding:48px 26px 80px}
+.head{text-align:center;margin-bottom:40px}
+.head h1{font-size:clamp(30px,3.4vw,44px)}
+.head p{font-family:var(--sans);color:var(--grey);max-width:60ch;margin:12px auto 0;font-size:15px}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:18px}
+.plan{padding:28px;display:flex;flex-direction:column;gap:14px}
+.plan .price{font-family:var(--serif);font-size:42px;line-height:1;color:var(--olive)}
+.plan .price span{font-family:var(--sans);font-size:13px;color:var(--grey);font-weight:400}
+.plan h3{font-size:20px}
+.plan ul{list-style:none;display:grid;gap:9px;font-family:var(--sans);font-size:13.5px;color:var(--ink-soft)}
+.plan ul li{padding-left:22px;position:relative}
+.plan ul li::before{content:"✓";position:absolute;left:0;color:var(--success);font-weight:700}
+.plan .cta{margin-top:auto}
+.badge{align-self:flex-start}
+.note{text-align:center;font-family:var(--sans);font-size:12.5px;color:var(--grey);margin-top:28px}
+.team{margin-top:20px;padding:22px 26px;display:flex;justify-content:space-between;align-items:center;gap:18px;flex-wrap:wrap}
+.team p{font-family:var(--sans);font-size:14px;color:var(--ink-soft)}
+</style>
+</head>
+<body>
+<header id="shellHeader"></header>
+
+<div class="wrap">
+  <div class="head">
+    <span class="small-caps">Pricing</span>
+    <h1>Prove value free. Pay for proof.</h1>
+    <p>The baseline certification is free forever — it exists to spread the standard.
+    Domain tracks certify job-specific judgment, and that's what employers pay for.</p>
+  </div>
+
+  <div class="grid">
+    <div class="glass plan card-hover">
+      <span class="pill green badge">FREE FOREVER</span>
+      <h3>CordiaAIE</h3>
+      <div class="price">$0</div>
+      <ul>
+        <li>Baseline agent-orchestration certification</li>
+        <li>Full 12-block exam, instant scoring</li>
+        <li>Verifiable result page</li>
+        <li>The vocabulary every paid tier builds on</li>
+      </ul>
+      <a class="btn btn-primary cta" href="learn.html">Take the exam</a>
+    </div>
+
+    <div class="glass plan card-hover">
+      <span class="pill badge">PER TRACK</span>
+      <h3>Domain Tracks</h3>
+      <div class="price">$79<span> / track</span></div>
+      <ul>
+        <li>15 industry environments: healthcare, legal, construction, finance…</li>
+        <li>Scenario-based judgment certification</li>
+        <li>Live agent environments, not quizzes</li>
+        <li>Employer-verifiable certificate</li>
+      </ul>
+      <a class="btn btn-primary cta" href="#" onclick="alert('Checkout via Hostinger Reach — wiring soon. Your purchase will unlock this track instantly.');return false">Buy a track</a>
+    </div>
+
+    <div class="glass plan card-hover">
+      <span class="pill gold badge">BEST VALUE</span>
+      <h3>All-Access</h3>
+      <div class="price">$399<span> / year</span></div>
+      <ul>
+        <li>Every current and future domain track</li>
+        <li>New tracks added as they ship</li>
+        <li>Priority scoring & review</li>
+        <li>Locks in launch pricing forever</li>
+      </ul>
+      <a class="btn btn-gold cta" href="#" onclick="alert('Checkout via Hostinger Reach — wiring soon.');return false">Go all-access</a>
+    </div>
+  </div>
+
+  <div class="glass team">
+    <p><b>For teams.</b> Certify your whole operations team — 10+ seats, central billing, admin visibility into results.</p>
+    <a class="btn btn-outline" href="mailto:jackson@cordiacode.com?subject=Cordia%20for%20teams">Talk to us</a>
+  </div>
+
+  <p class="note">Payments are processed by Hostinger Reach. Cordia never sees or stores card details.</p>
+</div>
+
+<script>
+if(sessionStorage.getItem('cordia-auth') !== '1') location.replace('index.html');
+/* sign-out handled by cordia-shell.js */
+</script>
+<script src="assets/cordia-shell.js" data-nav="pricing"></script>
+</body>
+</html>

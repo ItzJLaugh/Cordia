@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Cordia &mdash; Course</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Newsreader:opsz,wght@6..72,400;6..72,500;6..72,600&family=Work+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="assets/cordia-ui.css">
+<style>
+  .head-icons{display:flex;gap:24px;margin:22px 0 0;padding:0;list-style:none}
+  .head-icons li{display:flex;align-items:center;gap:9px}
+  .head-icons svg{width:24px;height:24px;stroke:var(--c-ink);stroke-width:2.4;fill:none;
+    stroke-linecap:round;stroke-linejoin:round}
+  .head-icons span{font-family:var(--f-label);font-size:10.5px;font-weight:500;
+    letter-spacing:.09em;text-transform:uppercase;color:var(--c-ink-3)}
+  .panels{margin-top:44px}
+  .side .card{margin-bottom:20px}
+  .side .card:last-child{margin-bottom:0}
+  .muted{color:var(--c-ink-3);font-size:13.5px;line-height:1.6;margin:0}
+  .req{list-style:none;margin:0;padding:0}
+  .req li{display:flex;gap:11px;align-items:flex-start;padding:11px 0;
+    border-bottom:1px solid var(--c-hair);font-size:13.5px;color:var(--c-ink-2);line-height:1.5}
+  .req li:last-child{border-bottom:0}
+  .req .tick{flex:none;width:16px;height:16px;margin-top:2px}
+  .fail{padding:18px 20px;border-radius:var(--r-sm);background:var(--c-wash);margin-top:20px}
+  .fail p{margin:0;font-size:13.5px;line-height:1.6;color:var(--c-ink-2)}
+  .acts{display:flex;gap:11px;flex-wrap:wrap;margin-top:28px}
+  .courselist{list-style:none;margin:0;padding:0;counter-reset:c}
+  .courselist li{counter-increment:c;position:relative;padding:14px 0 14px 38px;
+    border-bottom:1px solid var(--c-hair);font-size:var(--t-base);color:var(--c-ink-2);line-height:1.45}
+  .courselist li:last-child{border-bottom:0}
+  .courselist li::before{content:counter(c,decimal-leading-zero);position:absolute;left:0;top:15px;
+    font-family:var(--f-label);font-size:11px;font-weight:600;letter-spacing:.08em;color:var(--c-ink-4)}
+</style>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<header id="shellHeader"></header>
+
+<main id="main" class="shell page">
+  <p class="crumb"><a href="training.html">Training</a> &nbsp;/&nbsp; <span id="crumbCat">&mdash;</span></p>
+  <p class="page-eyebrow" id="eyebrow">Course</p>
+  <h1 class="page-title" id="title">&mdash;</h1>
+  <p class="page-sub" id="cog"></p>
+  <ul class="head-icons" id="headIcons" role="list"></ul>
+
+  <div class="panels grid-2">
+    <section class="card card-lg">
+      <h3>Learning objectives</h3>
+      <p class="muted" style="margin-bottom:18px">What you will be able to do that you cannot do now.</p>
+      <ol class="courselist" id="objectives"></ol>
+      <div class="fail" id="failBox" hidden>
+        <p><b>The failure this trains out of you.</b> <span id="failText"></span></p>
+      </div>
+      <div class="acts" id="acts"></div>
+    </section>
+
+    <div class="side">
+      <section class="card">
+        <h3>Before you start</h3>
+        <ul class="req" id="reqs"></ul>
+      </section>
+      <section class="card" id="envCard" hidden>
+        <h3>The environment</h3>
+        <p class="muted" id="envTitle" style="color:var(--c-ink);font-weight:600;margin-bottom:8px"></p>
+        <p class="muted" id="envSetup"></p>
+      </section>
+      <section class="card" id="evalCard" hidden>
+        <h3>How it is scored</h3>
+        <p class="muted" id="evalText"></p>
+      </section>
+    </div>
+  </div>
+</main>
+
+<script src="assets/curriculum-tracks-a.js"></script>
+<script src="assets/curriculum-tracks-b.js"></script>
+<script src="assets/curriculum-tracks-c.js"></script>
+<script src="assets/curriculum-groups.js"></script>
+<script src="assets/cordia-icons.js"></script>
+<script src="assets/cordia-shell.js" data-nav="training"></script>
+<script>
+(function(){
+  var API = location.hostname==='localhost' ? 'http://127.0.0.1:9995' : '';
+  function esc(s){return String(s==null?'':s).replace(/[&<>"]/g,function(c){
+    return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];});}
+  function escUrl(p){return String(p==null?'':p).replace(/[^A-Za-z0-9._\/-]/g,'');}
+  function $(id){return document.getElementById(id);}
+
+  var id = new URLSearchParams(location.search).get('track') || '';
+  var t = (TRACKS||[]).filter(function(x){return x.id===id;})[0];
+
+  if(!t){
+    $('title').textContent = 'Course not found';
+    $('cog').textContent = 'No domain track matches “'+id+'”.';
+    $('acts').innerHTML = '<a class="btn" href="training.html">Back to training</a>';
+    return;
+  }
+
+  var cat = (CATEGORIES||[]).filter(function(c){return c.tracks.indexOf(t.id)>-1;})[0];
+  document.title = 'Cordia — ' + t.name;
+  $('crumbCat').textContent = cat ? cat.name : 'Course';
+  $('eyebrow').textContent = 'Course ' + String(t.n).padStart(2,'0');
+  $('title').textContent = t.name;
+  $('cog').textContent = t.cog || '';
+
+  if(cat){
+    $('headIcons').innerHTML = cat.icons.map(function(n){
+      var i = (typeof ICONS!=='undefined') && ICONS[n];
+      if(!i) return '';
+      return '<li><svg viewBox="0 0 48 48" aria-hidden="true">'+
+        i.d.map(function(d){return '<path d="'+d+'"/>';}).join('')+
+        '</svg><span>'+esc(i.t)+'</span></li>';
+    }).join('');
+  }
+
+  $('objectives').innerHTML = (t.courses||[]).map(function(c){
+    return '<li>'+esc(typeof c==='string'?c:(c.t||c.name||''))+'</li>';
+  }).join('');
+
+  if(t.fail){ $('failBox').hidden=false; $('failText').textContent = t.fail; }
+  if(t.env){
+    $('envCard').hidden=false;
+    $('envTitle').textContent = t.env.title||'';
+    $('envSetup').textContent = t.env.setup||'';
+  }
+  if(t.evalnote){ $('evalCard').hidden=false; $('evalText').textContent = t.evalnote; }
+
+  var TICK = '<svg class="tick" viewBox="0 0 24 24" fill="none" stroke="currentColor" '+
+    'stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">'+
+    '<path d="M4 12.5 L9.5 18 L20 6.5"/></svg>';
+  var DOT = '<svg class="tick" viewBox="0 0 24 24" fill="none" stroke="currentColor" '+
+    'stroke-width="2.2" aria-hidden="true"><circle cx="12" cy="12" r="7"/></svg>';
+
+  function renderReqs(unlocked, signedIn){
+    $('reqs').innerHTML =
+      '<li>'+(signedIn?TICK:DOT)+'<span>A Cordia account'+
+        (signedIn?'':' &mdash; <a href="index.html">sign in</a>')+'</span></li>'+
+      '<li>'+(unlocked?TICK:DOT)+'<span>Access to this track'+
+        (unlocked?'':' &mdash; <a href="pricing.html">unlock for $79</a>')+'</span></li>'+
+      '<li>'+DOT+'<span>Around 45 minutes, uninterrupted. Every answer is free text and '+
+        'is saved as you go.</span></li>'+
+      '<li>'+DOT+'<span>CordiaAIE first is recommended, not required &mdash; '+
+        '<a href="exam.html?cert=aie">see the certification</a>.</span></li>';
+
+    var courseName = (t.courses&&t.courses[0])||'';
+    if(typeof courseName!=='string') courseName = courseName.t||courseName.name||'';
+    $('acts').innerHTML = unlocked
+      ? '<a class="btn" href="course.html?track='+escUrl(t.id)+
+          '&course='+encodeURIComponent(courseName)+'">Start the course</a>'+
+        '<a class="btn btn-quiet" href="environment.html?track='+escUrl(t.id)+'">Open the environment</a>'
+      : '<a class="btn" href="pricing.html">Unlock &mdash; $79</a>'+
+        '<a class="btn btn-quiet" href="training.html">Back to training</a>';
+  }
+
+  renderReqs(false,false);
+  fetch(API+'/pay/my-access',{headers:{Authorization:'Bearer '+(localStorage.getItem('cordia-token')||'')}})
+    .then(function(r){return r.ok?r.json():null;})
+    .then(function(d){
+      if(!d||!d.ok) return;
+      var ents=d.entitlements||[], ok=false;
+      for(var i=0;i<ents.length;i++) if(ents[i].track==='*') ok=true;
+      if((d.free_tracks||[]).indexOf(t.id)>-1) ok=true;
+      for(var j=0;j<ents.length;j++) if(ents[j].track===t.id) ok=true;
+      renderReqs(ok,true);
+    })
+    .catch(function(){});
+})();
+</script>
+</body>
+</html>

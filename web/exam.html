@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Cordia &mdash; Certification</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Newsreader:opsz,wght@6..72,400;6..72,500;6..72,600&family=Work+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="assets/cordia-ui.css">
+<style>
+  .hero{display:flex;gap:32px;align-items:flex-start;flex-wrap:wrap}
+  .hero img{width:120px;height:120px;flex:none;
+    filter:drop-shadow(0 1px 1px rgba(11,11,11,.13)) drop-shadow(0 4px 6px rgba(11,11,11,.10))}
+  .hero-body{flex:1;min-width:280px}
+  .panels{margin-top:44px}
+  .mods{list-style:none;margin:0;padding:0}
+  .mods li{display:flex;align-items:center;gap:14px;padding:15px 0;
+    border-bottom:1px solid var(--c-hair)}
+  .mods li:last-child{border-bottom:0}
+  .mods .n{font-family:var(--f-label);font-size:11px;font-weight:600;letter-spacing:.1em;
+    color:var(--c-ink-4);width:26px;flex:none}
+  .mods .t{flex:1;font-size:var(--t-base);color:var(--c-ink-2)}
+  .mods .c{font-family:var(--f-label);font-size:10.5px;font-weight:600;letter-spacing:.1em;
+    text-transform:uppercase;color:var(--c-ink-4)}
+  .side .card{margin-bottom:20px}
+  .side .card:last-child{margin-bottom:0}
+  .blocks{display:grid;grid-template-columns:repeat(6,1fr);gap:6px;margin-top:14px}
+  .blocks i{display:block;height:26px;border-radius:5px;background:var(--c-wash)}
+  .blocks i.done{background:var(--c-moss)}
+  .acts{display:flex;gap:11px;flex-wrap:wrap;margin-top:26px}
+  .muted{color:var(--c-ink-3);font-size:13.5px;line-height:1.6;margin:0}
+  .scoreline{display:flex;align-items:baseline;gap:12px;margin:0 0 6px}
+  .scoreline b{font-family:var(--f-title);font-optical-sizing:auto;font-weight:500;
+    font-size:44px;line-height:1;color:var(--c-ink)}
+  .qbreak{list-style:none;margin:18px 0 0;padding:0}
+  .qbreak li{display:flex;gap:12px;align-items:baseline;padding:9px 0;
+    border-bottom:1px solid var(--c-hair);font-size:13px}
+  .qbreak li:last-child{border-bottom:0}
+  .qbreak .b{font-family:var(--mono,ui-monospace,monospace);font-size:11px;
+    color:var(--c-ink-4);width:44px;flex:none}
+  .qbreak .lv{font-family:var(--f-label);font-weight:600;font-size:11px;
+    color:var(--c-ink);width:30px;flex:none}
+  .qbreak .r{flex:1;color:var(--c-ink-3);line-height:1.45}
+</style>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<header id="shellHeader"></header>
+
+<main id="main" class="shell page">
+  <p class="crumb"><a href="certifications.html">Certifications</a> &nbsp;/&nbsp; <span id="crumbNow">&mdash;</span></p>
+
+  <div class="hero">
+    <img id="heroBadge" src="assets/img/badge-aie.svg" alt="" width="120" height="120">
+    <div class="hero-body">
+      <h1 class="page-title" id="certCode">&mdash;</h1>
+      <p class="page-sub" id="certBlurb"></p>
+      <div class="stats" style="margin-top:26px">
+        <div class="stat"><b id="statItems">&mdash;</b><span>Items</span></div>
+        <div class="stat"><b id="statDone">&mdash;</b><span>Answered</span></div>
+        <div class="stat"><b id="statScore">&mdash;</b><span>Score</span></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="panels grid-2">
+    <section class="card card-lg">
+      <h3 id="panelTitle">What this exam covers</h3>
+      <ol class="mods" id="mods"></ol>
+      <div class="acts" id="acts"></div>
+    </section>
+
+    <div class="side">
+      <section class="card">
+        <h3>Progress</h3>
+        <p class="muted" id="progNote">Checking your submissions&hellip;</p>
+        <div class="blocks" id="blocks"></div>
+      </section>
+      <section class="card">
+        <h3>Result</h3>
+        <div id="result"><p class="muted">No result yet. Finish every item to be scored.</p></div>
+      </section>
+    </div>
+  </div>
+</main>
+
+<script src="assets/cordia-certs.js"></script>
+<script src="assets/course-content-aie1.js"></script>
+<script src="assets/cordia-shell.js" data-nav="certifications"></script>
+<script>
+(function(){
+  var API = location.hostname==='localhost' ? 'http://127.0.0.1:9995' : '';
+  var tok = localStorage.getItem('cordia-token')||'';
+  function esc(s){return String(s==null?'':s).replace(/[&<>"]/g,function(c){
+    return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];});}
+  function $(id){return document.getElementById(id);}
+
+  var id = new URLSearchParams(location.search).get('cert') || 'aie';
+  var cert = CERT_INSTRUMENTS.filter(function(c){return c.id===id;})[0] || CERT_INSTRUMENTS[0];
+
+  $('crumbNow').textContent = cert.code;
+  $('certCode').textContent = cert.code;
+  $('certBlurb').textContent = cert.blurb;
+  $('heroBadge').src = cert.badge;
+  document.title = 'Cordia — ' + cert.code;
+
+  // Only CordiaAIE has authored content today. Say so rather than rendering
+  // an empty shell that implies the exam exists.
+  var isAie = cert.id === 'aie';
+  var BLOCKS = [];
+  if (isAie && typeof COURSE_AIE1 !== 'undefined') {
+    COURSE_AIE1.modules.forEach(function(m,mi){
+      m.exercises.forEach(function(e,ei){ BLOCKS.push('m'+mi+'e'+ei); });
+    });
+    $('statItems').textContent = BLOCKS.length;
+    $('mods').innerHTML = COURSE_AIE1.modules.map(function(m,i){
+      return '<li><span class="n">'+String(i+1).padStart(2,'0')+'</span>'+
+        '<span class="t">'+esc(m.short||m.title)+'</span>'+
+        '<span class="c">'+m.exercises.length+' items</span></li>';
+    }).join('');
+    $('acts').innerHTML =
+      '<a class="btn" href="learn.html">Start the exam</a>'+
+      '<a class="btn btn-quiet" href="assessment.html">Open assessment</a>';
+  } else {
+    $('statItems').textContent = cert.items || '—';
+    $('panelTitle').textContent = 'Not yet available';
+    $('mods').innerHTML = '<li><span class="t">'+
+      esc(cert.code)+' has no authored items yet. '+
+      'CordiaAIE is the live certification today.</span></li>';
+    $('acts').innerHTML = '<a class="btn btn-quiet" href="certifications.html">Back to certifications</a>';
+    $('progNote').textContent = 'Nothing to track until this exam exists.';
+    $('blocks').innerHTML = '';
+  }
+
+  if (!isAie) return;
+
+  $('blocks').innerHTML = BLOCKS.map(function(b){
+    return '<i data-b="'+b+'" title="'+b+'"></i>';
+  }).join('');
+
+  // progress from the learner's own rows
+  fetch(API+'/train/responses?track=aie1',{headers:{Authorization:'Bearer '+tok}})
+    .then(function(r){return r.ok?r.json():null;})
+    .then(function(d){
+      if(!d){ $('progNote').textContent='Sign in to see your progress.'; return; }
+      // /train/responses strips `learner` when unauthenticated, so an
+      // unauthenticated caller cannot be attributed to anyone — only count
+      // rows we can actually confirm are ours.
+      var mine = (d.responses||[]).filter(function(r){return r.learner;});
+      var done = {};
+      mine.forEach(function(r){ if(r.value && r.value.trim()) done[r.block]=1; });
+      var n = BLOCKS.filter(function(b){return done[b];}).length;
+      $('statDone').textContent = n+' / '+BLOCKS.length;
+      $('progNote').textContent = n===0 ? 'You have not answered any items yet.'
+        : (n<BLOCKS.length ? (BLOCKS.length-n)+' items left before you can be scored.'
+                           : 'All items answered. You can be scored.');
+      BLOCKS.forEach(function(b){
+        var cell = document.querySelector('.blocks i[data-b="'+b+'"]');
+        if(cell && done[b]) cell.classList.add('done');
+      });
+    })
+    .catch(function(){ $('progNote').textContent='Could not load progress.'; });
+
+  // result
+  fetch(API+'/train/certification',{headers:{Authorization:'Bearer '+tok}})
+    .then(function(r){return r.json().then(function(j){return {s:r.status,j:j};});})
+    .then(function(res){
+      var box = $('result');
+      if(res.s===401){ box.innerHTML='<p class="muted">Sign in to see your result.</p>'; return; }
+      if(res.s!==200||!res.j.ok){
+        box.innerHTML='<p class="muted">'+esc(res.j.error||'No result yet.')+'</p>'; return;
+      }
+      var d=res.j;
+      $('statScore').textContent = (d.percent!=null?d.percent:'—')+'%';
+      box.innerHTML =
+        '<div class="scoreline"><b>'+esc(d.percent)+'%</b>'+
+          '<span class="pill '+(d.passed?'ok':'')+'">'+(d.passed?'Passed':'Not yet passing')+'</span></div>'+
+        '<p class="muted">'+esc(d.score)+' / '+esc(d.max_score)+
+          ' &middot; scored by '+esc(d.scoring_method||'rubric')+'</p>'+
+        '<ul class="qbreak">'+(d.questions||[]).map(function(q){
+          return '<li><span class="b">'+esc(q.block)+'</span>'+
+            '<span class="lv">'+esc(q.level)+'/3</span>'+
+            '<span class="r">'+esc(q.why||q.reason||'')+'</span></li>';
+        }).join('')+'</ul>';
+    })
+    .catch(function(){});
+})();
+</script>
+</body>
+</html>

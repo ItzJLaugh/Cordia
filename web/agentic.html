@@ -1,0 +1,327 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Cordia &mdash; Agentic Interface</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Newsreader:opsz,wght@6..72,400;6..72,500;6..72,600&family=Work+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="assets/cordia-ui.css">
+<style>
+  :root{--rule:rgba(11,11,11,.13)}
+  .bp{max-width:1320px;margin:0 auto;padding:0 30px 90px}
+  .bp-frame{border:1px solid var(--rule);border-radius:var(--r-md);
+    background:var(--c-surface);box-shadow:var(--e-1);overflow:hidden}
+  .bp-top{display:flex;align-items:center;gap:16px;padding:16px 24px;border-bottom:1px solid var(--rule)}
+  .bp-top .id{margin-left:auto;font-family:var(--f-label);font-size:10px;font-weight:600;
+    letter-spacing:.2em;text-transform:uppercase;color:var(--c-ink-3)}
+  .bp-body{display:grid;grid-template-columns:1fr;gap:0}
+  @media (min-width:1040px){.bp-body{grid-template-columns:250px 1fr 250px}}
+  .rail{padding:26px 24px}
+  .rail + .rail{border-top:1px solid var(--rule)}
+  @media (min-width:1040px){
+    .rail{border-top:0}
+    .rail.left{border-right:1px solid var(--rule)}
+    .rail.right{border-left:1px solid var(--rule)}
+  }
+  .lab{font-family:var(--f-label);font-size:10px;font-weight:600;letter-spacing:.18em;
+    text-transform:uppercase;color:var(--c-ink-3);margin:0 0 4px}
+  .lab::before{content:"// ";color:var(--c-ink-4)}
+  .dash{width:26px;height:1px;background:var(--rule);margin:10px 0 14px}
+  .headline{font-family:var(--f-ui);font-weight:800;font-size:clamp(30px,3.6vw,46px);
+    line-height:.98;letter-spacing:-.035em;color:var(--c-ink);margin:0 0 18px}
+  .sub{font-family:var(--f-label);font-size:11.5px;letter-spacing:.06em;
+    line-height:1.7;color:var(--c-ink-3);margin:0}
+  .rows{list-style:none;margin:16px 0 0;padding:0}
+  .rows li{display:flex;align-items:baseline;gap:8px;padding:6px 0;
+    font-family:var(--f-label);font-size:11px;letter-spacing:.1em;text-transform:uppercase;
+    color:var(--c-ink-2)}
+  .rows .dots{flex:1;border-bottom:1px dotted var(--rule);transform:translateY(-3px)}
+  .rows .v{font-family:var(--mono,ui-monospace,monospace);font-size:11px;color:var(--c-ink-3)}
+  .stage{position:relative;min-height:520px;display:flex;align-items:center;justify-content:center;
+    padding:22px}
+  #graph{width:100%;height:100%;min-height:480px;color:var(--c-ink)}
+  .stage-note{position:absolute;left:24px;bottom:18px;font-family:var(--f-label);
+    font-size:10px;letter-spacing:.16em;text-transform:uppercase;color:var(--c-ink-4)}
+  .gate{max-width:420px;text-align:center;color:var(--c-ink-3);font-size:14px;line-height:1.65}
+  .gate b{display:block;font-family:var(--f-title);font-size:20px;color:var(--c-ink);margin-bottom:10px}
+  .gate a{font-weight:600;color:var(--c-ink)}
+  .bp-foot{display:grid;grid-template-columns:1fr;gap:0;border-top:1px solid var(--rule)}
+  @media (min-width:760px){.bp-foot{grid-template-columns:repeat(3,1fr)}}
+  .foot-cell{padding:18px 24px}
+  .foot-cell + .foot-cell{border-top:1px solid var(--rule)}
+  @media (min-width:760px){.foot-cell + .foot-cell{border-top:0;border-left:1px solid var(--rule)}}
+  .foot-cell .v{font-family:var(--mono,ui-monospace,monospace);font-size:12px;color:var(--c-ink-2);margin-top:6px}
+  .strip{display:flex;justify-content:center;gap:22px;padding:16px;border-top:1px solid var(--rule);
+    font-family:var(--f-label);font-size:10px;font-weight:600;letter-spacing:.24em;
+    text-transform:uppercase;color:var(--c-ink-4)}
+  /* tree view */
+  .tabs{display:flex;gap:6px;padding:0 24px 0;margin-top:-4px}
+  .tabs button{border:0;background:transparent;cursor:pointer;padding:9px 14px;
+    font-family:var(--f-label);font-size:11px;font-weight:600;letter-spacing:.12em;
+    text-transform:uppercase;color:var(--c-ink-3);border-bottom:2px solid transparent}
+  .tabs button.on{color:var(--c-ink);border-bottom-color:var(--c-ink)}
+  pre.tree{margin:0;padding:26px 24px 30px;overflow-x:auto;
+    font-family:var(--mono,ui-monospace,monospace);font-size:12px;line-height:1.75;
+    color:var(--c-ink-2);white-space:pre}
+  pre.tree .net{color:#8A3E2A;font-weight:500}
+  pre.tree .k{color:var(--c-ink)}
+</style>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<header id="shellHeader"></header>
+
+<main id="main" class="bp page">
+  <div class="bp-frame">
+    <div class="bp-top">
+      <img src="assets/img/cordia-logo-header.webp" alt="Cordia" style="height:20px;width:auto">
+      <span class="id" id="sysId">SYS &mdash; &mdash;</span>
+    </div>
+
+    <div class="bp-body">
+      <aside class="rail left">
+        <p class="lab">Operator</p>
+        <div class="dash"></div>
+        <h1 class="headline">COMPILE.<br>CHECK.<br>DELEGATE.</h1>
+        <p class="sub">Measured today,<br>trusted tomorrow.</p>
+        <p class="lab" style="margin-top:30px">Dimensions</p>
+        <div class="dash"></div>
+        <ul class="rows" id="dims"></ul>
+      </aside>
+
+      <section class="stage">
+        <svg id="graph" role="img" aria-label="Your compiled agent system"></svg>
+        <div class="gate" id="gate" hidden></div>
+        <span class="stage-note" id="stageNote">system graph</span>
+      </section>
+
+      <aside class="rail right">
+        <p class="lab">Mission</p>
+        <div class="dash"></div>
+        <p class="sub">Your certification did not just grade you. It compiled an
+          agent architecture: strong dimensions run autonomously, weak ones get a
+          human checkpoint, unmeasured ones observe until proven.</p>
+        <p class="lab" style="margin-top:30px">Status</p>
+        <div class="dash"></div>
+        <ul class="rows" id="status"></ul>
+      </aside>
+    </div>
+
+    <div class="tabs">
+      <button id="tabGraph" class="on" type="button">Graph</button>
+      <button id="tabTree" type="button">File structure</button>
+    </div>
+    <pre class="tree" id="tree" hidden></pre>
+
+    <div class="bp-foot">
+      <div class="foot-cell"><p class="lab">Scorer</p><div class="v" id="fScorer">&mdash;</div></div>
+      <div class="foot-cell"><p class="lab">Compiled</p><div class="v" id="fCompiled">&mdash;</div></div>
+      <div class="foot-cell"><p class="lab">Validation</p><div class="v" id="fValid">&mdash;</div></div>
+    </div>
+    <div class="strip">Compile &middot; Check &middot; Delegate &middot; Repeat</div>
+  </div>
+</main>
+
+<script src="assets/cordia-shell.js" data-nav="certifications"></script>
+<script>
+(function(){
+  var API = location.hostname==='localhost' ? 'http://127.0.0.1:9995' : '';
+  var tok = localStorage.getItem('cordia-token')||'';
+  var NS='http://www.w3.org/2000/svg';
+  var reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  function esc(s){return String(s==null?'':s).replace(/[&<>"]/g,function(c){
+    return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];});}
+  function $(id){return document.getElementById(id);}
+
+  var DIMS = ['source','success','safety','steering','switch','sharpen'];
+
+  // The six agents and how they connect. Mode is decided by measured strength
+  // when a real manifest exists; until then every node renders as `shadow`,
+  // which is the honest default — unmeasured means observe-only.
+  var AGENTS = [
+    {id:'soul',  name:'SOUL',        x:.50, y:.13, role:'orchestrator'},
+    {id:'intake',name:'Intake',      x:.18, y:.36, role:'agent'},
+    {id:'verify',name:'Verification',x:.50, y:.42, role:'agent'},
+    {id:'gate',  name:'Gatekeeper',  x:.82, y:.36, role:'agent'},
+    {id:'coord', name:'Coordinator', x:.32, y:.72, role:'agent'},
+    {id:'esc',   name:'Escalation',  x:.68, y:.72, role:'agent'},
+    {id:'rev',   name:'Revision',    x:.50, y:.90, role:'agent'},
+  ];
+  var LINKS = [['soul','intake'],['soul','verify'],['soul','gate'],
+               ['intake','verify'],['verify','gate'],['intake','coord'],
+               ['verify','coord'],['gate','esc'],['coord','esc'],
+               ['coord','rev'],['esc','rev'],['verify','rev']];
+
+  function drawGraph(modeById){
+    var svg = $('graph');
+    svg.setAttribute('viewBox','0 0 1 1');
+    svg.setAttribute('preserveAspectRatio','xMidYMid meet');
+    svg.innerHTML='';
+    var byId={}; AGENTS.forEach(function(a){byId[a.id]=a;});
+
+    var gl=document.createElementNS(NS,'g');
+    gl.setAttribute('stroke','currentColor');
+    gl.setAttribute('stroke-width','0.0022');
+    gl.setAttribute('opacity','.28');
+    LINKS.forEach(function(l){
+      var a=byId[l[0]], b=byId[l[1]];
+      var e=document.createElementNS(NS,'line');
+      e.setAttribute('x1',a.x); e.setAttribute('y1',a.y);
+      e.setAttribute('x2',b.x); e.setAttribute('y2',b.y);
+      gl.appendChild(e);
+    });
+    svg.appendChild(gl);
+
+    AGENTS.forEach(function(a){
+      var mode = modeById[a.id] || 'shadow';
+      var g=document.createElementNS(NS,'g');
+      g.setAttribute('tabindex','0');
+      g.setAttribute('role','listitem');
+      g.setAttribute('aria-label', a.name+' — '+mode);
+
+      var r = a.role==='orchestrator' ? .042 : .034;
+      var c=document.createElementNS(NS,'circle');
+      c.setAttribute('cx',a.x); c.setAttribute('cy',a.y); c.setAttribute('r',r);
+      c.setAttribute('fill', mode==='shadow' ? 'none' : 'currentColor');
+      c.setAttribute('stroke','currentColor');
+      c.setAttribute('stroke-width','0.0035');
+      c.setAttribute('opacity', mode==='shadow' ? '.35' : '.92');
+      if(mode==='checkpoint') c.setAttribute('stroke-dasharray','0.012 0.010');
+      g.appendChild(c);
+
+      var t=document.createElementNS(NS,'text');
+      t.setAttribute('x',a.x); t.setAttribute('y',a.y+r+0.045);
+      t.setAttribute('text-anchor','middle');
+      t.setAttribute('font-size','0.026');
+      t.setAttribute('font-family','Work Sans, sans-serif');
+      t.setAttribute('letter-spacing','0.0025');
+      t.setAttribute('fill','currentColor');
+      t.setAttribute('opacity','.72');
+      t.textContent=a.name.toUpperCase();
+      g.appendChild(t);
+      svg.appendChild(g);
+
+      if(!reduce && mode!=='shadow'){
+        var pulse=document.createElementNS(NS,'animate');
+        pulse.setAttribute('attributeName','opacity');
+        pulse.setAttribute('values','.92;.55;.92');
+        pulse.setAttribute('dur',(3.2+Math.random()*1.8).toFixed(1)+'s');
+        pulse.setAttribute('repeatCount','indefinite');
+        c.appendChild(pulse);
+      }
+    });
+  }
+
+  function renderTree(modeById, industries){
+    var L=[];
+    function row(s, cls){ L.push(cls?'<span class="'+cls+'">'+esc(s)+'</span>':esc(s)); }
+    row('System');
+    row('  ├── Agents');
+    AGENTS.filter(function(a){return a.role==='agent';}).forEach(function(a,i,arr){
+      var last = i===arr.length-1;
+      var mode = modeById[a.id]||'shadow';
+      L.push('  │     '+(last?'└──':'├──')+' '+esc(a.name)+
+             '  ['+esc(mode)+']');
+    });
+    row('  ├── Orchestrator');
+    row('  │     └── SOUL  /soul/task');
+    row('  ├── Pipelines');
+    row('  │     ├── MCP ────── mcp:policy-store');
+    row('  │     └── RAG ────── instruction-corpus, past-intents');
+    row('  ├── Surfaces');
+    row('  │     ├── APIs ───── training/train/respond');
+    row('  │     └── HiveBus ── /hive/message');
+    row('  ├── Context');
+    row('  │     └── /var/lib/cordia/context/');
+    row('  └── Network');
+    L.push('        ├── router ──────────── <span class="net">[network device]</span>');
+    L.push('        └── switch ──────────── <span class="net">[network device]</span>');
+    if(industries && industries.length){
+      L.push('');
+      L.push('  industries: '+esc(industries.join(', ')));
+    }
+    $('tree').innerHTML = L.join('\n');
+  }
+
+  function setRails(prof, note){
+    $('dims').innerHTML = DIMS.map(function(d){
+      var v = prof && prof[d];
+      return '<li><span>'+d+'</span><span class="dots"></span>'+
+        '<span class="v">'+(v==null?'—':(typeof v==='number'?v.toFixed(1):esc(v)))+'</span></li>';
+    }).join('');
+    $('status').innerHTML = (note||[]).map(function(n){
+      return '<li><span>'+esc(n[0])+'</span><span class="dots"></span><span class="v">'+esc(n[1])+'</span></li>';
+    }).join('');
+  }
+
+  function showGate(html){
+    $('graph').style.display='none';
+    $('gate').hidden=false;
+    $('gate').innerHTML=html;
+    $('stageNote').textContent='not compiled';
+  }
+
+  // defaults before anything loads — never invent numbers
+  setRails(null, [['scorer','rubric'],['kappa','pending'],['6S','shadow']]);
+  drawGraph({});
+  renderTree({}, null);
+  $('fScorer').textContent='rubric';
+  $('fValid').textContent='κ pending — rubric unvalidated';
+  $('fCompiled').textContent=AGENTS.length+' nodes, '+LINKS.length+' edges';
+
+  $('tabGraph').onclick=function(){
+    this.classList.add('on'); $('tabTree').classList.remove('on');
+    $('tree').hidden=true; document.querySelector('.stage').style.display='';
+  };
+  $('tabTree').onclick=function(){
+    this.classList.add('on'); $('tabGraph').classList.remove('on');
+    $('tree').hidden=false; document.querySelector('.stage').style.display='none';
+  };
+
+  if(!tok){
+    showGate('<b>Sign in to compile</b>Your agent system is derived from your own '+
+      'certification. <a href="index.html">Sign in</a> to see it.');
+    return;
+  }
+
+  fetch(API+'/train/manifest',{headers:{Authorization:'Bearer '+tok}})
+    .then(function(r){return r.json().then(function(j){return {s:r.status,j:j};});})
+    .then(function(res){
+      if(res.s===402 || (res.j && res.j.survey_required)){
+        showGate('<b>One step left</b>The exit survey has to be completed before your '+
+          'system can be compiled. <a href="survey.html">Take the survey</a>.');
+        return;
+      }
+      if(res.s===404){
+        showGate('<b>Nothing to compile yet</b>Finish <a href="exam.html?cert=aie">CordiaAIE</a> '+
+          'and your system will be built from the result.');
+        return;
+      }
+      if(res.s!==200 || !res.j.ok){
+        showGate('<b>Not available</b>'+esc((res.j&&res.j.msg)||'Could not load your manifest.'));
+        return;
+      }
+      var prof = res.j.profile || null;
+      var man  = res.j.manifest || {};
+      var modeById = {};
+      (man.agents||[]).forEach(function(a){
+        var key = String(a.id||a.name||'').toLowerCase();
+        AGENTS.forEach(function(x){ if(key.indexOf(x.id)>-1) modeById[x.id]=a.mode||'shadow'; });
+      });
+      if(!Object.keys(modeById).length) AGENTS.forEach(function(a){modeById[a.id]='shadow';});
+      drawGraph(modeById);
+      renderTree(modeById, man.industries);
+      setRails(prof, [['scorer','rubric'],['kappa','pending'],
+                      ['hop budget', String(man.hop_budget||'—')]]);
+      $('sysId').textContent='SYS — '+String(res.j.system_id||'CDA-2026-001');
+      $('stageNote').textContent='compiled from your certification';
+    })
+    .catch(function(){
+      showGate('<b>Backend unreachable</b>The manifest service did not respond.');
+    });
+})();
+</script>
+</body>
+</html>

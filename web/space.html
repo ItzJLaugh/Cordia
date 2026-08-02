@@ -4,13 +4,14 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Cordia — Your Space</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Newsreader:opsz,wght@6..72,400;6..72,500;6..72,600&family=Work+Sans:wght@400;500;600&display=swap" rel="stylesheet">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Marcellus&family=Source+Serif+4:opsz,wght@8..60,400;8..60,500;8..60,600&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="assets/cordia-logo.css">
 <link rel="stylesheet" href="assets/cordia.css">
+<link rel="stylesheet" href="assets/cordia-ui.css">
 <style>
 body{overflow-x:hidden}
-#cosmos{position:fixed;inset:0;z-index:0}
 .space-wrap{position:relative;z-index:2;min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:90px 24px 60px;text-align:center}
 .space-title{margin-bottom:14px;animation:fadeDown .9s cubic-bezier(.22,.8,.3,1)}
 .space-title h1{font-size:clamp(34px,4.5vw,56px)}
@@ -42,24 +43,7 @@ body{overflow-x:hidden}
 </style>
 </head>
 <body>
-<canvas id="cosmos"></canvas>
-<nav class="topbar">
-  <div class="topbar-inner">
-    <a class="brand" href="space.html">
-      <div class="cordia-flower">
-        <div class="petal"></div><div class="petal"></div><div class="petal"></div>
-        <div class="petal"></div><div class="petal"></div><div class="petal"></div>
-        <div class="core"></div>
-      </div>
-      <div><div class="brand-word">Cordia</div><div class="brand-sub">Your Space</div></div>
-    </a>
-  </div>
-</nav>
-<div class="user-chip glass">
-  <span class="dot"></span>
-  <span id="userEmail">operator</span>
-  <a href="#" id="signOut">Sign out</a>
-</div>
+<header id="shellHeader"></header>
 <div class="space-wrap">
   <div class="space-title">
     <span class="small-caps">Welcome to your space</span>
@@ -81,45 +65,14 @@ body{overflow-x:hidden}
   <div class="space-hint">drift with the current · click a bubble to travel</div>
 </div>
 <div class="cordia-loader" id="loader">
-  <div class="cordia-flower lg spin">
-    <div class="petal"></div><div class="petal"></div><div class="petal"></div>
-    <div class="petal"></div><div class="petal"></div><div class="petal"></div>
-    <div class="core"></div>
-  </div>
+  <img src="/assets/img/cordia-icon.png" alt="" style="height:64px;width:auto;display:block;margin:0 auto">
   <div class="load-word">Traveling</div>
 </div>
 <script>
 if(sessionStorage.getItem('cordia-auth') !== '1') location.replace('index.html');
-document.getElementById('userEmail').textContent = sessionStorage.getItem('cordia-user') || 'operator';
+/* identity is shown by cordia-shell.js */
 const API = (location.hostname === 'localhost' || location.hostname === '127.0.0.1' ? 'http://127.0.0.1:9995' : location.protocol + '//' + location.hostname + (location.protocol === 'https:' ? '' : ':9995'));
-document.getElementById('signOut').onclick = e => {
-  e.preventDefault();
-  const t = localStorage.getItem('cordia-token');
-  if(t){ try{ fetch(API + '/auth/logout', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({token:t})}).catch(()=>{}); }catch(_){}}
-  localStorage.removeItem('cordia-token');
-  sessionStorage.removeItem('cordia-auth');
-  location.replace('index.html');
-};
-const cv = document.getElementById('cosmos'), cx = cv.getContext('2d');
-function sizeCv(){ cv.width = innerWidth; cv.height = innerHeight; }
-sizeCv(); addEventListener('resize', sizeCv);
-const stars = Array.from({length: 170}, () => ({x: Math.random()*innerWidth, y: Math.random()*innerHeight, r: Math.random()*1.5+.3, tw: Math.random()*Math.PI*2, sp: Math.random()*.12+.03}));
-const nebulae = [{x:.18,y:.28,r:.42,h:'120,150,90',a:.10},{x:.82,y:.68,r:.48,h:'150,180,120',a:.08},{x:.55,y:.12,r:.30,h:'110,170,130',a:.07}];
-(function drawCosmos(){
-  cx.clearRect(0,0,cv.width,cv.height);
-  for(const n of nebulae){
-    const g = cx.createRadialGradient(n.x*cv.width,n.y*cv.height,0,n.x*cv.width,n.y*cv.height,n.r*Math.max(cv.width,cv.height));
-    g.addColorStop(0,`rgba(${n.h},${n.a})`); g.addColorStop(1,'rgba(255,255,255,0)');
-    cx.fillStyle = g; cx.fillRect(0,0,cv.width,cv.height);
-  }
-  for(const s of stars){
-    s.tw += .025; cx.globalAlpha = .3 + Math.sin(s.tw)*.28;
-    cx.beginPath(); cx.arc(s.x,s.y,s.r,0,Math.PI*2);
-    cx.fillStyle = '#4a5a95'; cx.fill();
-    s.y -= s.sp; if(s.y < -4) s.y = cv.height + 4;
-  }
-  cx.globalAlpha = 1; requestAnimationFrame(drawCosmos);
-})();
+/* sign-out handled by cordia-shell.js */
 const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
 const bubbles = [...document.querySelectorAll('.bubble')].map((el,i) => ({el, phase: Math.random()*Math.PI*2, phase2: Math.random()*Math.PI*2, ampX: 14 + i*5, ampY: 18 + i*4, speed: .35 + i*.07, hover: false}));
 bubbles.forEach(b => {
@@ -143,5 +96,6 @@ bubbles.forEach(b => {
   requestAnimationFrame(drift);
 })();
 </script>
+<script src="assets/cordia-shell.js"></script>
 </body>
 </html>

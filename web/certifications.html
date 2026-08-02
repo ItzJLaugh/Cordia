@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Cordia &mdash; Certifications</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Newsreader:opsz,wght@6..72,400;6..72,500;6..72,600&family=Work+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="assets/cordia-ui.css">
+<style>
+  .cert-grid{list-style:none;margin:44px 0 0;padding:0;
+    display:grid;grid-template-columns:1fr;gap:20px}
+  @media (min-width:820px){.cert-grid{grid-template-columns:repeat(2,1fr)}}
+  .ci{display:flex;gap:24px;align-items:flex-start;padding:28px 30px;
+    background:var(--c-surface);border-radius:var(--r-md);box-shadow:var(--e-1);
+    text-align:left;width:100%;border:0;font:inherit;color:inherit;cursor:pointer;
+    transition:box-shadow var(--dur-2) var(--ease-out),transform var(--dur-2) var(--ease-out)}
+  @media (hover:hover){.ci:hover{box-shadow:var(--e-2);transform:translateY(var(--lift-1))}}
+  .ci:active{transform:translateY(0);box-shadow:var(--e-press)}
+  .ci img{width:84px;height:84px;flex:none;
+    filter:drop-shadow(0 1px 1px rgba(11,11,11,.12)) drop-shadow(0 4px 6px rgba(11,11,11,.09))}
+  .ci-body{flex:1;min-width:0}
+  .ci-code{font-family:var(--f-title);font-optical-sizing:auto;font-weight:500;
+    font-size:var(--t-lg);color:var(--c-ink);margin:0 0 4px}
+  .ci-name{font-family:var(--f-label);font-size:var(--t-xs);font-weight:500;
+    letter-spacing:var(--tr-caps);text-transform:uppercase;color:var(--c-ink-3);margin:0 0 12px}
+  .ci-blurb{font-size:13.5px;line-height:1.55;color:var(--c-ink-2);margin:0}
+  .ci-meta{display:flex;align-items:center;gap:10px;margin-top:16px;flex-wrap:wrap}
+  .ci.soon{opacity:.62}
+  .ci.soon:hover{transform:none;box-shadow:var(--e-1)}
+  .note{margin:52px 0 0;padding:22px 26px;background:var(--c-wash);border-radius:var(--r-md)}
+  .note p{margin:0;font-size:13.5px;line-height:1.6;color:var(--c-ink-2)}
+  .note b{color:var(--c-ink)}
+  .essay{margin:84px 0 0;display:grid;grid-template-columns:1fr;gap:34px;align-items:center}
+  @media (min-width:900px){.essay{grid-template-columns:1fr .82fr;gap:56px}}
+  .essay-h{font-family:var(--f-title);font-optical-sizing:auto;font-weight:500;
+    font-size:var(--t-2xl);line-height:1.15;letter-spacing:-.015em;color:var(--c-ink);margin:0 0 16px}
+  .essay-copy p:last-child{font-size:var(--t-base);line-height:1.65;color:var(--c-ink-2);margin:0;max-width:54ch}
+  .essay-fig{margin:0;border-radius:var(--r-md);overflow:hidden;box-shadow:var(--e-1);background:var(--c-surface)}
+  .essay-fig img{display:block;width:100%;height:auto}
+</style>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<header id="shellHeader"></header>
+
+<main id="main" class="shell page">
+  <p class="page-eyebrow">Cordia</p>
+  <h1 class="page-title">Certifications</h1>
+  <p class="page-sub">Three certification tiers measure the universal skill &mdash; the same content
+    serves a nurse, an electrician and a controller. The fourth instrument is not an exam:
+    it is how we check the scorer itself.</p>
+
+  <ul class="cert-grid" id="certGrid" role="list"></ul>
+
+  <div class="note">
+    <p><b>Domains are courses, not certifications.</b> The fifteen domain tracks under
+      <a href="training.html">Training</a> teach the reasoning a particular kind of work
+      demands. Certification measures the skill itself, independent of domain.</p>
+  </div>
+
+  <section class="essay">
+    <div class="essay-copy">
+      <p class="page-eyebrow">Why measure this</p>
+      <h2 class="essay-h">The problem isn&rsquo;t your intelligence.</h2>
+      <p>Complex problems rarely have one cause. Look from a single angle and you
+        miss the bigger picture &mdash; which is why the certification measures
+        six dimensions, not one score, and why the fifteen domains each train a
+        different kind of reasoning rather than a different vocabulary.</p>
+    </div>
+    <figure class="essay-fig">
+      <img src="assets/img/ref-perspective.webp" alt="A figure holding one key before a cube with several differently-shaped keyholes, labelled: one perspective, multiple causes." width="1100" height="1565" loading="lazy" decoding="async">
+    </figure>
+  </section>
+</main>
+
+<script src="assets/cordia-certs.js"></script>
+<script src="assets/cordia-shell.js" data-nav="certifications"></script>
+<script>
+(function(){
+  function esc(s){return String(s==null?'':s).replace(/[&<>"]/g,function(c){
+    return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];});}
+  document.getElementById('certGrid').innerHTML = CERT_INSTRUMENTS.map(function(c){
+    var meta = [];
+    if (c.items) meta.push('<span class="pill">'+c.items+' items</span>');
+    if (c.kind === 'calibration') meta.push('<span class="pill warn">Rater study</span>');
+    if (!c.live) meta.push('<span class="pill">In development</span>');
+    else if (c.kind === 'exam') meta.push('<span class="pill ok">Live</span>');
+    var tag = c.live ? 'a' : 'div';
+    return '<li><'+tag+' class="ci'+(c.live?'':' soon')+'"'+
+      (c.live ? ' href="'+esc(c.href)+'"' : '')+'>'+
+      '<img src="'+esc(c.badge)+'" alt="" width="84" height="84">'+
+      '<div class="ci-body">'+
+        '<p class="ci-code">'+esc(c.code)+'</p>'+
+        '<p class="ci-name">'+esc(c.name)+'</p>'+
+        '<p class="ci-blurb">'+esc(c.blurb)+'</p>'+
+        '<div class="ci-meta">'+meta.join('')+'</div>'+
+      '</div></'+tag+'></li>';
+  }).join('');
+})();
+</script>
+</body>
+</html>

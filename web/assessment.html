@@ -1,0 +1,361 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Cordia — Your Score Assessment</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Newsreader:opsz,wght@6..72,400;6..72,500;6..72,600&family=Work+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Marcellus&family=Source+Serif+4:opsz,wght@8..60,400;8..60,500;8..60,600&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="assets/cordia.css">
+<link rel="stylesheet" href="assets/cordia-ui.css">
+<style>
+.wrap{max-width:1200px;margin:0 auto;padding:40px 26px 80px}
+.hero{padding:26px 30px;margin-bottom:18px;display:flex;justify-content:space-between;gap:24px;flex-wrap:wrap;align-items:center}
+.hero h1{font-size:clamp(26px,2.8vw,38px)}
+.score-big{font-family:var(--serif);font-size:64px;line-height:1;color:var(--olive)}
+.pass{color:var(--success)} .fail{color:var(--gold)}
+.section{padding:22px 26px;margin-top:18px}
+.section h3{margin-bottom:14px}
+/* radar */
+.radar-wrap{display:grid;grid-template-columns:340px 1fr;gap:26px;align-items:center}
+@media (max-width:820px){.radar-wrap{grid-template-columns:1fr}}
+#radar{width:100%;max-width:340px}
+.dim-list{display:grid;gap:8px;font-family:var(--sans);font-size:13.5px}
+.dim{display:flex;justify-content:space-between;padding:9px 13px;border-radius:11px;border:1px solid var(--line);background:#fff;box-shadow:var(--elev-2)}
+.dim .val{font-family:var(--mono);font-size:12.5px}
+.dim.strong{border-color:rgba(74,125,70,.4)} .dim.strong .val{color:var(--success);font-weight:700}
+.dim.gap{opacity:.65} .dim.gap .val{color:var(--grey)}
+.dim.weak-d{border-color:rgba(160,138,60,.45)} .dim.weak-d .val{color:var(--gold);font-weight:700}
+/* industries */
+.ind-grid{display:flex;flex-wrap:wrap;gap:8px}
+.ind{padding:9px 16px;border-radius:999px;border:1px solid var(--line);background:#fff;font-family:var(--sans);font-size:13px;cursor:pointer;box-shadow:var(--elev-2);transition:all .15s}
+.ind:hover{transform:translateY(-1px)}
+.ind.on{background:var(--olive);color:#fff;border-color:var(--olive)}
+/* system map */
+#sysmap{width:100%;min-height:520px;border:1px solid var(--line);border-radius:14px;background:#fff;box-shadow:var(--elev-1)}
+.legend{display:flex;gap:16px;flex-wrap:wrap;font-family:var(--sans);font-size:12px;color:var(--grey);margin-top:10px}
+.legend i{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:6px}
+.agent-cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:14px;margin-top:16px}
+.acard{padding:18px 20px}
+.acard .mode{font-family:var(--sans);font-size:10.5px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;padding:4px 10px;border-radius:999px;display:inline-block;margin-bottom:8px}
+.mode.active{background:rgba(74,125,70,.12);color:var(--success)}
+.mode.active-checkpoint{background:rgba(160,138,60,.14);color:var(--gold)}
+.mode.shadow{background:rgba(122,125,110,.14);color:var(--grey)}
+.acard h4{font-family:var(--serif);font-size:18px;margin-bottom:4px}
+.acard .role{font-family:var(--sans);font-size:12.5px;color:var(--grey);margin-bottom:12px}
+.acard dl{font-family:var(--sans);font-size:12px;display:grid;gap:7px}
+.acard dt{font-weight:700;color:var(--ink-soft);letter-spacing:.06em;text-transform:uppercase;font-size:10px}
+.acard dd{color:var(--ink-soft);line-height:1.5}
+</style>
+</head>
+<body>
+<header id="shellHeader"></header>
+
+<div class="wrap">
+  <div class="glass hero">
+    <div>
+      <span class="small-caps">Score assessment</span>
+      <h1>Your agentic system, compiled.</h1>
+      <p class="muted" style="font-family:var(--sans);font-size:14px;max-width:56ch;margin-top:8px">
+        Your certification didn't just grade you — it compiled a personal agent architecture.
+        Strong dimensions run autonomously. Weak ones get human checkpoints. Unmeasured ones observe until proven.</p>
+    </div>
+    <div style="text-align:center">
+      <div class="score-big" id="finalScore">—</div>
+      <div class="muted" style="font-family:var(--sans);font-size:12px" id="passState">compiling…</div>
+    </div>
+  </div>
+
+  <div class="glass section">
+    <h3>Capability radar — 6S dimensions</h3>
+    <div class="radar-wrap">
+      <canvas id="radar" width="340" height="340"></canvas>
+      <div class="dim-list" id="dimList"></div>
+    </div>
+  </div>
+
+  <div class="glass section">
+    <h3>Narrow your system — industries you care about</h3>
+    <p class="muted" style="font-family:var(--sans);font-size:13px;margin-bottom:14px">Pick the domains you work in. Your agents inherit the relevant RAG sources, APIs, and compliance baselines.</p>
+    <div class="ind-grid" id="indGrid"></div>
+  </div>
+
+  <div class="glass section">
+    <h3>Your agentic system — graph ontology</h3>
+    <canvas id="sysmap" width="1100" height="520"></canvas>
+    <div class="legend">
+      <span><i style="background:#4a7d46"></i>active</span>
+      <span><i style="background:#a08a3c"></i>active + human checkpoint</span>
+      <span><i style="background:#7a7d6e"></i>shadow (observe-only)</span>
+      <span><i style="background:#2d321e"></i>orchestrator (SOUL)</span>
+    </div>
+  </div>
+
+  <div class="glass section">
+    <h3>Live intent resolution</h3>
+    <p class="muted" style="font-family:var(--sans);font-size:13px;margin-bottom:14px">Mother agent polling micro agents every 1s while you complete blocks. This is the real-time interpretation layer that feeds your final score.</p>
+    <div id="irpPanel" class="irp-panel">
+      <div class="irp-lane" data-lane="source">
+        <div class="irp-lane-head"><span class="irp-lane-name">Source</span><span class="irp-badge" data-field="resolution">connecting…</span></div>
+        <div class="irp-bar"><div class="irp-fill" data-field="confidence" style="width:0%"></div></div>
+        <div class="irp-meta"><span data-field="fallback" class="irp-fallback">fallback: —</span><span data-field="evidence" class="irp-evidence">evidence: —</span></div>
+      </div>
+      <div class="irp-lane" data-lane="success">
+        <div class="irp-lane-head"><span class="irp-lane-name">Success</span><span class="irp-badge" data-field="resolution">connecting…</span></div>
+        <div class="irp-bar"><div class="irp-fill" data-field="confidence" style="width:0%"></div></div>
+        <div class="irp-meta"><span data-field="fallback" class="irp-fallback">fallback: —</span><span data-field="evidence" class="irp-evidence">evidence: —</span></div>
+      </div>
+      <div class="irp-lane" data-lane="safety">
+        <div class="irp-lane-head"><span class="irp-lane-name">Safety</span><span class="irp-badge" data-field="resolution">connecting…</span></div>
+        <div class="irp-bar"><div class="irp-fill" data-field="confidence" style="width:0%"></div></div>
+        <div class="irp-meta"><span data-field="fallback" class="irp-fallback">fallback: —</span><span data-field="evidence" class="irp-evidence">evidence: —</span></div>
+      </div>
+      <div class="irp-lane" data-lane="steering">
+        <div class="irp-lane-head"><span class="irp-lane-name">Steering</span><span class="irp-badge" data-field="resolution">connecting…</span></div>
+        <div class="irp-bar"><div class="irp-fill" data-field="confidence" style="width:0%"></div></div>
+        <div class="irp-meta"><span data-field="fallback" class="irp-fallback">fallback: —</span><span data-field="evidence" class="irp-evidence">evidence: —</span></div>
+      </div>
+      <div class="irp-lane" data-lane="switch">
+        <div class="irp-lane-head"><span class="irp-lane-name">Switch</span><span class="irp-badge" data-field="resolution">connecting…</span></div>
+        <div class="irp-bar"><div class="irp-fill" data-field="confidence" style="width:0%"></div></div>
+        <div class="irp-meta"><span data-field="fallback" class="irp-fallback">fallback: —</span><span data-field="evidence" class="irp-evidence">evidence: —</span></div>
+      </div>
+      <div class="irp-lane" data-lane="sharpen">
+        <div class="irp-lane-head"><span class="irp-lane-name">Sharpen</span><span class="irp-badge" data-field="resolution">connecting…</span></div>
+        <div class="irp-bar"><div class="irp-fill" data-field="confidence" style="width:0%"></div></div>
+        <div class="irp-meta"><span data-field="fallback" class="irp-fallback">fallback: —</span><span data-field="evidence" class="irp-evidence">evidence: —</span></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="glass section">
+    <h3>Agent wiring — skills, context, connections</h3>
+    <div class="agent-cards" id="agentCards"></div>
+  </div>
+</div>
+
+<script>
+if(sessionStorage.getItem('cordia-auth') !== '1') location.replace('index.html');
+const token = localStorage.getItem('cordia-token') || '';
+const DIMS = ['Source','Success','Safety','Steering','Switch','Sharpen'];
+const INDUSTRIES = ['healthcare','legal','finance','construction','software','education','energy','marketing','sales','hr','supplychain','public','trades','engineering','frontline'];
+let chosen = new Set(JSON.parse(localStorage.getItem('cordia-industries') || '[]'));
+let MANIFEST = null, PROFILE = null;
+
+/* sign-out handled by cordia-shell.js */
+
+async function api(path){
+  const r = await fetch(path, {headers:{'Authorization':'Bearer ' + token}});
+  return r.json();
+}
+
+/* ---------- industries ---------- */
+function renderIndustries(){
+  document.getElementById('indGrid').innerHTML = INDUSTRIES.map(i =>
+    `<button class="ind ${chosen.has(i) ? 'on' : ''}" data-i="${i}">${i}</button>`).join('');
+  document.querySelectorAll('.ind').forEach(b => b.onclick = () => {
+    const i = b.dataset.i;
+    chosen.has(i) ? chosen.delete(i) : chosen.add(i);
+    localStorage.setItem('cordia-industries', JSON.stringify([...chosen]));
+    renderIndustries(); loadManifest();
+  });
+}
+
+/* ---------- radar ---------- */
+function drawRadar(measured, strong, weak){
+  const cv = document.getElementById('radar'), g = cv.getContext('2d');
+  const cx = 170, cy = 170, R = 130, N = 6;
+  g.clearRect(0,0,340,340);
+  const pt = (i, r) => {
+    const a = -Math.PI/2 + i * 2*Math.PI/N;
+    return [cx + r*Math.cos(a), cy + r*Math.sin(a)];
+  };
+  // rings
+  g.strokeStyle = 'rgba(28,31,18,.1)';
+  for(let ring=1; ring<=4; ring++){
+    g.beginPath();
+    for(let i=0;i<=N;i++){ const [x,y]=pt(i%N, R*ring/4); i?g.lineTo(x,y):g.moveTo(x,y); }
+    g.stroke();
+  }
+  // axes + labels
+  g.font = '600 12px Inter'; g.fillStyle = '#4a4e3c'; g.textAlign='center';
+  for(let i=0;i<N;i++){
+    const [x,y]=pt(i,R); g.beginPath(); g.moveTo(cx,cy); g.lineTo(x,y); g.stroke();
+    const [lx,ly]=pt(i,R+20); g.fillText(DIMS[i], lx, ly+4);
+  }
+  // data polygon (unmeasured dims sit at 0)
+  const vals = DIMS.map(d => measured[d] != null ? measured[d]/100 : 0);
+  g.beginPath();
+  vals.forEach((v,i)=>{ const [x,y]=pt(i, R*Math.max(v,.02)); i?g.lineTo(x,y):g.moveTo(x,y); });
+  g.closePath();
+  g.fillStyle = 'rgba(74,125,70,.16)'; g.fill();
+  g.strokeStyle = '#4a7d46'; g.lineWidth = 2; g.stroke();
+  // vertices
+  vals.forEach((v,i)=>{
+    if(v===0) return;
+    const [x,y]=pt(i,R*v);
+    g.beginPath(); g.arc(x,y,4.5,0,7);
+    g.fillStyle = strong.includes(DIMS[i]) ? '#4a7d46' : weak.includes(DIMS[i]) ? '#a08a3c' : '#8fa36b';
+    g.fill();
+  });
+  g.lineWidth = 1;
+}
+
+/* ---------- system map ---------- */
+function drawSysmap(m){
+  const cv = document.getElementById('sysmap'), g = cv.getContext('2d');
+  const W = cv.width = cv.offsetWidth || 1100, H = cv.height = 520;
+  g.clearRect(0,0,W,H);
+  const cx = W/2, cy = H/2, R = Math.min(W,H)/2 - 60;
+  // orchestrator
+  const soul = {x:cx, y:cy, r:34, c:'#2d321e', label:'SOUL'};
+  const nodes = m.agents.map((a,i)=>{
+    const ang = -Math.PI/2 + i * 2*Math.PI/6;
+    return {a, x:cx + R*Math.cos(ang), y:cy + R*Math.sin(ang),
+            c: a.mode==='active' ? '#4a7d46' : a.mode==='active-checkpoint' ? '#a08a3c' : '#7a7d6e'};
+  });
+  // edges (curve through a midpoint pulled toward center)
+  nodes.forEach(n=>{
+    const mx = (n.x+cx)/2*.55 + cx*.45*0 + (n.x+cx)/2, my = (n.y+cy)/2;
+    g.beginPath(); g.moveTo(cx,cy);
+    g.quadraticCurveTo((n.x+cx)/2*.75 + cx*.25, (n.y+cy)/2*.75 + cy*.25, n.x, n.y);
+    g.strokeStyle = 'rgba(143,163,107,.4)'; g.lineWidth=1.5; g.stroke();
+  });
+  // hops label
+  g.font='11px JetBrains Mono'; g.fillStyle='#7a7d6e'; g.textAlign='left';
+  g.fillText(`hop budget: ${m.hop_budget}`, 14, 20);
+  if(m.industries.length) g.fillText(`industries: ${m.industries.join(', ')}`, 14, 36);
+  // nodes
+  nodes.forEach(n=>{
+    g.beginPath(); g.arc(n.x,n.y,26,0,7);
+    g.fillStyle = '#fff'; g.fill();
+    g.strokeStyle = n.c; g.lineWidth = 2.5; g.stroke();
+    g.beginPath(); g.arc(n.x,n.y,5,0,7); g.fillStyle = n.c; g.fill();
+    g.font='600 11px Inter'; g.fillStyle='#1c1f12'; g.textAlign='center';
+    g.fillText(n.a.agent.replace(' Agent',''), n.x, n.y+42);
+    g.font='10px Inter'; g.fillStyle=n.c;
+    g.fillText(n.a.mode==='active-checkpoint' ? 'checkpoint' : n.a.mode, n.x, n.y+56);
+  });
+  // soul
+  g.beginPath(); g.arc(soul.x,soul.y,soul.r,0,7);
+  g.fillStyle = soul.c; g.fill();
+  g.font='700 13px Inter'; g.fillStyle='#fff'; g.textAlign='center';
+  g.fillText('SOUL', soul.x, soul.y+4);
+  g.lineWidth = 1;
+}
+
+/* ---------- agent cards ---------- */
+function renderCards(m){
+  document.getElementById('agentCards').innerHTML = m.agents.map(a => `
+    <div class="glass acard">
+      <span class="mode ${a.mode}">${a.mode}</span>
+      <h4>${a.agent}</h4>
+      <div class="role">${a.role}</div>
+      <dl>
+        <dt>skills</dt><dd>${a.skills.join(' · ') || '—'}</dd>
+        <dt>context</dt><dd>${a.context.join(' · ') || '—'}</dd>
+        <dt>rag</dt><dd>${a.rag.join(' · ') || '—'}</dd>
+        ${a.db.length ? `<dt>database</dt><dd>${a.db.join(' · ')}</dd>` : ''}
+        ${a.mcp.length ? `<dt>mcp</dt><dd>${a.mcp.join(' · ')}</dd>` : ''}
+        ${a.apis.length ? `<dt>apis</dt><dd>${a.apis.join(' · ')}</dd>` : ''}
+      </dl>
+    </div>`).join('');
+}
+
+/* ---------- load ---------- */
+async function loadAll(){
+  const [cert, prof] = await Promise.all([
+    api('/train/certification').catch(()=>({})),
+    api('/train/6s/scores').catch(()=>({})),
+  ]);
+  // profile from certification endpoint shape (score pct + pass)
+  if(cert.ok){
+    document.getElementById('finalScore').textContent = cert.percent + '%';
+    document.getElementById('finalScore').className = 'score-big ' + (cert.passed ? 'pass' : 'fail');
+    document.getElementById('passState').textContent = cert.passed ? 'certified' : 'in progress';
+  } else {
+    document.getElementById('finalScore').textContent = '—';
+    document.getElementById('passState').textContent = 'exam not completed yet';
+  }
+  // manifest via a profile-aware endpoint if present; else derive client-side
+  loadManifest();
+}
+
+async function loadManifest(){
+  const r = await fetch('/train/manifest?industries=' + [...chosen].join(','), {headers:{'Authorization':'Bearer ' + token}});
+  if(r.status === 402){ location.replace('survey.html'); return; }
+  const m = await r.json().catch(()=>null);
+  if(m && m.ok){
+    MANIFEST = m.manifest; PROFILE = m.profile;
+    drawRadar(PROFILE.measured, PROFILE.strong_dims, PROFILE.weak_dims);
+    document.getElementById('dimList').innerHTML = DIMS.map(d => {
+      const v = PROFILE.measured[d];
+      const cls = v == null ? 'gap' : PROFILE.strong_dims.includes(d) ? 'strong' : PROFILE.weak_dims.includes(d) ? 'weak-d' : '';
+      return `<div class="dim ${cls}"><span>${d}</span><span class="val">${v == null ? 'unmeasured' : v.toFixed(1)}</span></div>`;
+    }).join('');
+    drawSysmap(MANIFEST);
+    renderCards(MANIFEST);
+  } else {
+    document.getElementById('dimList').innerHTML = '<div class="dim gap"><span>No score data yet</span><span class="val">—</span></div>';
+  }
+}
+
+renderIndustries();
+loadAll();
+
+/* ---------- live IRP intent stream ---------- */
+(function(){
+  const host = location.protocol === 'https:' ? 'https://' + location.hostname : 'http://' + location.hostname;
+  const streamUrl = host + '/irp/stream';
+  let es = null;
+  try {
+    es = new EventSource(streamUrl);
+  } catch (e) {
+    document.getElementById('irpPanel').insertAdjacentHTML('beforeend',
+      '<div class="irp-lane"><div class="irp-lane-head"><span class="irp-lane-name">IRP</span><span class="irp-badge">offline</span></div><div class="irp-meta"><span class="irp-evidence">stream unavailable</span></div></div>');
+  }
+  if (es) {
+    es.onopen = function() {
+      const badge = document.querySelector('#irpPanel .irp-badge');
+      if (badge) badge.textContent = 'live';
+    };
+    es.onerror = function() {
+      const badge = document.querySelector('#irpPanel .irp-badge');
+      if (badge) badge.textContent = 'reconnecting…';
+    };
+    es.onmessage = function(ev) {
+      let rec;
+      try { rec = JSON.parse(ev.data); } catch (e) { return; }
+      const lanes = (rec && rec.lanes) || {};
+      const panel = document.getElementById('irpPanel');
+      if (!panel) return;
+      for (const lane in lanes) {
+        let node = panel.querySelector('[data-lane="' + lane + '"]');
+        if (!node) {
+          node = document.createElement('div');
+          node.className = 'irp-lane';
+          node.dataset.lane = lane;
+          node.innerHTML = '<div class="irp-lane-head"><span class="irp-lane-name">' + lane + '</span><span class="irp-badge" data-field="resolution">—</span></div><div class="irp-bar"><div class="irp-fill" data-field="confidence" style="width:0%"></div></div><div class="irp-meta"><span data-field="fallback" class="irp-fallback">fallback: —</span><span data-field="evidence" class="irp-evidence">evidence: —</span></div>';
+          panel.appendChild(node);
+        }
+        const info = lanes[lane] || {};
+        const res = node.querySelector('[data-field="resolution"]');
+        const conf = node.querySelector('[data-field="confidence"]');
+        const fb = node.querySelector('[data-field="fallback"]');
+        const evd = node.querySelector('[data-field="evidence"]');
+        if (res) res.textContent = info.resolution || '—';
+        if (conf) conf.style.width = (Math.min(1, Math.max(0, Number(info.confidence || 0))) * 100) + '%';
+        if (fb) fb.textContent = 'fallback: ' + (info.fallback ? 'yes' : 'no');
+        if (evd) evd.textContent = 'evidence: ' + (Array.isArray(info.evidence) && info.evidence.length ? info.evidence.join(', ') : '—');
+      }
+    };
+    window.addEventListener('beforeunload', function() {
+      if (es) es.close();
+    });
+  }
+})();
+</script>
+<script src="assets/cordia-shell.js" data-nav="certifications"></script>
+</body>
+</html>
