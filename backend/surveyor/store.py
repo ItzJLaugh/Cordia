@@ -104,6 +104,12 @@ CREATE TABLE IF NOT EXISTS surveyor_events(
     created    TIMESTAMPTZ NOT NULL DEFAULT (now() AT TIME ZONE 'utc')
 );
 CREATE INDEX IF NOT EXISTS surveyor_events_email_idx ON surveyor_events(email, created);
+
+-- Stage 2 and 3, added after the table already existed in production.
+ALTER TABLE surveyor_profiles ADD COLUMN IF NOT EXISTS scenarios   JSONB NOT NULL DEFAULT '{}'::jsonb;
+ALTER TABLE surveyor_profiles ADD COLUMN IF NOT EXISTS freeform    JSONB NOT NULL DEFAULT '{}'::jsonb;
+ALTER TABLE surveyor_profiles ADD COLUMN IF NOT EXISTS tensions    JSONB NOT NULL DEFAULT '[]'::jsonb;
+ALTER TABLE surveyor_profiles ADD COLUMN IF NOT EXISTS reliability JSONB NOT NULL DEFAULT '{}'::jsonb;
 """
 
 
@@ -137,6 +143,7 @@ def events(email, limit=100) -> list:
 # ----------------------------------------------------------------- profile
 
 _PROFILE_COLS = ("signals", "scores", "evidence", "identifiers", "adaptation",
+                 "scenarios", "freeform", "tensions", "reliability",
                  "confidence", "questions_answered", "simple_mode_forced")
 
 
@@ -155,14 +162,19 @@ def save_profile(email, profile) -> None:
         cur.execute("""
             INSERT INTO surveyor_profiles
                 (email, signals, scores, evidence, identifiers, adaptation,
+                 scenarios, freeform, tensions, reliability,
                  confidence, questions_answered, simple_mode_forced)
-            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)
+            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
             ON CONFLICT (email) DO UPDATE SET
                 signals=EXCLUDED.signals,
                 scores=EXCLUDED.scores,
                 evidence=EXCLUDED.evidence,
                 identifiers=EXCLUDED.identifiers,
                 adaptation=EXCLUDED.adaptation,
+                scenarios=EXCLUDED.scenarios,
+                freeform=EXCLUDED.freeform,
+                tensions=EXCLUDED.tensions,
+                reliability=EXCLUDED.reliability,
                 confidence=EXCLUDED.confidence,
                 questions_answered=EXCLUDED.questions_answered,
                 simple_mode_forced=EXCLUDED.simple_mode_forced,
@@ -173,6 +185,10 @@ def save_profile(email, profile) -> None:
               _J(profile.get("evidence") or []),
               _J(profile.get("identifiers") or []),
               _J(profile.get("adaptation") or {}),
+              _J(profile.get("scenarios") or {}),
+              _J(profile.get("freeform") or {}),
+              _J(profile.get("tensions") or []),
+              _J(profile.get("reliability") or {}),
               float(profile.get("confidence") or 0.0),
               int(profile.get("questions_answered") or 0),
               bool(profile.get("simple_mode_forced"))))
@@ -305,17 +321,33 @@ def export_answers() -> list:
     for email, cid, mid, role, content, meta, created, prev, prev_meta in rows:
         if role != "user":
             continue
+        pm = prev_meta or {}
         out.append({
             "email": email,
             "conversation_id": cid,
             "message_id": mid,
+            "stage": pm.get("stage"),          # preferences | scenarios | freeform
+            "key": pm.get("key"),              # signal name, scenario id, or freeform key
             "question": prev,
-            "signal": (prev_meta or {}).get("signal"),
+            "signal": pm.get("signal"),
             "answer": content,
             "tapped_suggestion": bool((meta or {}).get("choice")),
             "created": str(created),
         })
     return out
+
+
+def export_profiles() -> list:
+    """One row per participant: signals, scenario choices, free text and any
+    stated-vs-revealed tensions. This is the shape phase 2 clusters on."""
+    with _conn() as c, c.cursor() as cur:
+        cur.execute("SELECT email, signals, scenarios, freeform, tensions, reliability, "
+                    "confidence, questions_answered, updated FROM surveyor_profiles "
+                    "ORDER BY updated DESC")
+        rows = cur.fetchall()
+    return [{"email": r[0], "signals": r[1], "scenarios": r[2], "freeform": r[3],
+             "tensions": r[4], "reliability": r[5], "completeness": r[6],
+             "answers": r[7], "updated": str(r[8])} for r in rows]
 
 
 def record_recommendation(email, definition) -> bool:

@@ -176,6 +176,53 @@ def next_question(profile, asked=()):
     return sig, QUESTIONS[sig]
 
 
+# ------------------------------------------------------- stage sequencing
+
+STAGE_INTRO = {
+    "scenarios": ("Thanks — that's the quick part done. Now a few situations, so "
+                  "Cordia can see how you'd actually decide rather than how you'd "
+                  "describe it. There are no right answers."),
+    "freeform": ("Last stretch, and it's the useful bit. Three questions in your "
+                 "own words — as short or as long as you like."),
+}
+
+CLOSING_FULL = ("That's everything. I've put together how I'd set your system up, "
+                "based on what you said and what you chose.")
+
+
+def next_step(profile, asked=()):
+    """The single place that decides what the survey asks next.
+
+    Returns {stage, key, text, options, intro}. Stages run in increasing order
+    of effort — chips, then situations, then open text — so the cheap data is
+    collected from everyone and the rich data comes from whoever stays. Each
+    stage produces a usable recommendation on its own; nobody hits a dead end
+    for stopping early.
+    """
+    from . import freeform, scenarios
+
+    sig = next_signal(profile, asked)
+    if sig and len(answered(profile)) < types.ENOUGH_SIGNALS:
+        return {"stage": "preferences", "key": sig, "text": QUESTIONS[sig],
+                "options": choices_for(sig), "intro": None}
+
+    scn = scenarios.next_scenario(profile.get("scenarios") or {})
+    if scn:
+        first = not (profile.get("scenarios") or {})
+        return {"stage": "scenarios", "key": scn["id"], "text": scn["text"],
+                "options": scenarios.choices_for(scn["id"]),
+                "intro": STAGE_INTRO["scenarios"] if first else None}
+
+    key, text = freeform.next_question(profile.get("freeform") or {})
+    if key:
+        first = not (profile.get("freeform") or {})
+        return {"stage": "freeform", "key": key, "text": text, "options": [],
+                "intro": STAGE_INTRO["freeform"] if first else None}
+
+    return {"stage": "done", "key": None, "text": CLOSING_FULL,
+            "options": [], "intro": None}
+
+
 def asked_signals(history) -> list:
     """Recover which signals we've already probed from the stored transcript.
 

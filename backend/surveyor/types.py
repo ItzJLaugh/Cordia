@@ -115,6 +115,10 @@ def empty_profile() -> dict:
         "evidence": [],
         "identifiers": [],
         "adaptation": {},
+        "scenarios": {},
+        "freeform": {},
+        "tensions": [],
+        "reliability": {},
         "confidence": 0.0,
         "questions_answered": 0,
         "simple_mode_forced": False,
@@ -231,11 +235,22 @@ def merge_profile(current: dict, extracted: dict) -> dict:
 
 
 def profile_completeness(profile: dict) -> float:
-    """0..1 — how much of the priority signal set we have. Drives the
-    'Surveyor is learning' progress bar."""
-    signals = (profile or {}).get("signals") or {}
+    """0..1 across all three survey stages.
+
+    Weighted by how much each stage contributes rather than by question count:
+    stage 1 composes the setup, stage 2 is the only stage that can contradict
+    stage 1, and stage 3 is the only stage that describes the actual work. A
+    person who stops after stage 1 should see real progress, not 90%.
+    """
+    p = profile or {}
+    signals = p.get("signals") or {}
     have = sum(1 for s in SIGNAL_PRIORITY if signals.get(s))
-    return round(min(1.0, have / float(ENOUGH_SIGNALS)), 3)
+    prefs = min(1.0, have / float(ENOUGH_SIGNALS))
+
+    from . import freeform, scenarios
+    scn = len(p.get("scenarios") or {}) / float(len(scenarios.IDS))
+    free = freeform.answered_count(p.get("freeform") or {}) / float(len(freeform.KEYS))
+    return round(min(1.0, 0.45 * prefs + 0.30 * min(1.0, scn) + 0.25 * min(1.0, free)), 3)
 
 
 # ---------------------------------------------------------------- guard rail

@@ -211,10 +211,10 @@
   // value alongside the label, so the backend stores what the person meant
   // rather than inferring it from prose. Typing instead is always allowed —
   // the chips are an offer, not a gate.
-  function chips(signal, options) {
+  function chips(key, options) {
     var old = listEl.querySelector('.sv-chips');
     if (old) old.remove();
-    if (!signal || !options || !options.length) return;
+    if (!key || !options || !options.length) return;
     var box = document.createElement('div');
     box.className = 'sv-chips';
     box.setAttribute('role', 'group');
@@ -225,7 +225,7 @@
       b.className = 'sv-chip';
       b.textContent = o.label;
       b.addEventListener('click', function () {
-        send(o.label, { signal: signal, value: o.value });
+        send(o.label, { signal: key, value: o.value });
       });
       box.appendChild(b);
     });
@@ -290,7 +290,7 @@
           return;
         }
         (r.data.messages || []).forEach(function (m) { bubble(m.role, m.content, m.created); });
-        chips(r.data.signal, r.data.options);
+        chips(r.data.key, r.data.options);
         if (r.data.profile && (r.data.profile.percent_complete || 0) >= 100) doneState();
         inputEl.focus();
       });
@@ -334,7 +334,7 @@
       }
       bubble('assistant', r.data.reply);
       setLive(r.data.llm);
-      chips(r.data.signal, r.data.options);
+      chips(r.data.key, r.data.options);
       document.dispatchEvent(new CustomEvent('cordia:profile-updated', { detail: r.data.profile }));
       if (r.data.done) doneState();
       inputEl.focus();

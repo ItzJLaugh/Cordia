@@ -19,8 +19,8 @@ already told us because a model returned bad JSON.
 
 from __future__ import annotations
 
-from . import (adaptation, extractor, identifiers, prompts,
-               question_strategy as qs, scorer, store, types)
+from . import (adaptation, extractor, freeform, identifiers, prompts,
+               question_strategy as qs, scenarios, scorer, store, types)
 
 MAX_ANSWER = 4000
 
@@ -73,14 +73,16 @@ def start(email) -> dict:
         store.add_message(cid, "assistant", qs.OPENING, {"signal": None, "opening": True})
         store.log_event(email, "survey_started")
         history = store.messages(cid)
-    # chips for whatever question is currently outstanding, so a resumed
-    # conversation offers the same answers it did before the page reload
-    last_sig = next((( m.get("meta") or {}).get("signal")
-                     for m in reversed(history) if m.get("role") == "assistant"), None)
+    # Re-derive the outstanding step rather than trusting stored meta, so a
+    # conversation started before stages existed still resumes correctly.
+    profile = load_profile(email)
+    step = qs.next_step(profile, qs.asked_signals(history))
     return {"conversation_id": cid, "messages": history,
-            "signal": last_sig,
-            "options": qs.choices_for(last_sig),
-            "profile": public_profile(email)}
+            "stage": step["stage"],
+            "signal": step["key"] if step["stage"] == "preferences" else None,
+            "key": step["key"],
+            "options": step["options"],
+            "profile": public_profile(email, profile)}
 
 
 def turn(email, answer, call_llm, choice=None) -> dict:
@@ -121,7 +123,36 @@ def turn(email, answer, call_llm, choice=None) -> dict:
     profile = load_profile(email)
     err = None
 
-    if picked:
+    # Which stage the outstanding question belonged to, so the answer is filed
+    # in the right place rather than guessed at.
+    last_meta = next((m.get("meta") or {} for m in reversed(history)
+                      if m.get("role") == "assistant"), {})
+    stage, key = last_meta.get("stage"), last_meta.get("key")
+
+    if stage == "scenarios" and key:
+        val = (choice or {}).get("value") if isinstance(choice, dict) else None
+        if scenarios.valid_choice(key, val):
+            answers = dict(profile.get("scenarios") or {})
+            answers[key] = val
+            profile["scenarios"] = answers
+            store.log_event(email, "scenario_answered", {"scenario": key, "value": val})
+        else:
+            # Typed instead of tapped. We deliberately do NOT infer which option
+            # they meant: a scenario is only worth anything if the choice is
+            # exact, and a guessed one would corrupt the stated-vs-revealed
+            # comparison that this whole stage exists to produce.
+            store.log_event(email, "scenario_freetext", {"scenario": key})
+
+    elif stage == "freeform" and key:
+        text = freeform.clean(answer)
+        if text:
+            answers = dict(profile.get("freeform") or {})
+            answers[key] = text
+            profile["freeform"] = answers
+            store.log_event(email, "freeform_answered",
+                            {"key": key, "chars": len(text)})
+
+    elif picked:
         sig, val = picked
         signals = dict(profile.get("signals") or {})
         signals[sig] = val
@@ -141,39 +172,50 @@ def turn(email, answer, call_llm, choice=None) -> dict:
 
     profile["questions_answered"] = int(profile.get("questions_answered") or 0) + 1
     profile["scores"] = scorer.score(profile)
-    profile["confidence"] = scorer.confidence(profile)
+    # progress bar spans all three stages; scorer.confidence only knows stage 1
+    profile["confidence"] = types.profile_completeness(profile)
     profile["identifiers"] = identifiers.build(profile)
+    profile["tensions"] = scenarios.find_tensions(profile.get("signals"),
+                                                  profile.get("scenarios"))
+    profile["reliability"] = scenarios.reliability(profile["tensions"])
     profile["adaptation"] = adaptation.builder_defaults(profile)
     store.save_profile(email, profile)
     if not err:
         store.log_event(email, "profile_updated",
                         {"signals": list((profile.get("signals") or {}).keys())})
 
-    # next question — rules only
+    # next step — rules only, across all three stages
     history_now = store.messages(cid)
     asked = qs.asked_signals(history_now)
-    signal, text = qs.next_question(profile, asked)
+    step = qs.next_step(profile, asked)
+    done = step["stage"] == "done"
 
     # Once the survey is complete, keep talking like a person rather than
     # replaying the closing line at every further message. Someone who carries
     # on after the last question is refining their profile, not restarting it.
-    post_close = signal is None and _already_closed(history_now)
-    if post_close:
-        text = _acknowledge(profile)
+    post_close = done and _already_closed(history_now)
+    text = _acknowledge(profile) if post_close else step["text"]
+    if step.get("intro"):
+        text = step["intro"] + "\n\n" + text
 
     # Voice anything except the one-time closing line, which is fixed on purpose.
-    reply = _voice(call_llm, text, answer, signal, speak=(signal is not None or post_close))
+    reply = _voice(call_llm, text, answer, step["key"],
+                   speak=(not done or post_close))
 
-    store.add_message(cid, "assistant", reply,
-                      {"signal": signal, "closing": signal is None})
+    store.add_message(cid, "assistant", reply, {
+        "stage": step["stage"], "key": step["key"],
+        "signal": step["key"] if step["stage"] == "preferences" else None,
+        "closing": done,
+    })
 
-    done = signal is None
     return {
         "ok": True,
         "reply": reply,
         "done": done,
-        "signal": signal,
-        "options": qs.choices_for(signal),
+        "stage": step["stage"],
+        "signal": step["key"] if step["stage"] == "preferences" else None,
+        "key": step["key"],
+        "options": step["options"],
         "profile": public_profile(email, profile),
         "extraction_ok": err is None,
     }

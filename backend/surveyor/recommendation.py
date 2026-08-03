@@ -16,7 +16,7 @@ than filling the gap with a guess.
 
 from __future__ import annotations
 
-from . import adaptation, identifiers, types
+from . import adaptation, freeform, identifiers, types
 
 _SURFACE_ADVICE = {
     "canvas": ("Work on a canvas",
@@ -72,6 +72,29 @@ def short_domain(domain):
     return t
 
 
+def _tension_line(t) -> str:
+    """State the fact, then offer the reading as a possibility.
+
+    The fact is true whether or not the scenario is well written. The reading
+    might not be — a badly worded situation would otherwise let measurement
+    error masquerade as a claim about someone's character — so it is always
+    hedged and always followed by something concrete to do.
+    """
+    from . import question_strategy as qs
+    from . import scenarios as scn
+
+    stated = qs.label_for(t["dimension"], t["stated"])
+    revealed = next((l for v, l in scn.BY_ID[t["scenario"]]["options"]
+                     if v == t["revealed"]), t["revealed"])
+    fact = 'Earlier you said “%s”. In the situation, you chose “%s”.' % (stated, revealed)
+    parts = [fact]
+    if t.get("reading"):
+        parts.append(t["reading"])
+    if t.get("do"):
+        parts.append("Either way: " + t["do"])
+    return " ".join(parts)
+
+
 def _first_identifier_advice(profile):
     return [{"title": i["name"], "body": i["use_ai_this_way"]}
             for i in (profile.get("identifiers") or [])]
@@ -91,6 +114,9 @@ def build(profile: dict) -> dict:
 
     defaults = adaptation.builder_defaults(profile)
     surface = (defaults.get("surface") or {}).get("type", "chat")
+    # Scenario choices override stated answers on any dimension they cross-check.
+    from . import scenarios as _scn
+    effective = _scn.effective(profile)
     sections = []
 
     title, body = _SURFACE_ADVICE.get(surface, _SURFACE_ADVICE["chat"])
@@ -107,13 +133,13 @@ def build(profile: dict) -> dict:
             "items": [{"title": a["name"], "body": a["instructions"]} for a in agents],
         })
 
-    delegation = signals.get("delegation_style")
-    risk = signals.get("risk_awareness")
+    delegation = effective.get("delegation_style")
+    risk = effective.get("risk_awareness")
     if delegation in _DELEGATION_ADVICE:
         title, body = _DELEGATION_ADVICE[delegation]
         if risk == "high":
-            body += (" You said you want it to stop before anything irreversible — make "
-                     "that the one rule the agent is never allowed to skip.")
+            body += (" You want it to stop before anything irreversible — make that the "
+                     "one rule the agent is never allowed to skip.")
         sections.append({"kind": "checkpoints", "title": title, "body": body, "items": []})
 
     advice = _first_identifier_advice(profile)
@@ -123,6 +149,45 @@ def build(profile: dict) -> dict:
             "title": "How to brief it",
             "body": "These follow from how you already work, so they cost you nothing to adopt.",
             "items": advice,
+        })
+
+    # What the scenarios revealed that stage 1 didn't say. This is the only
+    # section here that can tell someone something they didn't tell us, so it
+    # goes above the composed advice rather than as a footnote.
+    tensions = [t for t in (profile.get("tensions") or []) if not t.get("agreed")]
+    if tensions:
+        sections.insert(1, {
+            "kind": "tension",
+            "title": "Where your answers pulled in different directions",
+            "body": ("You said one thing when it was free to say, and chose another "
+                     "when it cost something. That difference is usually the most useful "
+                     "part of a survey like this — and it's an observation, not a "
+                     "verdict. You'll know better than we do whether it lands."),
+            "items": [{
+                "title": t.get("name") or "A difference worth noticing",
+                "body": _tension_line(t),
+            } for t in tensions],
+        })
+
+    # Their own words about the work. Quoted, never interpreted — see freeform.py.
+    ff = profile.get("freeform") or {}
+    if ff.get("automate"):
+        sections.append({
+            "kind": "automation", "title": "Start with what you already named",
+            "body": ("You said this is what you'd hand over tomorrow. It's the right "
+                     "first thing to automate because you already know it's worth doing."),
+            "items": [{"title": "In your words", "body": ff["automate"]}],
+        })
+
+    seen = freeform.mentions(ff, keys=("screen",))
+    if seen or ff.get("screen"):
+        items = [{"title": m["phrase"].capitalize(), "body": "you mentioned: “%s”" % m["quote"]}
+                 for m in seen]
+        sections.append({
+            "kind": "screen", "title": "What to put on the screen",
+            "body": ("Taken from what you described wanting to see. These are things "
+                     "you named — check them against what you actually meant."),
+            "items": items or [{"title": "In your words", "body": ff.get("screen", "")}],
         })
 
     tools = defaults.get("tools") or []

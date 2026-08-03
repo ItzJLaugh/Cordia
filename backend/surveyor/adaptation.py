@@ -62,7 +62,7 @@ def effective_mode(profile) -> str:
 
 _AGENTS = {
     "intake":     {"name": "Intake", "role": "clarify",
-                   "instructions": "Restate the request and name any missing detail before work starts."},
+                   "instructions": "Restate the request and name anything it leaves open before work starts."},
     "verifier":   {"name": "Verifier", "role": "check",
                    "instructions": "Check claims against the source material and flag anything unsupported."},
     "evidence":   {"name": "Evidence Checker", "role": "check",
@@ -129,7 +129,20 @@ _DOMAIN_RULES = (
 
 
 def _level(profile, name):
-    return ((profile or {}).get("signals") or {}).get(name)
+    """A signal's value, with any stage-2 choice taking precedence.
+
+    Single point of enforcement for "the scenario wins": a situation with a cost
+    attached is better evidence than an answer that was free to give, so where
+    both exist the revealed one is what shapes the recommendation. Stage 1 is
+    still kept — it is what makes a disagreement legible as a finding — but it
+    no longer drives the advice on a dimension a scenario has cross-checked.
+    """
+    from . import scenarios
+    p = profile or {}
+    revealed = scenarios.revealed_signals(p)
+    if name in revealed:
+        return revealed[name]
+    return (p.get("signals") or {}).get(name)
 
 
 def _is_high(profile, name):

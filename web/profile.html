@@ -182,7 +182,9 @@
       return '<div class="sec">' +
         '<h3>' + esc(({surface:'Where to work', agents:'Roles',
                         checkpoints:'Human checkpoints', briefing:'Briefing',
-                        tools:'Capabilities'})[s.kind] || 'Setup') + '</h3>' +
+                        tools:'Capabilities', tension:'What stood out',
+                        automation:'Start here', screen:'Your screen'})[s.kind]
+                      || 'Setup') + '</h3>' +
         '<p class="lead">' + esc(s.title) + '</p>' +
         '<p>' + esc(s.body) + '</p>' + items + '</div>';
     }).join('');

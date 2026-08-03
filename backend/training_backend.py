@@ -331,7 +331,10 @@ class H(BaseHTTPRequestHandler):
         if stop: return
         if not self._surv_is_admin(email):
             self._json({'ok': False, 'error': 'not authorised'}, 403); return
-        rows = surveyor.store.export_answers()
+        q = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+        rows = (surveyor.store.export_profiles()
+                if q.get('what', [''])[0] == 'profiles'
+                else surveyor.store.export_answers())
         body = '\n'.join(json.dumps(r) for r in rows).encode()
         self.send_response(200)
         self.send_header('Content-Type', 'application/x-ndjson')

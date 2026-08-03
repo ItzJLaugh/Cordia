@@ -17,8 +17,10 @@ allow-lists; scoring is a lookup table. If any of it starts to need a model to
 work, the right move is to delete the feature, not to grow one.
 """
 
-from . import (adaptation, extractor, identifiers, llm, mock, pipeline, prompts,
-               question_strategy, recommendation, scorer, store, types)
+from . import (adaptation, extractor, freeform, identifiers, llm, mock, pipeline,
+               prompts, question_strategy, recommendation, scenarios, scorer, store,
+               types)
 
-__all__ = ["adaptation", "extractor", "identifiers", "llm", "mock", "pipeline",
-           "prompts", "question_strategy", "recommendation", "scorer", "store", "types"]
+__all__ = ["adaptation", "extractor", "freeform", "identifiers", "llm", "mock",
+           "pipeline", "prompts", "question_strategy", "recommendation", "scenarios",
+           "scorer", "store", "types"]
