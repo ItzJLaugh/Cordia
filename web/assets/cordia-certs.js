@@ -34,6 +34,11 @@ const CERT_INSTRUMENTS = [
     blurb: 'Not a learner exam. Two humans independently grade the same real answers on the ' +
            '0–3 rubric; their agreement (Cohen’s κ) is what tells us whether the ' +
            'automated scorer can be trusted.',
-    items: 77, live: true, restricted: true,
+    // Not a certification anyone can take. It is the two-rater calibration
+    // study behind rate.html, restricted to CORDIA_RATER_A/B, and it read as a
+    // confusing '77-question exam' sitting in the public catalogue. Hidden from
+    // the listing; rate.html and the kappa machinery are untouched, because this
+    // is the only route to validating the CordiaAIE scorer.
+    items: 77, live: true, restricted: true, internal: true,
   },
 ];

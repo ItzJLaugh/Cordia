@@ -31,9 +31,6 @@
   ];
 
   var MENU = [
-    ['Your space', 'space.html',
-      'M24,25 C29,25 33,21 33,16 C33,11 29,7 24,7 C19,7 15,11 15,16 C15,21 19,25 24,25',
-      'M9,42 C9,33 15.5,28 24,28 C32.5,28 39,33 39,42'],
     ['Certification', 'certification.html',
       'M24,6 C33.5,6 41.5,14 41.5,23.5 C41.5,33 33.5,41 24,41 C14.5,41 6.5,33 6.5,23.5 C6.5,14 14.5,6 24,6',
       'M16,23 L21.5,28.5 L32,18'],
@@ -63,7 +60,7 @@
 
   var html =
     '<div class="shell topbar-inner">' +
-      '<a class="brand" href="space.html" aria-label="Cordia home">' +
+      '<a class="brand" href="surveyor.html" aria-label="Cordia home">' +
         '<img src="assets/img/cordia-logo-header.webp" alt="Cordia" width="382" height="60">' +
       '</a>' +
       '<nav class="topnav" aria-label="Main">' +

@@ -33,9 +33,7 @@ CATALOGUE = {
         "name": "Clear briefer",
         "meaning": "You can say what you actually want before you start, which is "
                    "the single thing most people can't do with AI.",
-        "use_ai_this_way": "Write the outcome you want in one sentence and paste it "
-                           "at the top of every prompt. Your first message is your "
-                           "strongest asset — spend it on the goal, not the format.",
+        "use_ai_this_way": "Put the outcome in one sentence at the top of every prompt.",
     },
     "gap_detection": {
         # Named "Mismatch spotter", not "Gap spotter": the never-negative guard
@@ -45,63 +43,50 @@ CATALOGUE = {
         "name": "Mismatch spotter",
         "meaning": "You notice the difference between an answer that sounds right "
                    "and one that is right.",
-        "use_ai_this_way": "Ask the agent what it assumed. You will catch the wrong "
-                           "assumption faster than you will catch the wrong answer.",
+        "use_ai_this_way": "Ask what it assumed — faster than checking the answer.",
     },
     "constraint_setting": {
         "name": "Boundary setter",
         "meaning": "You think in limits — budget, tone, scope, what's off the table.",
-        "use_ai_this_way": "Lead with the constraints, not the request. Tell the agent "
-                           "what it may not do first, then what you want.",
+        "use_ai_this_way": "Lead with the constraints, not the request.",
     },
     "risk_boundary_awareness": {
         "name": "Risk reader",
         "meaning": "You can tell which mistakes are cheap and which ones cost money, "
                    "trust, or safety.",
-        "use_ai_this_way": "Name the expensive failure in your prompt. Let the agent move "
-                           "fast everywhere else and stop only where it would hurt.",
+        "use_ai_this_way": "Name the expensive failure. Let it move fast elsewhere.",
     },
     "delegation_readiness": {
         "name": "Confident delegator",
         "meaning": "You are comfortable handing work over and saying where to check back in.",
-        "use_ai_this_way": "Give whole tasks, not single steps, and name one checkpoint. "
-                           "You will get more out of an agent than people who supervise "
-                           "every line.",
+        "use_ai_this_way": "Give whole tasks, not single steps, and name one checkpoint.",
     },
     "visual_systems_thinking": {
         "name": "Visual systems thinker",
         "meaning": "You reason about work as a map of connected parts rather than a list.",
-        "use_ai_this_way": "Ask for the diagram or the structure before the prose. Seeing "
-                           "the shape first will make errors obvious to you that would be "
-                           "buried in paragraphs.",
+        "use_ai_this_way": "Ask for the diagram before the prose.",
     },
     "verification_instinct": {
         "name": "Evidence checker",
         "meaning": "You want to see the working, not just the conclusion.",
-        "use_ai_this_way": "Ask for sources and the reasoning path in the same message as "
-                           "the task, so you never have to re-run the work to audit it.",
+        "use_ai_this_way": "Ask for sources in the same message as the task.",
     },
     "domain_specificity": {
         "name": "Domain anchor",
         "meaning": "You bring real context from your field, which is exactly what a "
                    "general model doesn't have.",
-        "use_ai_this_way": "Front-load the specifics of your world — the constraint, the "
-                           "regulation, the customer. That context is the part the model "
-                           "cannot invent.",
+        "use_ai_this_way": "Front-load your specifics — the model can't invent those.",
     },
     "workflow_decomposition": {
         "name": "Workflow breaker",
         "meaning": "You naturally split messy work into ordered, checkable steps.",
-        "use_ai_this_way": "Build multi-step interfaces rather than one big prompt. Give "
-                           "each step its own agent and its own success condition.",
+        "use_ai_this_way": "Give each step its own agent and success condition.",
     },
     "human_checkpoint_judgment": {
         "name": "Checkpoint setter",
         "meaning": "You have a good sense of the moment a human needs to look before "
                    "anything goes out.",
-        "use_ai_this_way": "Put your approval step just before anything becomes visible to "
-                           "someone else. That is the highest-value place to spend your "
-                           "attention.",
+        "use_ai_this_way": "Put your approval step just before anything goes outside.",
     },
 }
 

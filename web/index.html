@@ -12,54 +12,32 @@
 <link rel="stylesheet" href="assets/cordia-logo.css">
 <style>
   body{min-height:100vh;overflow-x:hidden;background:var(--c-bg)}
-  .login{position:relative;z-index:2;max-width:1280px;margin:0 auto;
-    padding:56px 34px 90px;display:grid;grid-template-columns:1fr;gap:56px;
-    align-items:center;min-height:100vh}
-  @media (min-width:1000px){
-    .login{grid-template-columns:1.15fr .85fr;gap:70px;padding:0 44px}
-  }
 
-  /* ---- left: the statement ---- */
-  .manifesto{max-width:620px}
-  .manifesto .mark{height:26px;width:auto;margin-bottom:44px;display:block}
+  /* Single centred column. The previous two-column grid left a large empty
+     band on wide screens because the right-hand card was pinned to the edge
+     while the left column ran out of content. Centring removes the gap
+     instead of trying to fill it. */
+  .login{position:relative;z-index:2;min-height:100vh;display:flex;
+    flex-direction:column;align-items:center;justify-content:center;
+    gap:26px;padding:40px 22px 48px;max-width:520px;margin:0 auto;text-align:center}
+
+  .mark{height:24px;width:auto;display:block}
   .statement{font-family:var(--f-ui);font-weight:800;
-    font-size:clamp(40px,6.4vw,78px);line-height:.98;letter-spacing:-.035em;
+    font-size:clamp(30px,5.2vw,46px);line-height:1.02;letter-spacing:-.035em;
     color:var(--c-ink);margin:0}
   .statement em{font-style:normal;color:var(--c-ink-3)}
-  .statement-sub{font-size:var(--t-md);line-height:1.6;color:var(--c-ink-3);
-    margin:26px 0 0;max-width:46ch}
+  .statement-sub{font-size:var(--t-sm);line-height:1.6;color:var(--c-ink-3);
+    margin:0;max-width:34ch}
 
-  /* ---- ticker: three layers, alternating direction ---- */
-  .ticker{margin-top:44px;display:flex;flex-direction:column;gap:10px;
-    overflow:hidden;max-width:100%;
-    -webkit-mask-image:linear-gradient(90deg,transparent,#000 8%,#000 92%,transparent);
-    mask-image:linear-gradient(90deg,transparent,#000 8%,#000 92%,transparent)}
-  .tick-row{display:flex;gap:10px;width:max-content;will-change:transform}
-  .tick-row.r0{animation:tick-l 64s linear infinite}
-  .tick-row.r1{animation:tick-r 82s linear infinite}
-  .tick-row.r2{animation:tick-l 73s linear infinite}
-  @keyframes tick-l{from{transform:translateX(0)}to{transform:translateX(-50%)}}
-  @keyframes tick-r{from{transform:translateX(-50%)}to{transform:translateX(0)}}
-  .bub{flex:none;padding:8px 15px;border-radius:var(--r-pill);
-    background:var(--c-surface);box-shadow:var(--e-1);
-    font-size:12.5px;line-height:1.35;color:var(--c-ink-2);white-space:nowrap}
-  .bub.q{color:var(--c-ink-4)}
-  @media (prefers-reduced-motion:reduce){
-    .tick-row{animation:none!important}
-    .ticker{-webkit-mask-image:none;mask-image:none}
-    .tick-row{flex-wrap:wrap;width:auto}
-  }
-
-  /* ---- right: auth ---- */
-  .auth-card{width:100%;max-width:430px;justify-self:end;
+  /* ---- auth card: sits over the tree, deliberately overlapping it ---- */
+  .auth-card{width:100%;max-width:392px;position:relative;z-index:3;
     animation:rise .7s cubic-bezier(.22,.8,.3,1)}
-  @keyframes rise{from{opacity:0;transform:translateY(22px)}to{opacity:1;transform:none}}
-  .auth-body{padding:34px 34px 28px;background:var(--c-surface);
-    border-radius:var(--r-md);box-shadow:var(--e-3)}
+  @keyframes rise{from{opacity:0;transform:translateY(18px)}to{opacity:1;transform:none}}
+  .auth-body{padding:28px 28px 24px;background:var(--c-surface);
+    border-radius:var(--r-md);box-shadow:var(--e-3);text-align:left}
   .auth-title{font-family:var(--f-title);font-optical-sizing:auto;font-weight:500;
-    font-size:var(--t-xl);color:var(--c-ink);margin:0 0 6px}
-  .auth-lede{font-size:13.5px;color:var(--c-ink-3);margin:0 0 24px}
-  .auth-tabs{display:flex;gap:6px;margin-bottom:24px;background:var(--c-wash);
+    font-size:var(--t-lg);color:var(--c-ink);margin:0 0 18px}
+  .auth-tabs{display:flex;gap:6px;margin-bottom:20px;background:var(--c-wash);
     border-radius:var(--r-sm);padding:4px}
   .auth-tabs button{flex:1;padding:9px;border:none;border-radius:8px;cursor:pointer;
     font-family:var(--f-ui);font-size:13px;font-weight:600;color:var(--c-ink-3);
@@ -67,23 +45,22 @@
   .auth-tabs button.active{background:var(--c-surface);color:var(--c-ink);box-shadow:var(--e-1)}
   .auth-error{display:none;background:rgba(138,62,42,.07);
     color:#8A3E2A;font-size:13px;padding:11px 14px;border-radius:var(--r-sm);margin-bottom:16px}
-  .auth-foot{text-align:center;margin-top:20px;font-size:13px;color:var(--c-ink-3)}
+  .auth-foot{text-align:center;margin-top:18px;font-size:13px;color:var(--c-ink-3)}
   .auth-foot a{font-weight:600;color:var(--c-ink)}
-  .demo-note{margin-top:22px;padding-top:18px;border-top:1px solid var(--c-hair);
+  .demo-note{margin-top:18px;padding-top:15px;border-top:1px solid var(--c-hair);
     font-family:var(--f-label);font-size:11px;color:var(--c-ink-4);
-    text-align:center;line-height:1.7}
+    text-align:center;line-height:1.6}
 
-  /* ---- the live hand ---- */
-  /* The hand reaches IN from the bottom-right corner. Offsets are tuned so the
-     palm and at least two fingers stay on screen — pushed further into the
-     corner it stops reading as a hand and becomes an anonymous mesh. */
-  .hand{position:fixed;right:-14vw;bottom:-10vh;width:min(86vw,760px);
-    height:auto;aspect-ratio:1/1.12;z-index:0;pointer-events:none;
-    color:var(--c-ink);opacity:.16}
-  @media (min-width:1000px){
-    .hand{right:-7vw;bottom:-9vh;width:min(56vw,880px);opacity:.30}
-  }
-  @media (max-width:640px){.hand{opacity:.10}}
+  /* ---- the tree / neural network ---- */
+  /* Centred and full-height rather than pushed into a corner: the form sits on
+     top of it, so the trunk reads behind the card and the root network spreads
+     out beneath. Kept to a light transparent grey so it never competes with
+     the form it sits under. */
+  .tree{position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);
+    width:100vw;height:auto;aspect-ratio:1.6/1;z-index:0;
+    pointer-events:none;color:var(--c-ink);opacity:.16}
+  @media (min-width:1000px){.tree{width:min(100vw,1680px);opacity:.18}}
+  @media (max-width:640px){.tree{opacity:.11;width:230vw}}
 </style>
 </head>
 <body>
@@ -93,23 +70,17 @@
   <div class="load-word">Entering your space</div>
 </div>
 
-<svg class="hand" id="handGraph" aria-hidden="true"></svg>
+<svg class="tree" id="treeGraph" aria-hidden="true"></svg>
 
 <div class="login">
-  <section class="manifesto">
-    <img class="mark" src="assets/img/cordia-logo-header.webp" alt="Cordia" width="382" height="60">
-    <h1 class="statement">I see humans,<br>but no <em>humanity.</em></h1>
-    <p class="statement-sub">Ninety-five percent of enterprise AI pilots return nothing.
-      Not because the models are weak &mdash; because nobody could say what they wanted.
-      Cordia measures that, and only that.</p>
-
-    <div class="ticker" id="ticker" aria-hidden="true"></div>
-  </section>
+  <img class="mark" src="assets/img/cordia-logo-header.webp" alt="Cordia" width="382" height="60">
+  <h1 class="statement">I see humans,<br>but no <em>humanity.</em></h1>
+  <p class="statement-sub">AI adoption fails on <b>intent</b>, not capability.
+    Cordia measures that.</p>
 
   <div class="auth-card">
     <div class="auth-body">
       <h2 class="auth-title">Sign in</h2>
-      <p class="auth-lede">The agentic mesh for freelance work.</p>
 
       <div class="auth-tabs">
         <button id="tabLogin" class="active" type="button">Sign in</button>
@@ -144,52 +115,15 @@
       </div>
 
       <div class="demo-note">
-        Secured with email verification. Passwords are hashed server-side &mdash;
-        never stored in your browser.
+Email-verified. Passwords hashed server-side.
       </div>
     </div>
   </div>
 </div>
 
-<script src="assets/cordia-handgraph.js"></script>
+<script src="assets/cordia-treegraph.js"></script>
 <script>
-/* ---- ticker content: the failure Cordia exists to measure ---- */
-(function(){
-  var LINES = [
-    ['we shipped an agent and quietly turned it off six weeks later', 0],
-    ['"make it better" — it added three columns and reformatted every date', 0],
-    ['nobody could say what good output looked like', 1],
-    ['the pilot worked. the rollout did not.', 0],
-    ['40% of agentic deployments will be decommissioned by 2027', 1],
-    ['it did exactly what we asked. that was the problem.', 0],
-    ['our agent booked the same room twice and nobody noticed for a week', 0],
-    ['"handle it" is not an instruction', 1],
-    ['we automated the wrong step, faster', 0],
-    ['the model was fine. the spec was three words.', 0],
-    ['95% of enterprise GenAI pilots delivered no measurable P&L impact', 1],
-    ['every review meeting ends with "it\'s just not quite right"', 0],
-    ['we hired a prompt engineer and still could not describe the outcome', 0],
-    ['it summarised the chart and left out the new medication', 0],
-    ['escalation policy: use good judgment', 1],
-    ['the coordinator passed the wrong scope and three agents ran with it', 0],
-    ['nobody wrote down what "done" meant', 1],
-    ['we blamed the model for a decision we never made', 0],
-  ];
-  function bub(t, q){
-    return '<span class="bub' + (q ? ' q' : '') + '">' +
-      String(t).replace(/[&<>"]/g, function(c){
-        return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]; }) + '</span>';
-  }
-  var rows = [[], [], []];
-  LINES.forEach(function(l, i){ rows[i % 3].push(bub(l[0], l[1])); });
-  document.getElementById('ticker').innerHTML = rows.map(function(r, i){
-    // duplicated once so the -50% translate loops seamlessly
-    return '<div class="tick-row r' + i + '">' + r.join('') + r.join('') + '</div>';
-  }).join('');
-})();
-
-/* ---- live hand ---- */
-CordiaHandGraph.mount(document.getElementById('handGraph'));
+CordiaTreeGraph.mount(document.getElementById('treeGraph'));
 
 /* ================= auth logic — unchanged ================= */
 const API = (location.hostname === 'localhost' || location.hostname === '127.0.0.1'
@@ -207,7 +141,7 @@ const API = (location.hostname === 'localhost' || location.hostname === '127.0.0
         sessionStorage.setItem('cordia-auth','1');
         sessionStorage.setItem('cordia-user', d.user.email);
         localStorage.setItem('cordia-learner', d.user.email);
-        location.replace('space.html');
+        location.replace('surveyor.html');
       } else {
         localStorage.removeItem('cordia-token');
       }
@@ -259,7 +193,7 @@ function enterSpace(token, email){
   localStorage.setItem('cordia-token', token);
   localStorage.setItem('cordia-learner', email);
   loader.classList.add('show');
-  setTimeout(() => location.replace('space.html'), 1400);
+  setTimeout(() => location.replace('surveyor.html'), 1400);
 }
 
 document.getElementById('authForm').onsubmit = async e => {

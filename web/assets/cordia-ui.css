@@ -181,7 +181,8 @@ a{color:inherit; text-decoration:none}
 .grid-2{display:grid; grid-template-columns:1fr; gap:20px}
 @media (min-width:860px){ .grid-2{grid-template-columns:1.55fr 1fr} }
 
-/* objective list — same bullet motif as .win-obj, usable outside a window */
+/* objective list — same bullet motif as .win-more{color:var(--c-ink-4);font-style:italic}
+.win-obj, usable outside a window */
 .objlist{list-style:none; margin:0; padding:0}
 .objlist li{position:relative; padding-left:20px; margin-bottom:12px;
   font-size:var(--t-base); line-height:1.5; color:var(--c-ink-2)}

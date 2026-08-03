@@ -18,36 +18,30 @@ from __future__ import annotations
 
 from . import adaptation, freeform, identifiers, types
 
+# One sentence each. These are read on a results page next to three identifier
+# cards and five other sections; at 25-30 words apiece the page stopped being
+# scannable and became something to wade through.
 _SURFACE_ADVICE = {
     "canvas": ("Work on a canvas",
-               "Give yourself an open space you can arrange — boxes, arrows, things "
-               "you move around. Ask the AI to lay out structure there before it "
-               "writes anything long."),
+               "An open space you arrange yourself. Ask for structure before prose."),
     "graph_and_chat": ("Put a map next to the chat",
-                       "Keep a diagram of the work beside the conversation. Ask for the "
-                       "shape of a plan first, then talk through it."),
+                       "A diagram beside the conversation. Ask for the shape first."),
     "dashboard": ("Work from a dashboard",
-                  "Set up a view where the state of things is visible at a glance, and "
-                  "use chat for the exceptions rather than the routine."),
+                  "State visible at a glance. Chat for the exceptions, not the routine."),
     "chat": ("Keep it a clean chat",
-             "One conversation, no panels competing for attention. Put context in the "
-             "message rather than in the interface around it."),
+             "One conversation. Context in the message, not the interface."),
 }
 
 _DELEGATION_ADVICE = {
     "human_reviews_every_step": (
         "Review each step",
-        "Set the agent up to hand back after every step rather than running to "
-        "completion. Slower, and it keeps you in the detail where you want to be."),
+        "It hands back after every step. Slower, keeps you in the detail."),
     "human_checkpoint_before_final": (
         "One checkpoint, just before it's final",
-        "Let the agent run the whole task, then stop before anything is sent, "
-        "published or shared. That single gate catches most of what matters for "
-        "the least interruption."),
+        "It runs the whole task, then stops before anything goes out."),
     "agent_autonomous": (
         "Let it run, review the result",
-        "Give whole tasks rather than steps, and read the output rather than the "
-        "process. Keep one hard stop for anything irreversible."),
+        "Whole tasks, not steps. One hard stop for anything irreversible."),
 }
 
 
@@ -127,9 +121,7 @@ def build(profile: dict) -> dict:
         sections.append({
             "kind": "agents",
             "title": "Set up these roles",
-            "body": ("Rather than one general assistant, give each of these a job and "
-                     "its own instruction. They can be separate chats, separate custom "
-                     "instructions, or steps in one workflow."),
+            "body": "Give each a job and its own instruction.",
             "items": [{"title": a["name"], "body": a["instructions"]} for a in agents],
         })
 
@@ -138,8 +130,7 @@ def build(profile: dict) -> dict:
     if delegation in _DELEGATION_ADVICE:
         title, body = _DELEGATION_ADVICE[delegation]
         if risk == "high":
-            body += (" You want it to stop before anything irreversible — make that the "
-                     "one rule the agent is never allowed to skip.")
+            body += " Never let it skip that on anything irreversible."
         sections.append({"kind": "checkpoints", "title": title, "body": body, "items": []})
 
     advice = _first_identifier_advice(profile)
@@ -147,7 +138,7 @@ def build(profile: dict) -> dict:
         sections.append({
             "kind": "briefing",
             "title": "How to brief it",
-            "body": "These follow from how you already work, so they cost you nothing to adopt.",
+            "body": "These follow from how you already work.",
             "items": advice,
         })
 
@@ -159,10 +150,7 @@ def build(profile: dict) -> dict:
         sections.insert(1, {
             "kind": "tension",
             "title": "Where your answers pulled in different directions",
-            "body": ("You said one thing when it was free to say, and chose another "
-                     "when it cost something. That difference is usually the most useful "
-                     "part of a survey like this — and it's an observation, not a "
-                     "verdict. You'll know better than we do whether it lands."),
+            "body": "An observation, not a verdict — you'll know if it lands.",
             "items": [{
                 "title": t.get("name") or "A difference worth noticing",
                 "body": _tension_line(t),
@@ -174,8 +162,7 @@ def build(profile: dict) -> dict:
     if ff.get("automate"):
         sections.append({
             "kind": "automation", "title": "Start with what you already named",
-            "body": ("You said this is what you'd hand over tomorrow. It's the right "
-                     "first thing to automate because you already know it's worth doing."),
+            "body": "Your own answer — so you already know it's worth doing.",
             "items": [{"title": "In your words", "body": ff["automate"]}],
         })
 
@@ -185,8 +172,7 @@ def build(profile: dict) -> dict:
                  for m in seen]
         sections.append({
             "kind": "screen", "title": "What to put on the screen",
-            "body": ("Taken from what you described wanting to see. These are things "
-                     "you named — check them against what you actually meant."),
+            "body": "Things you named — check them against what you meant.",
             "items": items or [{"title": "In your words", "body": ff.get("screen", "")}],
         })
 

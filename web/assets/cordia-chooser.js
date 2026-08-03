@@ -166,9 +166,16 @@
       '<button class="win-hit" type="button" data-id="' + esc(t.id) + '">' +
         '<span class="win-eyebrow">' + n + ' &middot; ' + esc(t.id) + '</span>' +
         '<span class="win-title">' + esc(t.name) + '</span>' +
-        '<ul class="win-obj">' + (t.courses || []).map(function (c) {
+        // Two course titles, then a count. Listing all four put ~38 words on
+        // every card, and fifteen of those made the catalogue a wall of text
+        // to scan rather than a set of things to choose between. The full list
+        // is one tap away in the detail sheet.
+        '<ul class="win-obj">' + (t.courses || []).slice(0, 2).map(function (c) {
           return '<li>' + esc(typeof c === 'string' ? c : (c.t || c.name || '')) + '</li>';
-        }).join('') + '</ul>' +
+        }).join('') +
+        ((t.courses || []).length > 2
+          ? '<li class="win-more">+' + ((t.courses || []).length - 2) + ' more</li>'
+          : '') + '</ul>' +
         '<span class="win-foot"><span>' +
           (accessKnown ? (open ? 'Open' : '$79') : 'View') + '</span>' +
           (envTitle ? '<span class="win-env">' + esc(envTitle) + '</span>' : '') +
@@ -382,8 +389,8 @@
 
   /* ---------------- account menu ---------------- */
   var MENU = [
-    ['Profile',   'space.html',        'M24,25 C29,25 33,21 33,16 C33,11 29,7 24,7 C19,7 15,11 15,16 C15,21 19,25 24,25', 'M9,42 C9,33 15.5,28 24,28 C32.5,28 39,33 39,42'],
-    ['Account',   'space.html',        'M8,14 C18,10 30,10 40,14 C40,24 40,31 24,41 C8,31 8,24 8,14', 'M17,24 L22,29 L32,19'],
+    ['Profile',   'profile.html',        'M24,25 C29,25 33,21 33,16 C33,11 29,7 24,7 C19,7 15,11 15,16 C15,21 19,25 24,25', 'M9,42 C9,33 15.5,28 24,28 C32.5,28 39,33 39,42'],
+    ['Account',   'profile.html',        'M8,14 C18,10 30,10 40,14 C40,24 40,31 24,41 C8,31 8,24 8,14', 'M17,24 L22,29 L32,19'],
     ['Billing',   'pricing.html',      'M6,13 C18,10 30,10 42,13 C42,22 42,28 42,35 C30,38 18,38 6,35 C6,28 6,22 6,13', 'M6,20 C18,18 30,18 42,20'],
     ['Certification', 'certification.html', 'M24,6 C33.5,6 41.5,14 41.5,23.5 C41.5,33 33.5,41 24,41 C14.5,41 6.5,33 6.5,23.5 C6.5,14 14.5,6 24,6', 'M16,23 L21.5,28.5 L32,18'],
     ['Assessment','assessment.html',   'M8,40 C8,32 8,24 8,16', 'M18,40 C18,28 18,18 18,10', 'M28,40 C28,30 28,22 28,20', 'M38,40 C38,26 38,16 38,8'],

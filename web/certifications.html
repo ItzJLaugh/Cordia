@@ -48,26 +48,19 @@
 <main id="main" class="shell page">
   <p class="page-eyebrow">Cordia</p>
   <h1 class="page-title">Certifications</h1>
-  <p class="page-sub">Three certification tiers measure the universal skill &mdash; the same content
-    serves a nurse, an electrician and a controller. The fourth instrument is not an exam:
-    it is how we check the scorer itself.</p>
+  <p class="page-sub">One skill, measured three ways. The same content serves a <b>nurse</b>, an <b>electrician</b> and a <b>controller</b>.</p>
 
   <ul class="cert-grid" id="certGrid" role="list"></ul>
 
   <div class="note">
-    <p><b>Domains are courses, not certifications.</b> The fifteen domain tracks under
-      <a href="training.html">Training</a> teach the reasoning a particular kind of work
-      demands. Certification measures the skill itself, independent of domain.</p>
+    <p><b>Domains are courses, not certifications.</b> They teach the reasoning a kind of work demands. Certification measures the skill itself.</p>
   </div>
 
   <section class="essay">
     <div class="essay-copy">
       <p class="page-eyebrow">Why measure this</p>
       <h2 class="essay-h">The problem isn&rsquo;t your intelligence.</h2>
-      <p>Complex problems rarely have one cause. Look from a single angle and you
-        miss the bigger picture &mdash; which is why the certification measures
-        six dimensions, not one score, and why the fifteen domains each train a
-        different kind of reasoning rather than a different vocabulary.</p>
+      <p>Complex problems rarely have one cause. So we measure <b>six dimensions</b>, not one score.</p>
     </div>
     <figure class="essay-fig">
       <img src="assets/img/ref-perspective.webp" alt="A figure holding one key before a cube with several differently-shaped keyholes, labelled: one perspective, multiple causes." width="1100" height="1565" loading="lazy" decoding="async">
@@ -81,7 +74,13 @@
 (function(){
   function esc(s){return String(s==null?'':s).replace(/[&<>"]/g,function(c){
     return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];});}
-  document.getElementById('certGrid').innerHTML = CERT_INSTRUMENTS.map(function(c){
+  // `internal` instruments are not certifications anyone can take — currently
+  // just the two-rater calibration study, which read as a stray "77-question
+  // exam" sitting in the public catalogue. It stays reachable at its own URL
+  // for the named raters; it simply isn't advertised here.
+  document.getElementById('certGrid').innerHTML = CERT_INSTRUMENTS
+    .filter(function(c){ return !c.internal; })
+    .map(function(c){
     var meta = [];
     if (c.items) meta.push('<span class="pill">'+c.items+' items</span>');
     if (c.kind === 'calibration') meta.push('<span class="pill warn">Rater study</span>');
