@@ -307,7 +307,10 @@
       var man  = res.j.manifest || {};
       var modeById = {};
       (man.agents||[]).forEach(function(a){
-        var key = String(a.id||a.name||'').toLowerCase();
+        // build_manifest() emits `agent`, not `id`/`name` — reading the wrong
+        // field left key empty, so every node fell through to 'shadow' below
+        // regardless of what the real profile said.
+        var key = String(a.agent||a.id||a.name||'').toLowerCase();
         AGENTS.forEach(function(x){ if(key.indexOf(x.id)>-1) modeById[x.id]=a.mode||'shadow'; });
       });
       if(!Object.keys(modeById).length) AGENTS.forEach(function(a){modeById[a.id]='shadow';});

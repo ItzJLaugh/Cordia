@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Your Cordia Profile</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Newsreader:opsz,wght@6..72,400;6..72,500;6..72,600&family=Work+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="assets/cordia-ui.css">
+<style>
+  .page{padding:44px 0 96px}
+  .lede{max-width:640px;margin:0 0 40px}
+  .eyebrow{font-family:var(--f-label);font-size:var(--t-xs);letter-spacing:var(--tr-caps);
+    text-transform:uppercase;color:var(--c-ink-3);margin:0 0 12px}
+  h1{font-family:var(--f-title);font-optical-sizing:auto;font-weight:500;
+    font-size:var(--t-2xl);line-height:var(--lh-title);color:var(--c-ink);margin:0 0 12px}
+  .sub{font-size:var(--t-base);line-height:var(--lh-body);color:var(--c-ink-2);margin:0}
+
+  .meter{display:flex;align-items:center;gap:14px;margin:26px 0 0;max-width:420px}
+  .bar{flex:1;height:5px;border-radius:999px;background:var(--c-wash);overflow:hidden}
+  .bar i{display:block;height:100%;background:var(--c-moss);width:0;
+    transition:width .7s var(--ease-out)}
+  .pct{font-family:var(--f-label);font-size:var(--t-xs);letter-spacing:.08em;
+    color:var(--c-ink-3);font-variant-numeric:tabular-nums}
+
+  .cards{display:grid;gap:18px;grid-template-columns:repeat(auto-fit,minmax(285px,1fr));
+    margin:8px 0 0}
+  .card{background:var(--c-surface);border-radius:var(--r-lg);padding:26px;
+    box-shadow:var(--e-1);display:flex;flex-direction:column;gap:12px}
+  .card .n{font-family:var(--f-label);font-size:var(--t-xs);letter-spacing:var(--tr-caps);
+    text-transform:uppercase;color:var(--c-moss)}
+  .card h2{font-family:var(--f-title);font-weight:500;font-size:var(--t-lg);
+    line-height:var(--lh-title);color:var(--c-ink);margin:0}
+  .card .mean{font-size:var(--t-sm);line-height:var(--lh-body);color:var(--c-ink-2);margin:0}
+  .card .use{font-size:var(--t-sm);line-height:var(--lh-body);color:var(--c-ink);margin:0;
+    padding:14px 0 0;border-top:1px solid var(--c-hair)}
+  .card .use b{font-family:var(--f-label);font-size:var(--t-xs);letter-spacing:var(--tr-caps);
+    text-transform:uppercase;color:var(--c-ink-3);font-weight:500;display:block;margin:0 0 6px}
+
+  .empty{background:var(--c-wash);border-radius:var(--r-lg);padding:40px 32px;max-width:620px}
+  .empty p{font-size:var(--t-base);line-height:var(--lh-body);color:var(--c-ink-2);margin:0 0 20px}
+  .btn{display:inline-flex;align-items:center;gap:8px;border:0;cursor:pointer;
+    background:var(--c-moss);color:#fff;border-radius:var(--r-pill);padding:12px 22px;
+    font-family:var(--f-label);font-size:var(--t-xs);letter-spacing:var(--tr-caps);
+    text-transform:uppercase;text-decoration:none}
+  .btn.ghost{background:transparent;color:var(--c-ink);border:1px solid var(--c-hair)}
+  .btn:hover{opacity:.9}
+  .next{margin:44px 0 0;padding:24px 26px;background:var(--c-wash);border-radius:var(--r-lg);
+    max-width:620px;display:flex;flex-direction:column;gap:14px;align-items:flex-start}
+  .next p{margin:0;font-size:var(--t-sm);line-height:var(--lh-body);color:var(--c-ink-2)}
+  .foot{margin:52px 0 0;padding:22px 0 0;border-top:1px solid var(--c-hair);max-width:640px;
+    font-size:var(--t-sm);line-height:var(--lh-body);color:var(--c-ink-3)}
+  .offline{margin:22px 0 0;padding:11px 15px;border-radius:10px;background:#FBF6EC;
+    color:#7A5B2E;font-size:var(--t-xs);font-family:var(--f-label);line-height:1.5;max-width:620px}
+</style>
+</head>
+<body>
+
+<header id="shellHeader"></header>
+
+<main id="main" class="page">
+  <div class="shell">
+    <div class="lede">
+      <p class="eyebrow">Your Cordia profile</p>
+      <h1 id="title">How you work with AI</h1>
+      <p class="sub" id="sub">Built from your conversation with Surveyor. This is not a score
+        and not a grade — it is a description of how you already think, and how to spend that
+        on an AI.</p>
+      <div class="meter" id="meter" hidden>
+        <span class="pct" id="pctLabel">0%</span>
+        <span class="bar"><i id="bar"></i></span>
+      </div>
+      <div class="offline" id="offline" hidden></div>
+    </div>
+
+    <div id="content"></div>
+
+    <p class="foot">These three are what came through most clearly in your conversation. Cordia
+      shows strengths only — ranking people against each other on a short conversation would not
+      be honest measurement, so nothing here is a verdict on what you cannot do.</p>
+  </div>
+</main>
+
+<script src="assets/cordia-shell.js" data-nav="surveyor"></script>
+<script>
+(function () {
+  'use strict';
+  var API = location.hostname === 'localhost' ? 'http://127.0.0.1:9995' : '';
+  var content = document.getElementById('content');
+
+  function esc(s) {
+    return String(s == null ? '' : s).replace(/[&<>"]/g, function (c) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c];
+    });
+  }
+
+  function empty(msg, cta) {
+    content.innerHTML =
+      '<div class="empty"><p>' + esc(msg) + '</p>' +
+      (cta ? '<button class="btn" type="button" data-surveyor>' + esc(cta) + '</button>' : '') +
+      '</div>';
+  }
+
+  function render(d) {
+    var ids = d.identifiers || [];
+    var pct = d.percent_complete || 0;
+
+    document.getElementById('meter').hidden = false;
+    document.getElementById('pctLabel').textContent = pct + '%';
+    requestAnimationFrame(function () {
+      document.getElementById('bar').style.width = pct + '%';
+    });
+
+    if (d.llm && d.llm.live === false) {
+      var o = document.getElementById('offline');
+      o.hidden = false;
+      o.textContent = d.llm.note;
+    }
+
+    if (!ids.length) {
+      empty('Surveyor hasn’t met you yet. A few questions is all it takes — then Cordia '
+          + 'can shape a workspace around how you actually work.', 'Talk to Surveyor');
+      return;
+    }
+
+    var cards = ids.map(function (i, n) {
+      return '<div class="card">' +
+        '<span class="n">Identifier ' + (n + 1) + '</span>' +
+        '<h2>' + esc(i.name) + '</h2>' +
+        '<p class="mean">' + esc(i.meaning) + '</p>' +
+        '<p class="use"><b>Use AI this way</b>' + esc(i.use_ai_this_way) + '</p>' +
+        '</div>';
+    }).join('');
+
+    var na = d.next_action || {};
+    content.innerHTML =
+      '<div class="cards">' + cards + '</div>' +
+      (ids.length < 3
+        ? '<div class="next"><p>Cordia has ' + ids.length + ' of 3 so far. A little more '
+          + 'conversation sharpens the picture.</p>'
+          + '<button class="btn ghost" type="button" data-surveyor>Keep talking to Surveyor</button></div>'
+        : '<div class="next"><p>' + esc(na.reason || '') + '</p>'
+          + '<a class="btn" href="builder.html">' + esc(na.label || 'Build my workspace') + '</a></div>');
+  }
+
+  fetch(API + '/surveyor/profile', {
+    headers: { Authorization: 'Bearer ' + (localStorage.getItem('cordia-token') || '') }
+  }).then(function (r) {
+    if (r.status === 401) { empty('Sign in to see your Cordia profile.'); return null; }
+    if (r.status === 503) { empty('Surveyor is unavailable right now. Nothing else is affected.'); return null; }
+    return r.json();
+  }).then(function (d) { if (d) render(d); })
+    .catch(function () { empty('Could not load your profile. Please refresh.'); });
+
+  document.addEventListener('cordia:surveyor-closed', function () { location.reload(); });
+})();
+</script>
+</body>
+</html>

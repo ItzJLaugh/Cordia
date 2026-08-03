@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Surveyor Debug &mdash; Cordia</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Newsreader:opsz,wght@6..72,400;6..72,500;6..72,600&family=Work+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="assets/cordia-ui.css">
+<style>
+  .page{padding:36px 0 96px}
+  .eyebrow{font-family:var(--f-label);font-size:var(--t-xs);letter-spacing:var(--tr-caps);
+    text-transform:uppercase;color:var(--c-ink-3);margin:0 0 10px}
+  h1{font-family:var(--f-title);font-weight:500;font-size:var(--t-xl);
+    line-height:var(--lh-title);color:var(--c-ink);margin:0 0 6px}
+  .sub{font-size:var(--t-sm);color:var(--c-ink-3);margin:0 0 26px}
+  .bar{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin:0 0 26px}
+  input[type=text]{border:1px solid var(--c-hair);border-radius:10px;padding:9px 12px;
+    font:inherit;font-size:var(--t-sm);min-width:250px}
+  .btn{border:0;cursor:pointer;background:var(--c-moss);color:#fff;border-radius:var(--r-pill);
+    padding:9px 18px;font-family:var(--f-label);font-size:var(--t-xs);
+    letter-spacing:var(--tr-caps);text-transform:uppercase}
+  .btn.ghost{background:transparent;color:var(--c-ink-2);border:1px solid var(--c-hair)}
+  .flag{font-family:var(--f-label);font-size:var(--t-xs);padding:6px 12px;border-radius:999px;
+    background:var(--c-wash);color:var(--c-ink-2)}
+  .flag[data-warn="1"]{background:#FBF6EC;color:#7A5B2E}
+  section{margin:0 0 30px}
+  h2{font-family:var(--f-label);font-size:var(--t-xs);letter-spacing:var(--tr-caps);
+    text-transform:uppercase;color:var(--c-ink-3);margin:0 0 12px;font-weight:500}
+  .panel{background:var(--c-surface);border-radius:var(--r-md);padding:20px;box-shadow:var(--e-1)}
+  table{width:100%;border-collapse:collapse;font-size:var(--t-sm)}
+  th,td{text-align:left;padding:8px 10px;border-bottom:1px solid var(--c-hair);vertical-align:top}
+  th{font-family:var(--f-label);font-size:var(--t-xs);letter-spacing:.08em;
+    text-transform:uppercase;color:var(--c-ink-3);font-weight:500}
+  td.num{font-variant-numeric:tabular-nums;white-space:nowrap}
+  .meter{display:inline-block;width:90px;height:5px;border-radius:999px;background:var(--c-wash);
+    overflow:hidden;vertical-align:middle;margin-right:9px}
+  .meter i{display:block;height:100%;background:var(--c-moss)}
+  pre{margin:0;font-size:12px;line-height:1.55;color:var(--c-ink-2);white-space:pre-wrap;
+    word-wrap:break-word;max-height:340px;overflow:auto}
+  .scroll{overflow-x:auto}
+  .msg{padding:9px 0;border-bottom:1px solid var(--c-hair);font-size:var(--t-sm)}
+  .msg b{font-family:var(--f-label);font-size:var(--t-xs);text-transform:uppercase;
+    letter-spacing:.08em;color:var(--c-ink-4);display:block;margin:0 0 3px}
+  .deny{background:var(--c-wash);border-radius:var(--r-lg);padding:40px 32px;max-width:600px;
+    font-size:var(--t-base);line-height:var(--lh-body);color:var(--c-ink-2)}
+</style>
+</head>
+<body>
+
+<header id="shellHeader"></header>
+
+<main id="main" class="page">
+  <div class="shell">
+    <p class="eyebrow">Internal</p>
+    <h1>Surveyor debug</h1>
+    <p class="sub">Hidden criteria, evidence and adaptation output. None of this is learner-facing.</p>
+    <div id="content"></div>
+  </div>
+</main>
+
+<script src="assets/cordia-shell.js"></script>
+<script>
+(function () {
+  'use strict';
+  var API = location.hostname === 'localhost' ? 'http://127.0.0.1:9995' : '';
+  var content = document.getElementById('content');
+
+  function esc(s) {
+    return String(s == null ? '' : s).replace(/[&<>"]/g, function (c) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c];
+    });
+  }
+  function api(path, body) {
+    return fetch(API + path, {
+      method: body ? 'POST' : 'GET',
+      headers: { 'Content-Type': 'application/json',
+                 Authorization: 'Bearer ' + (localStorage.getItem('cordia-token') || '') },
+      body: body ? JSON.stringify(body) : undefined
+    }).then(function (r) {
+      return r.json().catch(function () { return {}; })
+        .then(function (d) { return { code: r.status, data: d }; });
+    });
+  }
+
+  function render(d) {
+    var p = d.profile || {}, scores = p.scores || {}, ev = p.evidence || [];
+    var byCriterion = {};
+    ev.forEach(function (e) {
+      (byCriterion[e.criterion] = byCriterion[e.criterion] || []).push(e);
+    });
+
+    var rows = Object.keys(scores).sort(function (a, b) { return scores[b] - scores[a]; })
+      .map(function (c) {
+        var pct = Math.round(scores[c] * 100);
+        var evid = (byCriterion[c] || []).map(function (e) {
+          return esc(e.summary) + ' <span style="color:var(--c-ink-4)">(' + esc(e.confidence) + ')</span>';
+        }).join('<br>') || '<span style="color:var(--c-ink-4)">no evidence recorded</span>';
+        return '<tr><td>' + esc(c) + '</td>' +
+          '<td class="num"><span class="meter"><i style="width:' + pct + '%"></i></span>' +
+          scores[c].toFixed(3) + '</td><td>' + evid + '</td></tr>';
+      }).join('');
+
+    content.innerHTML =
+      '<div class="bar">' +
+        '<input type="text" id="who" value="' + esc(d.email || '') + '" aria-label="Email">' +
+        '<button class="btn ghost" type="button" id="go">Look up</button>' +
+        '<span class="flag">PERSONALIZATION_MODE = ' + esc(d.personalization_mode) + '</span>' +
+        '<span class="flag"' + (d.llm && d.llm.live === false ? ' data-warn="1"' : '') + '>' +
+          'model: ' + esc((d.llm || {}).mode || '?') + '</span>' +
+        '<span class="flag"' + (p.simple_mode_forced ? ' data-warn="1"' : '') + '>' +
+          'simple_mode_forced = ' + (p.simple_mode_forced ? 'true' : 'false') + '</span>' +
+        '<button class="btn" type="button" id="toggle">' +
+          (p.simple_mode_forced ? 'Unforce simple mode' : 'Force simple mode') + '</button>' +
+      '</div>' +
+
+      '<section><h2>Hidden criteria &mdash; ' + Object.keys(scores).length + ' observed of 10</h2>' +
+        '<div class="panel scroll">' + (rows
+          ? '<table><thead><tr><th>Criterion</th><th>Score</th><th>Evidence</th></tr></thead>' +
+            '<tbody>' + rows + '</tbody></table>'
+          : '<p style="margin:0;color:var(--c-ink-3);font-size:var(--t-sm)">No criteria observed yet.</p>') +
+        '</div></section>' +
+
+      '<section><h2>Learner-facing profile (what they actually see)</h2>' +
+        '<div class="panel"><pre>' + esc(JSON.stringify(d.public, null, 2)) + '</pre></div></section>' +
+
+      '<section><h2>Signals</h2><div class="panel"><pre>' +
+        esc(JSON.stringify(p.signals || {}, null, 2)) + '</pre></div></section>' +
+
+      '<section><h2>Adaptation output</h2><div class="panel"><pre>' +
+        esc(JSON.stringify(d.adaptation || {}, null, 2)) + '</pre></div></section>' +
+
+      '<section><h2>Conversation &mdash; ' + (d.messages || []).length + ' messages</h2>' +
+        '<div class="panel scroll" style="max-height:400px;overflow-y:auto">' +
+        ((d.messages || []).map(function (m) {
+          return '<div class="msg"><b>' + esc(m.role) + '</b>' + esc(m.content) + '</div>';
+        }).join('') || '<p style="margin:0;color:var(--c-ink-3)">No conversation yet.</p>') +
+        '</div></section>' +
+
+      '<section><h2>Interfaces (' + (d.interfaces || []).length + ') and runs (' +
+        (d.runs || []).length + ')</h2><div class="panel"><pre>' +
+        esc(JSON.stringify((d.interfaces || []).map(function (x) {
+          return { id: x.id, name: x.name, archived: x.archived, updated: x.updated };
+        }), null, 2)) + '</pre></div></section>' +
+
+      '<section><h2>Events</h2><div class="panel scroll"><table>' +
+        '<thead><tr><th>When</th><th>Event</th><th>Payload</th></tr></thead><tbody>' +
+        ((d.events || []).map(function (e) {
+          return '<tr><td class="num">' + esc((e.created || '').slice(0, 19)) + '</td>' +
+            '<td>' + esc(e.event_type) + '</td>' +
+            '<td><code style="font-size:11px">' + esc(JSON.stringify(e.payload)) + '</code></td></tr>';
+        }).join('') || '<tr><td colspan="3">No events.</td></tr>') +
+        '</tbody></table></div></section>';
+
+    document.getElementById('go').addEventListener('click', function () {
+      load(document.getElementById('who').value.trim());
+    });
+    document.getElementById('toggle').addEventListener('click', function () {
+      this.disabled = true;
+      api('/surveyor/personalization', { simple_mode_forced: !p.simple_mode_forced })
+        .then(function () { load(d.email); });
+    });
+  }
+
+  function load(email) {
+    api('/surveyor/admin' + (email ? '?email=' + encodeURIComponent(email) : ''))
+      .then(function (r) {
+        if (r.code === 401) {
+          content.innerHTML = '<div class="deny">Sign in with an admin account to view this.</div>';
+        } else if (r.code === 403) {
+          content.innerHTML = '<div class="deny">This page is restricted. Add your address to '
+            + '<code>CORDIA_ADMINS</code> in the environment file to get access.</div>';
+        } else if (r.code === 503) {
+          content.innerHTML = '<div class="deny">Surveyor is unavailable right now.</div>';
+        } else { render(r.data); }
+      }).catch(function () {
+        content.innerHTML = '<div class="deny">Could not load. Please refresh.</div>';
+      });
+  }
+  load('');
+})();
+</script>
+</body>
+</html>

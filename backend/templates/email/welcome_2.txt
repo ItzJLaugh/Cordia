@@ -1,0 +1,19 @@
+Subject: How the exam is scored
+
+Hi {name},
+
+A quick note since you started your account with us — if you haven't sat
+the exam yet, here's how the scoring works so there are no surprises.
+
+We score on five dimensions: judgment under uncertainty, delegation
+discipline, escalation timing, refusal patterns, and audit trail
+completeness. Each block tests one. The total is a weighted average — no
+gating on any single block.
+
+The rubric is open. You can read it inside the exam at any time.
+
+If you started and didn't finish, your progress is saved.
+
+Resume: {cta_url}
+
+— Cordia

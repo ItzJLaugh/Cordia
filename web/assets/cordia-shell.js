@@ -14,9 +14,15 @@
   var script = document.currentScript;
   var active = (script && script.dataset.nav) || '';
 
+  // [label, href, nav-key, extra-attributes]
+  // Surveyor has no page of its own — it is a modal that opens over wherever
+  // you already are, so the link carries data-surveyor and cordia-surveyor.js
+  // intercepts the click. surveyor.html exists only as a direct-link fallback.
   var NAV = [
     ['Training', 'training.html', 'training'],
     ['Certifications', 'certifications.html', 'certifications'],
+    ['Surveyor', 'surveyor.html', 'surveyor', ' data-surveyor'],
+    ['Workspace', 'interfaces.html', 'workspace'],
     ['Agentic', 'agentic.html', 'agentic'],
     ['Pricing', 'pricing.html', 'pricing'],
   ];
@@ -56,7 +62,7 @@
       '</a>' +
       '<nav class="topnav" aria-label="Main">' +
         NAV.map(function (n) {
-          return '<a href="' + escUrl(n[1]) + '"' +
+          return '<a href="' + escUrl(n[1]) + '"' + (n[3] || '') +
             (n[2] === active ? ' class="active" aria-current="page"' : '') +
             '>' + esc(n[0]) + '</a>';
         }).join('') +
@@ -127,9 +133,24 @@
       .catch(function () {});
   }
 
+  // Surveyor rides along with the shell so the nav entry works everywhere
+  // without editing sixteen pages. Loaded once, guarded against double-include
+  // for pages that pull it in directly.
+  function loadSurveyor() {
+    if (window.Cordia && window.Cordia.surveyor) return;
+    if (document.querySelector('script[data-cordia-surveyor]')) return;
+    var s = document.createElement('script');
+    s.src = 'assets/cordia-surveyor.js';
+    s.defer = true;
+    s.setAttribute('data-cordia-surveyor', '1');
+    document.head.appendChild(s);
+  }
+
+  function boot() { mount(); loadSurveyor(); }
+
   if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', mount);
+    document.addEventListener('DOMContentLoaded', boot);
   } else {
-    mount();
+    boot();
   }
 })();

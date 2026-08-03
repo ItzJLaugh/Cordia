@@ -119,7 +119,23 @@ def verify_signup(email, code):
         cur.execute('INSERT INTO accounts VALUES(%s,%s,%s,%s,%s) ON CONFLICT (email) DO NOTHING',
                     (email, name, pw_hash, salt, time.time()))
         cur.execute('DELETE FROM pending WHERE email=%s', (email,))
+    _fire_event(email, 'signup_verified', {'name': name})
     return True, 'account created', _make_session(email)
+
+
+def _fire_event(email, kind, meta=None):
+    """Best-effort fire-and-forget to cordia-pipeline. Never blocks auth."""
+    try:
+        import urllib.request, json as _json
+        body = _json.dumps({'email': email, 'kind': kind, 'meta': meta or {}}).encode()
+        req = urllib.request.Request('http://127.0.0.1:9997/pipeline/track',
+                                      data=body, method='POST', headers={
+                                          'Content-Type': 'application/json',
+                                          'User-Agent': 'cordia-auth/1.0',
+                                      })
+        urllib.request.urlopen(req, timeout=2).read()
+    except Exception:
+        pass  # pipeline not running — auth path stays unaffected
 
 def login(email, password):
     email = email.strip().lower()

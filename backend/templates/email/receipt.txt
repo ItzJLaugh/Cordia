@@ -1,0 +1,15 @@
+Subject: Receipt — Cordia {track}
+
+Hi {name},
+
+Your purchase is in.
+
+Track: {track}
+Order: {order_id}
+
+Access it from your dashboard: {cta_url}
+
+If anything looks wrong, just reply to this email and I'll fix it
+personally.
+
+— Cordia

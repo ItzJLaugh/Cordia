@@ -113,6 +113,27 @@ def _process(rec: dict, fetch_rows: Callable[[], list[dict]]) -> None:
     result["scorer_signals"]["track"] = track
     result["scorer_signals"]["blocks_present"] = sorted(answers)
 
+    # Judgment frames: one per answer, structural features named with
+    # evidence. Read-only — the 6S score above is unchanged by this; the
+    # frames ride along inside scorer_signals so both layers of the
+    # pipeline share one durable record per score.
+    try:
+        from .judge import judge_answer
+        frames = []
+        for block, text in answers.items():
+            try:
+                frames.append(judge_answer(block, text))
+            except ValueError:
+                continue  # block has no feature map (legacy track)
+        if frames:
+            result["scorer_signals"]["judge_frames"] = frames
+            _bump("judged")
+            escalated = [f for f in frames if f["margin"] < 0.5]
+            if escalated:
+                _bump("judge_escalated", len(escalated))
+    except BaseException:
+        pass  # judging is additive; its failure must not stop scoring
+
     store.insert_score(sub_id, result)
     _bump("written")
     with _stats_lock:

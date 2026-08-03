@@ -1,0 +1,17 @@
+Subject: Your exam results — score {score}
+
+Hi {name},
+
+Your CordiaAIE exam is scored. Final score: {score} / 100.
+
+Open the full breakdown here: {result_url}
+
+What your score means:
+- 80+: certified — your certificate page is generated and shareable
+- 65–79: passed — strong performance, retake any block you want to push higher
+- below 65: close — review the rubric and retake; one focused read usually lifts 10+ points
+
+If you passed, the next step is a domain track if you want job-specific
+certification, or just hold the baseline and ship work. Both are valid.
+
+— Cordia

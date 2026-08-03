@@ -5,7 +5,7 @@ Stdlib only. Storage: /var/lib/cordia/corpus/corpus.jsonl (append-only)."""
 
 import json, os, re, time, threading, urllib.request, uuid, sys
 from collections import deque
-from http.server import HTTPServer, BaseHTTPRequestHandler
+from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
 
 sys.path.insert(0, '/opt/cordia/backend')
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))   # dev/local runs
@@ -23,6 +23,18 @@ except BaseException as _sixs_err:            # noqa: BLE001 - must never be fat
     sixs_shadow = None
     print(f'6S shadow scoring unavailable ({type(_sixs_err).__name__}: {_sixs_err}); '
           f'exam unaffected', file=sys.stderr)
+
+# Surveyor — conversational intake, profile, and the agentic interface builder.
+# Imported softly for the same reason as sixs above: if psycopg2, the DSN or the
+# package itself is missing, the exam and auth must keep working untouched. The
+# /surveyor/* routes then answer 503 rather than the process failing to boot.
+try:
+    import surveyor
+    surveyor.store.init_schema()
+except BaseException as _surv_err:            # noqa: BLE001 - must never be fatal
+    surveyor = None
+    print(f'Surveyor unavailable ({type(_surv_err).__name__}: {_surv_err}); '
+          f'exam and auth unaffected', file=sys.stderr)
 
 PORT = 9995
 DATA = '/var/lib/cordia/corpus'
@@ -158,8 +170,14 @@ def call_llm(system, user, max_tokens=900):
         'messages': [{'role': 'system', 'content': system}, {'role': 'user', 'content': user}],
         'max_tokens': max_tokens, 'temperature': 0.4
     }).encode()
+    # The User-Agent is load-bearing, not decoration. urllib sends
+    # "Python-urllib/3.x" by default and the upstream WAF blocks it outright
+    # with a 403 (Cloudflare 1010) before the key is ever examined — which
+    # looked exactly like an auth failure. Verified: curl reaches the API fine,
+    # urllib without this header does not, urllib with it does.
     req = urllib.request.Request(NOUS_URL, data=body, headers={
         'Content-Type': 'application/json',
+        'User-Agent': 'cordia-training/1.0',
         'Authorization': 'Bearer ' + nous_key()
     })
     with urllib.request.urlopen(req, timeout=90) as r:
@@ -226,8 +244,183 @@ class H(BaseHTTPRequestHandler):
             self._my_access()
         elif p == '/train/manifest':
             self._manifest()
+        elif p == '/surveyor/profile':
+            self._surv_profile()
+        elif p == '/surveyor/conversation':
+            self._surv_conversation()
+        elif p == '/surveyor/interfaces':
+            self._surv_list_interfaces()
+        elif p == '/surveyor/admin':
+            self._surv_admin()
         else:
             self._json({'error': 'not found'}, 404)
+
+    # ---------------------------------------------------------- surveyor
+
+    def _surv_me(self):
+        """Authenticated identity for a /surveyor/* request, or None.
+
+        Token from the Authorization header or the JSON body, matching the two
+        conventions already in use on this server (GET /auth/me reads the
+        header, POST /train/llm reads the body)."""
+        token = self.headers.get('Authorization', '').replace('Bearer ', '').strip()
+        if not token:
+            token = str(getattr(self, '_surv_body', {}).get('token', ''))
+        return auth.whoami(token) if token else None
+
+    def _surv_guard(self):
+        """Returns (email, None) or (None, True) having already sent the error."""
+        if surveyor is None:
+            self._json({'ok': False, 'error': 'surveyor unavailable'}, 503)
+            return None, True
+        me = self._surv_me()
+        if not me:
+            self._json({'ok': False, 'error': 'sign in to use Surveyor'}, 401)
+            return None, True
+        return me['email'], None
+
+    def _surv_llm(self):
+        """The model callable Surveyor should use right now.
+
+        nous_key is the probe: it raises if the credential is unreadable, which
+        is currently the case in production (the file is root-only and this
+        service runs as `cordia`). When that is fixed the same call starts
+        returning the live caller with no other change."""
+        caller, _live = surveyor.llm.caller(call_llm, probe=nous_key)
+        return caller
+
+    def _surv_profile(self):
+        email, stop = self._surv_guard()
+        if stop: return
+        self._json({'ok': True, 'llm': surveyor.llm.status(nous_key),
+                    **surveyor.pipeline.public_profile(email)})
+
+    def _surv_conversation(self):
+        email, stop = self._surv_guard()
+        if stop: return
+        self._json({'ok': True, **surveyor.pipeline.start(email)})
+
+    def _surv_message(self, body):
+        email, stop = self._surv_guard()
+        if stop: return
+        if not rate_ok(self._client_ip(), email, llm=True):
+            self._json({'ok': False, 'error': 'message limit reached — wait 10 minutes'}, 429)
+            return
+        out = surveyor.pipeline.turn(email, str(body.get('message', '')), self._surv_llm())
+        out['llm'] = surveyor.llm.status(nous_key)
+        self._json(out)
+
+    def _surv_defaults(self, profile):
+        return surveyor.adaptation.builder_defaults(profile)
+
+    def _surv_save_interface(self, body):
+        email, stop = self._surv_guard()
+        if stop: return
+        name = str(body.get('name', '')).strip()[:120] or 'Untitled interface'
+        desc = str(body.get('description', ''))[:600]
+        definition = body.get('definition')
+        if not isinstance(definition, dict):
+            self._json({'ok': False, 'error': 'definition must be an object'}, 400); return
+        # str(None) is the string 'None', which is truthy — a JSON null id would
+        # otherwise be read as an edit of an interface with that literal id, and
+        # every "save new interface" would 404.
+        existing = str(body.get('id') or '').strip() or None
+        if existing and not surveyor.store.get_interface(email, existing):
+            self._json({'ok': False, 'error': 'not found'}, 404); return
+        iid = surveyor.store.save_interface(email, existing, name, desc, definition,
+                                            body.get('theme'))
+        surveyor.store.log_event(email,
+                                 'interface_updated' if existing else 'interface_created',
+                                 {'id': iid, 'agents': len(definition.get('agents') or []),
+                                  'tools': len(definition.get('tools') or [])})
+        if not existing:
+            # Record what we recommended, so it can later be compared against
+            # whether it worked. outcomes.outcome_worked stays NULL until then.
+            self._surv_record_outcome(email, definition)
+        self._json({'ok': True, 'id': iid})
+
+    def _surv_record_outcome(self, email, definition):
+        """Best-effort write into the existing 6S outcomes table. Silent no-op
+        for a learner with no submission to attach to — see store.record_recommendation."""
+        try:
+            surveyor.store.record_recommendation(email, definition)
+        except Exception:
+            pass
+
+    def _surv_list_interfaces(self):
+        email, stop = self._surv_guard()
+        if stop: return
+        profile = surveyor.pipeline.load_profile(email)
+        self._json({'ok': True,
+                    'interfaces': surveyor.store.list_interfaces(email),
+                    'defaults': self._surv_defaults(profile)})
+
+    def _surv_archive(self, body):
+        email, stop = self._surv_guard()
+        if stop: return
+        iid = str(body.get('id') or '')
+        ok = surveyor.store.archive_interface(email, iid, bool(body.get('archived', True)))
+        self._json({'ok': ok}, 200 if ok else 404)
+
+    def _surv_run(self, body):
+        email, stop = self._surv_guard()
+        if stop: return
+        if not rate_ok(self._client_ip(), email, llm=True):
+            self._json({'ok': False, 'error': 'run limit reached — wait 10 minutes'}, 429)
+            return
+        iface = surveyor.store.get_interface(email, str(body.get('id') or ''))
+        if not iface:
+            self._json({'ok': False, 'error': 'not found'}, 404); return
+        prompt = str(body.get('input', ''))[:6000].strip()
+        if not prompt:
+            self._json({'ok': False, 'error': 'input required'}, 400); return
+        profile = surveyor.pipeline.load_profile(email)
+        system = surveyor.prompts.runtime_system(
+            iface['definition'], surveyor.adaptation.soft_profile(profile))
+        status = surveyor.llm.status(nous_key)
+        try:
+            out = self._surv_llm()(system, prompt, max_tokens=1200)
+        except Exception as e:
+            self._json({'ok': False, 'error': f'run failed: {e}'}, 502); return
+        surveyor.store.add_run(iface['id'], email, prompt, out, {'llm': status['mode']})
+        surveyor.store.log_event(email, 'interface_run',
+                                 {'id': iface['id'], 'llm': status['mode']})
+        self._json({'ok': True, 'output': out, 'llm': status})
+
+    def _surv_personalization(self, body):
+        email, stop = self._surv_guard()
+        if stop: return
+        forced = bool(body.get('simple_mode_forced'))
+        surveyor.store.set_simple_mode(email, forced)
+        surveyor.store.log_event(email, 'simple_mode_forced', {'value': forced})
+        self._json({'ok': True, 'simple_mode_forced': forced,
+                    'personalization': surveyor.adaptation.mode()})
+
+    def _surv_admin(self):
+        """Debug view. Restricted — this exposes hidden criteria and evidence,
+        which are explicitly not learner-facing."""
+        email, stop = self._surv_guard()
+        if stop: return
+        allowed = {e.strip().lower() for e in
+                   (os.environ.get('CORDIA_ADMINS', '') or '').split(',') if e.strip()}
+        allowed |= {os.environ.get('CORDIA_RATER_A', '').strip().lower(),
+                    os.environ.get('CORDIA_RATER_B', '').strip().lower()}
+        allowed.discard('')
+        if email.lower() not in allowed:
+            self._json({'ok': False, 'error': 'not authorised'}, 403); return
+        q = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+        target = (q.get('email', [email])[0] or email).strip().lower()
+        profile = surveyor.pipeline.load_profile(target)
+        cid = surveyor.store.open_conversation(target)
+        self._json({'ok': True, 'email': target, 'profile': profile,
+                    'public': surveyor.pipeline.public_profile(target, profile),
+                    'messages': surveyor.store.messages(cid),
+                    'adaptation': surveyor.adaptation.builder_defaults(profile),
+                    'interfaces': surveyor.store.list_interfaces(target, True),
+                    'runs': surveyor.store.runs(target),
+                    'events': surveyor.store.events(target),
+                    'llm': surveyor.llm.status(nous_key),
+                    'personalization_mode': surveyor.adaptation.mode()})
 
     def _kappa(self):
         """Cohen's kappa between rater A and rater B over paired /train/rate
@@ -469,8 +662,19 @@ class H(BaseHTTPRequestHandler):
             body = self._body()
         except Exception as e:
             self._json({'error': str(e)}, 400); return
+        self._surv_body = body if isinstance(body, dict) else {}
         if p == '/train/respond':
             self._respond(body)
+        elif p == '/surveyor/message':
+            self._surv_message(body)
+        elif p == '/surveyor/interface':
+            self._surv_save_interface(body)
+        elif p == '/surveyor/archive':
+            self._surv_archive(body)
+        elif p == '/surveyor/run':
+            self._surv_run(body)
+        elif p == '/surveyor/personalization':
+            self._surv_personalization(body)
         elif p == '/train/survey':
             self._survey(body)
         elif p == '/train/rate':
@@ -774,6 +978,23 @@ def _fire_event(email, kind, meta=None):
 
 
 import urllib.parse
+
+
+class Server(ThreadingHTTPServer):
+    """Threaded so one slow request cannot stall the site.
+
+    This was a plain HTTPServer, which serialises every request. call_llm has a
+    90s timeout, so a single live-environment call (and now a single Surveyor
+    turn) blocked login, the exam and the payment webhook for up to a minute and
+    a half. Shared mutable state was audited before this changed: rate_ok holds
+    `lock` around the _rl buckets, append/read_all hold it around the corpus
+    jsonl, and psycopg2 connections are opened per call rather than shared. No
+    module-level caches or `global` statements exist in this process.
+
+    daemon_threads so a hung upstream request cannot block shutdown."""
+    daemon_threads = True
+
+
 if __name__ == '__main__':
     print(f'cordia-training backend on :{PORT}')
-    HTTPServer(('0.0.0.0', PORT), H).serve_forever()
+    Server(('0.0.0.0', PORT), H).serve_forever()

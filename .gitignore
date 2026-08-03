@@ -16,3 +16,7 @@ node_modules/
 *.bak
 *.swp
 *.swo
+
+# local backups — contain copies of /etc/cordia/cordia.env and retired
+# assets. Never commit: cordia.env holds the Postgres DSN and app passwords.
+backups/

@@ -1,0 +1,14 @@
+Subject: Your Cordia exam is still waiting
+
+Hi {name},
+
+You signed up for Cordia but haven't sat the exam yet. No rush — but
+the exam itself only takes about 25 minutes, and most people find it
+genuinely useful even before they need the certification.
+
+If you'd rather not hear from us, no problem — just ignore this and
+we won't send another.
+
+Pick up where you left off: {resume_url}
+
+— Cordia

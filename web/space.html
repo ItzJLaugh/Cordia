@@ -41,6 +41,25 @@ body{overflow-x:hidden}
 .user-chip a{font-size:12px}
 @media (max-width:760px){.bubble-field{height:auto;display:flex;flex-direction:column;gap:26px;align-items:center;margin-top:36px}.bubble{position:relative!important;left:auto!important;right:auto!important;top:auto!important}}
 </style>
+<style>
+  .sv-learn{position:fixed;left:24px;bottom:24px;z-index:60;width:250px;padding:18px 20px;
+    background:rgba(255,255,255,.94);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);
+    border-radius:16px;box-shadow:0 8px 28px -8px rgba(11,11,11,.22)}
+  .sv-learn-h{font-family:var(--f-label,sans-serif);font-size:11px;letter-spacing:.16em;
+    text-transform:uppercase;color:var(--c-ink-3,#666)}
+  .sv-learn-p{margin:8px 0 12px;font-size:13px;line-height:1.5;color:var(--c-ink-2,#333)}
+  .sv-learn-p b{font-variant-numeric:tabular-nums}
+  .sv-learn-bar{display:block;height:4px;border-radius:999px;background:rgba(11,11,11,.07);
+    overflow:hidden}
+  .sv-learn-bar i{display:block;height:100%;width:0;background:var(--c-moss,#4A5A42);
+    transition:width .8s cubic-bezier(.2,.8,.2,1)}
+  .sv-learn-a{display:inline-block;margin:13px 0 0;font-family:var(--f-label,sans-serif);
+    font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--c-moss,#4A5A42);
+    text-decoration:none}
+  .sv-learn-a:hover{opacity:.75}
+  @media (max-width:720px){.sv-learn{left:12px;right:12px;bottom:12px;width:auto}}
+  @media (prefers-reduced-motion:reduce){.sv-learn-bar i{transition:none}}
+</style>
 </head>
 <body>
 <header id="shellHeader"></header>
@@ -63,6 +82,15 @@ body{overflow-x:hidden}
     </div>
   </div>
   <div class="space-hint">drift with the current · click a bubble to travel</div>
+  <!-- Surveyor progress. Hidden until the backend confirms a real profile —
+       an empty progress bar on a page you have never interacted with reads as
+       broken rather than as an invitation. -->
+  <aside class="sv-learn" id="svLearn" hidden>
+    <div class="sv-learn-h">Surveyor is learning</div>
+    <p class="sv-learn-p" id="svLearnP">Your profile is <b>0%</b> complete</p>
+    <span class="sv-learn-bar"><i id="svLearnBar"></i></span>
+    <a class="sv-learn-a" href="profile.html" id="svLearnA">View progress →</a>
+  </aside>
 </div>
 <div class="cordia-loader" id="loader">
   <img src="/assets/img/cordia-icon.png" alt="" style="height:64px;width:auto;display:block;margin:0 auto">
@@ -73,6 +101,23 @@ if(sessionStorage.getItem('cordia-auth') !== '1') location.replace('index.html')
 /* identity is shown by cordia-shell.js */
 const API = (location.hostname === 'localhost' || location.hostname === '127.0.0.1' ? 'http://127.0.0.1:9995' : location.protocol + '//' + location.hostname + (location.protocol === 'https:' ? '' : ':9995'));
 /* sign-out handled by cordia-shell.js */
+/* Surveyor progress — only shown once the backend confirms a real profile. */
+fetch(API + '/surveyor/profile', {
+  headers: { Authorization: 'Bearer ' + (localStorage.getItem('cordia-token') || '') }
+}).then(r => r.ok ? r.json() : null).then(d => {
+  if (!d || !d.ok) return;
+  const pct = d.percent_complete || 0;
+  const card = document.getElementById('svLearn');
+  card.hidden = false;
+  document.getElementById('svLearnP').innerHTML =
+    pct > 0 ? `Your profile is <b>${pct}%</b> complete`
+            : 'Surveyor hasn’t met you yet.';
+  document.getElementById('svLearnA').textContent =
+    pct > 0 ? 'View progress →' : 'Start →';
+  if (pct === 0) document.getElementById('svLearnA').setAttribute('data-surveyor', '');
+  requestAnimationFrame(() => { document.getElementById('svLearnBar').style.width = pct + '%'; });
+}).catch(() => {});
+
 const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
 const bubbles = [...document.querySelectorAll('.bubble')].map((el,i) => ({el, phase: Math.random()*Math.PI*2, phase2: Math.random()*Math.PI*2, ampX: 14 + i*5, ampY: 18 + i*4, speed: .35 + i*.07, hover: false}));
 bubbles.forEach(b => {

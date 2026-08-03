@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Your Workspaces &mdash; Cordia</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Newsreader:opsz,wght@6..72,400;6..72,500;6..72,600&family=Work+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="assets/cordia-ui.css">
+<style>
+  .page{padding:44px 0 96px}
+  .head{display:flex;align-items:flex-end;justify-content:space-between;gap:20px;
+    flex-wrap:wrap;margin:0 0 32px}
+  .eyebrow{font-family:var(--f-label);font-size:var(--t-xs);letter-spacing:var(--tr-caps);
+    text-transform:uppercase;color:var(--c-ink-3);margin:0 0 10px}
+  h1{font-family:var(--f-title);font-optical-sizing:auto;font-weight:500;
+    font-size:var(--t-2xl);line-height:var(--lh-title);color:var(--c-ink);margin:0}
+  .btn{display:inline-flex;align-items:center;gap:8px;border:0;cursor:pointer;
+    background:var(--c-moss);color:#fff;border-radius:var(--r-pill);padding:11px 20px;
+    font-family:var(--f-label);font-size:var(--t-xs);letter-spacing:var(--tr-caps);
+    text-transform:uppercase;text-decoration:none}
+  .btn.ghost{background:transparent;color:var(--c-ink-2);border:1px solid var(--c-hair)}
+  .btn.sm{padding:8px 14px}
+  .btn:hover{opacity:.9}
+  .cards{display:grid;gap:18px;grid-template-columns:repeat(auto-fill,minmax(300px,1fr))}
+  .card{background:var(--c-surface);border-radius:var(--r-lg);padding:24px;box-shadow:var(--e-1);
+    display:flex;flex-direction:column;gap:12px}
+  .card h2{font-family:var(--f-title);font-weight:500;font-size:var(--t-lg);
+    line-height:var(--lh-title);color:var(--c-ink);margin:0}
+  .card .d{font-size:var(--t-sm);line-height:var(--lh-body);color:var(--c-ink-2);margin:0;flex:1}
+  .meta{display:flex;flex-wrap:wrap;gap:6px}
+  .chip{font-size:var(--t-xs);font-family:var(--f-label);background:var(--c-wash);
+    color:var(--c-ink-2);border-radius:var(--r-pill);padding:5px 11px}
+  .when{font-family:var(--f-label);font-size:var(--t-xs);color:var(--c-ink-4)}
+  .row{display:flex;gap:8px;flex-wrap:wrap;padding:14px 0 0;border-top:1px solid var(--c-hair)}
+  .empty{background:var(--c-wash);border-radius:var(--r-lg);padding:44px 34px;max-width:640px}
+  .empty p{font-size:var(--t-base);line-height:var(--lh-body);color:var(--c-ink-2);margin:0 0 22px}
+  .shaped{background:var(--c-wash);border-radius:var(--r-lg);padding:20px 24px;margin:0 0 28px;
+    max-width:720px;font-size:var(--t-sm);line-height:var(--lh-body);color:var(--c-ink-2)}
+  .shaped b{font-family:var(--f-label);font-size:var(--t-xs);letter-spacing:var(--tr-caps);
+    text-transform:uppercase;color:var(--c-ink-3);font-weight:500;display:block;margin:0 0 6px}
+</style>
+</head>
+<body>
+
+<header id="shellHeader"></header>
+
+<main id="main" class="page">
+  <div class="shell">
+    <div class="head">
+      <div>
+        <p class="eyebrow">Workspace</p>
+        <h1>Your agentic interfaces</h1>
+      </div>
+      <a class="btn" href="builder.html">New interface</a>
+    </div>
+    <div class="shaped" id="shaped" hidden></div>
+    <div id="content"></div>
+  </div>
+</main>
+
+<script src="assets/cordia-shell.js" data-nav="workspace"></script>
+<script>
+(function () {
+  'use strict';
+  var API = location.hostname === 'localhost' ? 'http://127.0.0.1:9995' : '';
+  var content = document.getElementById('content');
+
+  function esc(s) {
+    return String(s == null ? '' : s).replace(/[&<>"]/g, function (c) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c];
+    });
+  }
+  function api(path, body) {
+    return fetch(API + path, {
+      method: body ? 'POST' : 'GET',
+      headers: { 'Content-Type': 'application/json',
+                 Authorization: 'Bearer ' + (localStorage.getItem('cordia-token') || '') },
+      body: body ? JSON.stringify(body) : undefined
+    }).then(function (r) {
+      return r.json().catch(function () { return {}; })
+        .then(function (d) { return { code: r.status, data: d }; });
+    });
+  }
+  function when(iso) {
+    if (!iso) return '';
+    var d = new Date(iso.replace(' ', 'T') + (/[zZ]|[+-]\d\d:?\d\d$/.test(iso) ? '' : 'Z'));
+    return isNaN(d) ? '' : d.toLocaleDateString([], { month: 'short', day: 'numeric' });
+  }
+  function empty(msg, cta, href) {
+    content.innerHTML = '<div class="empty"><p>' + esc(msg) + '</p>' +
+      (cta ? (href ? '<a class="btn" href="' + href + '">' + esc(cta) + '</a>'
+                   : '<button class="btn" type="button" data-surveyor>' + esc(cta) + '</button>') : '') +
+      '</div>';
+  }
+
+  function render(d) {
+    var list = d.interfaces || [], dfl = d.defaults || {};
+
+    if (dfl.reason) {
+      var s = document.getElementById('shaped');
+      s.hidden = false;
+      s.innerHTML = '<b>Shaped by your Surveyor profile</b>' + esc(dfl.reason);
+    }
+
+    if (!list.length) {
+      empty('You haven’t built a workspace yet. Cordia will lay the first one out around '
+          + 'how you work — you can change anything in it.', 'Build my first workspace', 'builder.html');
+      return;
+    }
+
+    content.innerHTML = '<div class="cards">' + list.map(function (x) {
+      var def = x.definition || {};
+      var surface = ((def.surface || {}).type || 'chat').replace(/_/g, ' ');
+      return '<div class="card">' +
+        '<h2>' + esc(x.name) + '</h2>' +
+        '<p class="d">' + esc(x.description || 'No description.') + '</p>' +
+        '<div class="meta">' +
+          '<span class="chip">' + esc(surface) + '</span>' +
+          '<span class="chip">' + (def.agents || []).length + ' agents</span>' +
+          '<span class="chip">' + (def.tools || []).length + ' tools</span>' +
+        '</div>' +
+        '<span class="when">Updated ' + esc(when(x.updated)) + '</span>' +
+        '<div class="row">' +
+          '<a class="btn sm" href="interface.html?id=' + encodeURIComponent(x.id) + '">Run</a>' +
+          '<a class="btn ghost sm" href="builder.html?id=' + encodeURIComponent(x.id) + '">Edit</a>' +
+          '<button class="btn ghost sm" type="button" data-archive="' + esc(x.id) + '">Archive</button>' +
+        '</div></div>';
+    }).join('') + '</div>';
+  }
+
+  content.addEventListener('click', function (e) {
+    var b = e.target.closest('[data-archive]');
+    if (!b) return;
+    b.disabled = true;
+    api('/surveyor/archive', { id: b.dataset.archive, archived: true }).then(function () { load(); });
+  });
+
+  function load() {
+    api('/surveyor/interfaces').then(function (r) {
+      if (r.code === 401) { empty('Sign in to see your workspaces.'); return; }
+      if (r.code === 503) { empty('Surveyor is unavailable right now. Nothing else is affected.'); return; }
+      render(r.data);
+    }).catch(function () { empty('Could not load your workspaces. Please refresh.'); });
+  }
+  load();
+})();
+</script>
+</body>
+</html>

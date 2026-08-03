@@ -1,0 +1,19 @@
+Subject: Welcome to Cordia — your exam is ready
+
+Hi {name},
+
+Welcome to Cordia. Your CordiaAIE exam is sitting in your dashboard,
+untimed, twelve blocks, ~25 minutes total.
+
+Start here: {cta_url}
+
+A few things you'll notice:
+
+- The exam uses real scenarios, not multiple choice
+- You can save and resume; nothing times out
+- Results are scored the moment you finish
+
+If you don't get to it today, that's fine. But most people who pass do it
+within their first three days.
+
+— Cordia

@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Run Interface &mdash; Cordia</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Newsreader:opsz,wght@6..72,400;6..72,500;6..72,600&family=Work+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="assets/cordia-ui.css">
+<style>
+  .page{padding:36px 0 96px}
+  .eyebrow{font-family:var(--f-label);font-size:var(--t-xs);letter-spacing:var(--tr-caps);
+    text-transform:uppercase;color:var(--c-ink-3);margin:0 0 10px}
+  h1{font-family:var(--f-title);font-optical-sizing:auto;font-weight:500;
+    font-size:var(--t-xl);line-height:var(--lh-title);color:var(--c-ink);margin:0 0 8px}
+  .desc{font-size:var(--t-sm);line-height:var(--lh-body);color:var(--c-ink-2);margin:0 0 28px;
+    max-width:640px}
+  .grid{display:grid;gap:24px;grid-template-columns:minmax(0,1fr) 290px;align-items:start}
+  @media (max-width:920px){.grid{grid-template-columns:1fr}}
+  .panel{background:var(--c-surface);border-radius:var(--r-lg);padding:24px;box-shadow:var(--e-1)}
+  .panel.wash{background:var(--c-wash);box-shadow:none}
+  .lbl{font-family:var(--f-label);font-size:var(--t-xs);letter-spacing:var(--tr-caps);
+    text-transform:uppercase;color:var(--c-ink-3);margin:0 0 12px;display:block}
+  textarea{width:100%;border:1px solid var(--c-hair);border-radius:12px;padding:12px 14px;
+    font:inherit;font-size:var(--t-sm);line-height:var(--lh-body);color:var(--c-ink);
+    min-height:110px;resize:vertical;background:#fff}
+  textarea:focus{outline:2px solid var(--c-moss);outline-offset:-1px;border-color:transparent}
+  .btn{display:inline-flex;align-items:center;gap:8px;border:0;cursor:pointer;
+    background:var(--c-moss);color:#fff;border-radius:var(--r-pill);padding:11px 20px;
+    font-family:var(--f-label);font-size:var(--t-xs);letter-spacing:var(--tr-caps);
+    text-transform:uppercase;text-decoration:none}
+  .btn.ghost{background:transparent;color:var(--c-ink-2);border:1px solid var(--c-hair)}
+  .btn:hover{opacity:.9}
+  .btn[disabled]{opacity:.45;cursor:default}
+  .actions{display:flex;gap:10px;flex-wrap:wrap;margin:16px 0 0}
+  .out{margin:26px 0 0;padding:22px;background:var(--c-wash);border-radius:var(--r-md);
+    font-size:var(--t-sm);line-height:var(--lh-body);color:var(--c-ink);white-space:pre-wrap;
+    word-wrap:break-word}
+  .step{display:flex;gap:11px;padding:11px 0;border-bottom:1px solid var(--c-hair);
+    font-size:var(--t-sm);color:var(--c-ink-2)}
+  .step:last-child{border-bottom:0}
+  .step i{font-family:var(--f-label);font-size:var(--t-xs);color:var(--c-ink-4);
+    font-style:normal;flex:0 0 18px;font-variant-numeric:tabular-nums}
+  .gate{font-family:var(--f-label);font-size:10px;letter-spacing:.1em;text-transform:uppercase;
+    color:#7A5B2E;background:#FBF6EC;border-radius:999px;padding:3px 8px;align-self:flex-start;
+    white-space:nowrap}
+  .notice{margin:0 0 20px;padding:11px 15px;border-radius:10px;background:#FBF6EC;
+    color:#7A5B2E;font-size:var(--t-xs);font-family:var(--f-label);line-height:1.5}
+</style>
+</head>
+<body>
+
+<header id="shellHeader"></header>
+
+<main id="main" class="page">
+  <div class="shell">
+    <p class="eyebrow">Workspace</p>
+    <h1 id="title">Loading…</h1>
+    <p class="desc" id="desc"></p>
+    <div class="notice" id="notice" hidden></div>
+
+    <div class="grid">
+      <section class="panel">
+        <span class="lbl">Your request</span>
+        <textarea id="input" placeholder="What do you want this workspace to do?"
+          aria-label="Your request"></textarea>
+        <div class="actions">
+          <button class="btn" type="button" id="runBtn">Run</button>
+          <a class="btn ghost" id="editLink" href="builder.html">Edit interface</a>
+        </div>
+        <div class="out" id="out" hidden></div>
+      </section>
+
+      <aside class="panel wash">
+        <span class="lbl">Workflow</span>
+        <div id="steps"></div>
+      </aside>
+    </div>
+  </div>
+</main>
+
+<script src="assets/cordia-shell.js" data-nav="workspace"></script>
+<script>
+(function () {
+  'use strict';
+  var API = location.hostname === 'localhost' ? 'http://127.0.0.1:9995' : '';
+  var id = new URLSearchParams(location.search).get('id') || '';
+
+  function esc(s) {
+    return String(s == null ? '' : s).replace(/[&<>"]/g, function (c) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c];
+    });
+  }
+  function api(path, body) {
+    return fetch(API + path, {
+      method: body ? 'POST' : 'GET',
+      headers: { 'Content-Type': 'application/json',
+                 Authorization: 'Bearer ' + (localStorage.getItem('cordia-token') || '') },
+      body: body ? JSON.stringify(body) : undefined
+    }).then(function (r) {
+      return r.json().catch(function () { return {}; })
+        .then(function (d) { return { code: r.status, data: d }; });
+    });
+  }
+  function show(text) {
+    var o = document.getElementById('out');
+    o.hidden = false;
+    o.textContent = text;
+  }
+  function notice(text) {
+    if (!text) return;
+    var n = document.getElementById('notice');
+    n.hidden = false; n.textContent = text;
+  }
+
+  function render(x) {
+    var def = x.definition || {};
+    document.getElementById('title').textContent = x.name || 'Interface';
+    document.getElementById('desc').textContent = x.description || '';
+    document.getElementById('editLink').href = 'builder.html?id=' + encodeURIComponent(x.id);
+
+    var byId = {};
+    (def.agents || []).forEach(function (a) { byId[a.id] = a.name; });
+    var steps = (def.workflow || {}).steps || [];
+
+    document.getElementById('steps').innerHTML = steps.length
+      ? steps.map(function (s, i) {
+          return '<div class="step"><i>' + (i + 1) + '</i>' +
+            '<span style="flex:1">' + esc(byId[s.agentId] || s.agentId || 'Step') + '</span>' +
+            (s.requiresApproval ? '<span class="gate">Your approval</span>' : '') + '</div>';
+        }).join('')
+      : '<div class="step"><span>No steps defined yet.</span></div>';
+
+    if (steps.some(function (s) { return s.requiresApproval; })) {
+      notice('This workspace pauses for your approval before anything final. '
+           + 'Approval steps are shown here, but are not yet enforced by a durable checkpoint.');
+    }
+  }
+
+  document.getElementById('runBtn').addEventListener('click', function () {
+    var text = document.getElementById('input').value.trim();
+    if (!text) { show('Type a request first.'); return; }
+    var btn = this;
+    btn.disabled = true;
+    show('Running…');
+    api('/surveyor/run', { id: id, input: text }).then(function (r) {
+      btn.disabled = false;
+      if (r.code !== 200 || !r.data.ok) {
+        show((r.data && r.data.error) || 'The run failed. Nothing was saved.');
+        return;
+      }
+      show(r.data.output || '(no output)');
+      if (r.data.llm && r.data.llm.live === false) notice(r.data.llm.note);
+    }).catch(function () {
+      btn.disabled = false;
+      show('Connection lost. Nothing was saved.');
+    });
+  });
+
+  if (!id) {
+    document.getElementById('title').textContent = 'No interface selected';
+    document.getElementById('desc').textContent = 'Pick one from your workspaces.';
+  } else {
+    api('/surveyor/interfaces').then(function (r) {
+      if (r.code === 401) { document.getElementById('title').textContent = 'Sign in to run this'; return; }
+      var found = (r.data.interfaces || []).filter(function (x) { return x.id === id; })[0];
+      if (!found) { document.getElementById('title').textContent = 'Interface not found'; return; }
+      render(found);
+    });
+  }
+})();
+</script>
+</body>
+</html>

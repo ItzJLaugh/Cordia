@@ -1,0 +1,405 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Builder &mdash; Cordia</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Newsreader:opsz,wght@6..72,400;6..72,500;6..72,600&family=Work+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="assets/cordia-ui.css">
+<style>
+  .page{padding:36px 0 96px}
+  .eyebrow{font-family:var(--f-label);font-size:var(--t-xs);letter-spacing:var(--tr-caps);
+    text-transform:uppercase;color:var(--c-ink-3);margin:0 0 10px}
+  h1{font-family:var(--f-title);font-optical-sizing:auto;font-weight:500;
+    font-size:var(--t-xl);line-height:var(--lh-title);color:var(--c-ink);margin:0 0 28px}
+  .grid{display:grid;gap:24px;grid-template-columns:265px minmax(0,1fr) 265px;align-items:start}
+  @media (max-width:1080px){.grid{grid-template-columns:1fr}}
+
+  .panel{background:var(--c-surface);border-radius:var(--r-lg);padding:22px;box-shadow:var(--e-1)}
+  .panel.wash{background:var(--c-wash);box-shadow:none}
+  .lbl{font-family:var(--f-label);font-size:var(--t-xs);letter-spacing:var(--tr-caps);
+    text-transform:uppercase;color:var(--c-ink-3);margin:0 0 12px;display:block}
+  .reason{font-size:var(--t-sm);line-height:var(--lh-body);color:var(--c-ink-2);margin:0 0 16px}
+  .kv{display:flex;justify-content:space-between;gap:12px;padding:8px 0;
+    border-bottom:1px solid var(--c-hair);font-size:var(--t-sm)}
+  .kv:last-of-type{border-bottom:0}
+  .kv span:first-child{color:var(--c-ink-3)}
+  .kv span:last-child{color:var(--c-ink);text-align:right}
+  .chips{display:flex;flex-wrap:wrap;gap:6px;margin:6px 0 0}
+  .chip{font-size:var(--t-xs);font-family:var(--f-label);background:var(--c-wash);
+    color:var(--c-ink-2);border-radius:var(--r-pill);padding:5px 11px}
+  .panel.wash .chip{background:#fff}
+
+  label.f{display:block;margin:0 0 16px}
+  label.f span{display:block;font-family:var(--f-label);font-size:var(--t-xs);
+    letter-spacing:var(--tr-caps);text-transform:uppercase;color:var(--c-ink-3);margin:0 0 6px}
+  input[type=text],textarea,select{width:100%;border:1px solid var(--c-hair);border-radius:10px;
+    padding:10px 12px;font:inherit;font-size:var(--t-sm);color:var(--c-ink);background:#fff}
+  textarea{resize:vertical;min-height:64px}
+  input:focus,textarea:focus,select:focus{outline:2px solid var(--c-moss);outline-offset:-1px;
+    border-color:transparent}
+
+  .row{display:flex;gap:10px;align-items:flex-start;padding:12px;border:1px solid var(--c-hair);
+    border-radius:12px;margin:0 0 10px;background:#fff}
+  .row .grow{flex:1;min-width:0}
+  .row input[type=text]{margin:0 0 6px}
+  .row textarea{min-height:48px;font-size:var(--t-xs)}
+  .x{border:0;background:transparent;color:var(--c-ink-4);cursor:pointer;font-size:15px;
+    width:26px;height:26px;border-radius:6px;flex:0 0 auto}
+  .x:hover{background:var(--c-wash);color:var(--c-ink)}
+  .approve{display:flex;align-items:center;gap:7px;font-size:var(--t-xs);color:var(--c-ink-3);
+    font-family:var(--f-label);margin:6px 0 0}
+
+  .btn{display:inline-flex;align-items:center;gap:8px;border:0;cursor:pointer;
+    background:var(--c-moss);color:#fff;border-radius:var(--r-pill);padding:11px 20px;
+    font-family:var(--f-label);font-size:var(--t-xs);letter-spacing:var(--tr-caps);
+    text-transform:uppercase;text-decoration:none}
+  .btn.ghost{background:transparent;color:var(--c-ink-2);border:1px solid var(--c-hair)}
+  .btn.sm{padding:8px 14px}
+  .btn:hover{opacity:.9}
+  .btn[disabled]{opacity:.45;cursor:default}
+  .actions{display:flex;gap:10px;flex-wrap:wrap;margin:22px 0 0}
+  .msg{margin:14px 0 0;font-size:var(--t-sm);color:var(--c-moss)}
+  .msg[data-err="1"]{color:#8A3E2A}
+  .offline{margin:0 0 18px;padding:11px 15px;border-radius:10px;background:#FBF6EC;
+    color:#7A5B2E;font-size:var(--t-xs);font-family:var(--f-label);line-height:1.5}
+  .killed{margin:0 0 14px;padding:11px 15px;border-radius:10px;background:var(--c-wash);
+    color:var(--c-ink-2);font-size:var(--t-xs);font-family:var(--f-label);line-height:1.5}
+</style>
+</head>
+<body>
+
+<header id="shellHeader"></header>
+
+<main id="main" class="page">
+  <div class="shell">
+    <p class="eyebrow">Workspace</p>
+    <h1 id="h1">Build an agentic interface</h1>
+    <div class="offline" id="offline" hidden></div>
+
+    <div class="grid">
+      <!-- left: what the profile did -->
+      <aside class="panel wash">
+        <span class="lbl">Shaped by your Surveyor profile</span>
+        <div class="killed" id="killed" hidden></div>
+        <p class="reason" id="reason">Loading…</p>
+        <div id="shape"></div>
+        <div class="actions">
+          <button class="btn ghost sm" type="button" id="killBtn">Turn personalization off</button>
+        </div>
+      </aside>
+
+      <!-- centre: the definition -->
+      <section class="panel">
+        <span class="lbl">Interface</span>
+        <label class="f"><span>Name</span>
+          <input type="text" id="fName" maxlength="120" placeholder="Report workspace"></label>
+        <label class="f"><span>Description</span>
+          <textarea id="fDesc" maxlength="600" placeholder="What is this workspace for?"></textarea></label>
+        <label class="f"><span>Surface</span>
+          <select id="fSurface">
+            <option value="chat">Chat</option>
+            <option value="dashboard">Dashboard</option>
+            <option value="canvas">Canvas</option>
+            <option value="graph_and_chat">Graph + chat</option>
+          </select></label>
+
+        <span class="lbl" style="margin-top:24px">Agents</span>
+        <div id="agents"></div>
+        <button class="btn ghost sm" type="button" id="addAgent">Add agent</button>
+
+        <span class="lbl" style="margin-top:24px">Tools</span>
+        <div id="tools"></div>
+        <button class="btn ghost sm" type="button" id="addTool">Add tool</button>
+
+        <span class="lbl" style="margin-top:24px">Workflow</span>
+        <div id="steps"></div>
+        <button class="btn ghost sm" type="button" id="addStep">Add step</button>
+
+        <div class="actions">
+          <button class="btn" type="button" id="saveBtn">Save interface</button>
+          <a class="btn ghost" href="interfaces.html">All interfaces</a>
+        </div>
+        <p class="msg" id="msg"></p>
+      </section>
+
+      <!-- right: suggestions -->
+      <aside class="panel wash">
+        <span class="lbl">Suggested for you</span>
+        <div id="suggest"></div>
+        <span class="lbl" style="margin-top:22px">Starting points</span>
+        <div id="templates"></div>
+      </aside>
+    </div>
+  </div>
+</main>
+
+<script src="assets/cordia-shell.js" data-nav="workspace"></script>
+<script>
+(function () {
+  'use strict';
+  var API = location.hostname === 'localhost' ? 'http://127.0.0.1:9995' : '';
+  var TOKEN = function () { return localStorage.getItem('cordia-token') || ''; };
+  var state = { id: null, agents: [], tools: [], steps: [], defaults: {} };
+
+  function esc(s) {
+    return String(s == null ? '' : s).replace(/[&<>"]/g, function (c) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c];
+    });
+  }
+  function api(path, body) {
+    return fetch(API + path, {
+      method: body ? 'POST' : 'GET',
+      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + TOKEN() },
+      body: body ? JSON.stringify(body) : undefined
+    }).then(function (r) {
+      return r.json().catch(function () { return {}; })
+        .then(function (d) { return { code: r.status, data: d }; });
+    });
+  }
+  function say(text, isErr) {
+    var m = document.getElementById('msg');
+    m.textContent = text || '';
+    m.setAttribute('data-err', isErr ? '1' : '0');
+  }
+  function slug(s, fallback) {
+    return (String(s || '').toLowerCase().replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-|-$/g, '') || fallback);
+  }
+
+  // ---- editors -------------------------------------------------------
+  function drawAgents() {
+    var host = document.getElementById('agents');
+    host.innerHTML = '';
+    state.agents.forEach(function (a, i) {
+      var d = document.createElement('div');
+      d.className = 'row';
+      d.innerHTML =
+        '<div class="grow">' +
+          '<input type="text" data-k="name" value="' + esc(a.name) + '" placeholder="Agent name">' +
+          '<textarea data-k="instructions" placeholder="What should this agent do?">' +
+            esc(a.instructions || '') + '</textarea>' +
+        '</div><button class="x" type="button" aria-label="Remove agent">&#10005;</button>';
+      d.querySelectorAll('[data-k]').forEach(function (el) {
+        el.addEventListener('input', function () { state.agents[i][el.dataset.k] = el.value; });
+      });
+      d.querySelector('.x').addEventListener('click', function () {
+        state.agents.splice(i, 1); drawAgents(); drawSteps();
+      });
+      host.appendChild(d);
+    });
+  }
+
+  function drawTools() {
+    var host = document.getElementById('tools');
+    host.innerHTML = '';
+    var TYPES = ['search', 'summarize', 'extract', 'draft', 'compare', 'custom'];
+    state.tools.forEach(function (t, i) {
+      var d = document.createElement('div');
+      d.className = 'row';
+      d.innerHTML =
+        '<div class="grow">' +
+          '<input type="text" data-k="name" value="' + esc(t.name) + '" placeholder="Tool name">' +
+          '<select data-k="type">' + TYPES.map(function (x) {
+            return '<option value="' + x + '"' + (t.type === x ? ' selected' : '') + '>' + x + '</option>';
+          }).join('') + '</select>' +
+        '</div><button class="x" type="button" aria-label="Remove tool">&#10005;</button>';
+      d.querySelectorAll('[data-k]').forEach(function (el) {
+        el.addEventListener('input', function () { state.tools[i][el.dataset.k] = el.value; });
+        el.addEventListener('change', function () { state.tools[i][el.dataset.k] = el.value; });
+      });
+      d.querySelector('.x').addEventListener('click', function () {
+        state.tools.splice(i, 1); drawTools();
+      });
+      host.appendChild(d);
+    });
+  }
+
+  function drawSteps() {
+    var host = document.getElementById('steps');
+    host.innerHTML = '';
+    state.steps.forEach(function (s, i) {
+      var opts = state.agents.map(function (a) {
+        return '<option value="' + esc(a.id) + '"' + (s.agentId === a.id ? ' selected' : '') +
+               '>' + esc(a.name) + '</option>';
+      }).join('') || '<option value="">(add an agent first)</option>';
+      var d = document.createElement('div');
+      d.className = 'row';
+      d.innerHTML =
+        '<div class="grow">' +
+          '<select data-k="agentId">' + opts + '</select>' +
+          '<textarea data-k="instruction" placeholder="What happens at this step?">' +
+            esc(s.instruction || '') + '</textarea>' +
+          '<label class="approve"><input type="checkbox" data-k="requiresApproval"' +
+            (s.requiresApproval ? ' checked' : '') + '> Pause for my approval</label>' +
+        '</div><button class="x" type="button" aria-label="Remove step">&#10005;</button>';
+      d.querySelectorAll('[data-k]').forEach(function (el) {
+        var ev = el.type === 'checkbox' ? 'change' : 'input';
+        el.addEventListener(ev, function () {
+          state.steps[i][el.dataset.k] = el.type === 'checkbox' ? el.checked : el.value;
+        });
+      });
+      d.querySelector('.x').addEventListener('click', function () {
+        state.steps.splice(i, 1); drawSteps();
+      });
+      host.appendChild(d);
+    });
+  }
+
+  // ---- profile shaping ------------------------------------------------
+  function applyDefaults(d) {
+    state.defaults = d || {};
+    document.getElementById('reason').textContent = d.reason || '';
+
+    var killed = (d.mode === 'off') || d.personalized === false;
+    var k = document.getElementById('killed');
+    k.hidden = !killed;
+    if (killed) {
+      k.textContent = d.mode === 'off'
+        ? 'Personalization is off for everyone right now. These are Cordia’s standard defaults.'
+        : 'Personalization is off for your account. These are Cordia’s standard defaults.';
+    }
+
+    document.getElementById('shape').innerHTML =
+      '<div class="kv"><span>Surface</span><span>' +
+        esc(((d.surface || {}).type || 'chat').replace(/_/g, ' ')) + '</span></div>' +
+      '<div class="kv"><span>Theme</span><span>' + esc((d.surface || {}).theme || '—') + '</span></div>' +
+      '<div class="kv"><span>Agents</span><span>' + (d.agents || []).length + '</span></div>' +
+      '<div class="kv"><span>Tools</span><span>' + (d.tools || []).length + '</span></div>';
+
+    document.getElementById('suggest').innerHTML =
+      '<span class="lbl" style="margin:0 0 6px">Agents</span><div class="chips">' +
+        (d.agents || []).map(function (a) { return '<span class="chip">' + esc(a.name) + '</span>'; }).join('') +
+      '</div><span class="lbl" style="margin:16px 0 6px">Tools</span><div class="chips">' +
+        (d.tools || []).map(function (t) { return '<span class="chip">' + esc(t.name) + '</span>'; }).join('') +
+      '</div>';
+
+    document.getElementById('templates').innerHTML =
+      (d.templates || []).map(function (t) {
+        return '<div class="row" style="cursor:pointer" data-tpl="' + esc(t.id) + '">' +
+          '<div class="grow"><strong style="font-size:var(--t-sm)">' + esc(t.name) + '</strong>' +
+          '<div style="font-size:var(--t-xs);color:var(--c-ink-3);margin-top:4px">' +
+          esc(t.description) + '</div></div></div>';
+      }).join('');
+
+    // seed the editor from the defaults, unless we're editing something saved
+    if (!state.id) loadTemplate('default');
+  }
+
+  function loadTemplate(which) {
+    var d = state.defaults;
+    if (which === 'blank') {
+      state.agents = []; state.tools = []; state.steps = [];
+    } else {
+      state.agents = JSON.parse(JSON.stringify(d.agents || []));
+      state.tools = JSON.parse(JSON.stringify(d.tools || []));
+      state.steps = JSON.parse(JSON.stringify((d.workflow || {}).steps || []));
+      document.getElementById('fSurface').value = (d.surface || {}).type || 'chat';
+    }
+    drawAgents(); drawTools(); drawSteps();
+  }
+
+  // ---- wiring ---------------------------------------------------------
+  document.getElementById('addAgent').addEventListener('click', function () {
+    state.agents.push({ id: 'agent' + (state.agents.length + 1), name: '', role: 'custom', instructions: '' });
+    drawAgents(); drawSteps();
+  });
+  document.getElementById('addTool').addEventListener('click', function () {
+    state.tools.push({ id: 'tool' + (state.tools.length + 1), name: '', type: 'custom' });
+    drawTools();
+  });
+  document.getElementById('addStep').addEventListener('click', function () {
+    state.steps.push({ id: 's' + (state.steps.length + 1),
+                       agentId: (state.agents[0] || {}).id || '', toolIds: [],
+                       instruction: '', requiresApproval: false });
+    drawSteps();
+  });
+  document.getElementById('templates').addEventListener('click', function (e) {
+    var t = e.target.closest('[data-tpl]');
+    if (t) loadTemplate(t.dataset.tpl === 'blank' ? 'blank' : 'default');
+  });
+
+  document.getElementById('killBtn').addEventListener('click', function () {
+    var btn = this;
+    var turningOff = btn.textContent.indexOf('off') > -1;
+    btn.disabled = true;
+    api('/surveyor/personalization', { simple_mode_forced: turningOff }).then(function (r) {
+      btn.disabled = false;
+      if (r.code !== 200) { say('Could not change that setting.', true); return; }
+      btn.textContent = turningOff ? 'Turn personalization on' : 'Turn personalization off';
+      say(turningOff ? 'Personalization is off for your account.' : 'Personalization is on.');
+      load();
+    });
+  });
+
+  document.getElementById('saveBtn').addEventListener('click', function () {
+    var name = document.getElementById('fName').value.trim();
+    if (!name) { say('Give the interface a name first.', true); return; }
+    state.agents.forEach(function (a, i) { a.id = slug(a.name, 'agent' + (i + 1)); });
+    state.tools.forEach(function (t, i) { t.id = slug(t.name, 'tool' + (i + 1)); });
+
+    var definition = {
+      name: name,
+      description: document.getElementById('fDesc').value.trim(),
+      surface: { type: document.getElementById('fSurface').value,
+                 theme: (state.defaults.surface || {}).theme || 'formal' },
+      agents: state.agents,
+      tools: state.tools,
+      workflow: { steps: state.steps },
+      futureHooks: { langGraphCompatible: true, cordiaCompilerCompatible: true,
+                     durableStateReady: false, humanInLoopReady: true }
+    };
+
+    var btn = this; btn.disabled = true; say('Saving…');
+    api('/surveyor/interface', { id: state.id, name: name,
+                                 description: definition.description, definition: definition })
+      .then(function (r) {
+        btn.disabled = false;
+        if (r.code !== 200 || !r.data.ok) { say((r.data && r.data.error) || 'Could not save.', true); return; }
+        state.id = r.data.id;
+        say('Saved. Opening it…');
+        setTimeout(function () { location.href = 'interface.html?id=' + encodeURIComponent(r.data.id); }, 500);
+      });
+  });
+
+  function load() {
+    api('/surveyor/interfaces').then(function (r) {
+      if (r.code === 401) { say('Sign in to build an interface.', true); return; }
+      if (r.code === 503) { say('Surveyor is unavailable right now.', true); return; }
+      applyDefaults(r.data.defaults || {});
+      var forced = (r.data.defaults || {}).mode === 'simple' && (r.data.defaults || {}).personalized;
+      document.getElementById('killBtn').textContent = 'Turn personalization off';
+
+      // editing an existing interface?
+      var id = new URLSearchParams(location.search).get('id');
+      if (!id) return;
+      var found = (r.data.interfaces || []).filter(function (x) { return x.id === id; })[0];
+      if (!found) return;
+      state.id = found.id;
+      var def = found.definition || {};
+      document.getElementById('h1').textContent = 'Edit interface';
+      document.getElementById('fName').value = found.name || '';
+      document.getElementById('fDesc').value = found.description || '';
+      document.getElementById('fSurface').value = (def.surface || {}).type || 'chat';
+      state.agents = def.agents || [];
+      state.tools = def.tools || [];
+      state.steps = (def.workflow || {}).steps || [];
+      drawAgents(); drawTools(); drawSteps();
+    });
+
+    api('/surveyor/profile').then(function (r) {
+      var l = r.data && r.data.llm;
+      if (l && l.live === false) {
+        var o = document.getElementById('offline');
+        o.hidden = false; o.textContent = l.note;
+      }
+    });
+  }
+
+  load();
+})();
+</script>
+</body>
+</html>

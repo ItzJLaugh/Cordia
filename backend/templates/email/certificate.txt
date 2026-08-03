@@ -1,0 +1,15 @@
+Subject: Your Cordia certificate (score {score})
+
+Hi {name},
+
+Your Cordia certificate is ready.
+
+View and share: {cert_url}
+
+The page is publicly verifiable — anyone with the URL can confirm your
+score and the date you earned it. No login required.
+
+The baseline cert stays valid forever. Domain track certs are stackable —
+each new track adds a separate shareable page.
+
+— Cordia
