@@ -899,11 +899,23 @@ class H(BaseHTTPRequestHandler):
         track = re.sub(r'[^a-z0-9-]', '', str(body.get('track', '')))[:40]
         block = re.sub(r'[^A-Za-z0-9]', '', str(body.get('block', '')))[:8]
         value = str(body.get('value', ''))[:50000]
-        learner = re.sub(r'[^a-zA-Z0-9@._-]', '', str(body.get('learner', 'anon')))[:80]
-        token = str(body.get('token', ''))
-        if token:
-            me = auth.whoami(token)
-            if me: learner = me['email']
+        # Identity comes from the session, never from the request body.
+        #
+        # This previously read `learner` out of the body and only overrode it if
+        # a valid token happened to be present, so an unauthenticated caller
+        # could post an answer attributed to anyone. Because _rateable_candidates
+        # and score_course both take the LATEST row per (learner, block), that
+        # let a stranger overwrite a real learner's exam answers — changing their
+        # certification result, poisoning the kappa rating pool, and corrupting
+        # the corpus. Confirmed exploitable against production before this fix.
+        #
+        # Anonymous practice is deliberately still allowed: no token simply means
+        # the row is filed under 'anon' and belongs to nobody. What is no longer
+        # possible is claiming to be somebody.
+        token = str(body.get('token', '')) or \
+            self.headers.get('Authorization', '').replace('Bearer ', '').strip()
+        me = auth.whoami(token) if token else None
+        learner = me['email'] if me else 'anon'
         if not track or not block or not value.strip():
             self._json({'error': 'track, block, value required'}, 400); return
         rec = {'id': uuid.uuid4().hex[:12], 'track': track, 'block': block,
