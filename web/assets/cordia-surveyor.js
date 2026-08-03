@@ -49,6 +49,15 @@
     '  transition:opacity .22s var(--ease-out,ease);display:flex;align-items:center;',
     '  justify-content:center;padding:24px}',
     '.sv-veil[data-open="1"]{opacity:1}',
+    // The [hidden] attribute is not enough on its own: the UA stylesheet rule
+    // [hidden]{display:none} is a single attribute selector, so `.sv-veil`
+    // setting display:flex outranks it. Without this the closed modal stayed
+    // laid out at opacity 0, position:fixed inset:0 z-index:900 — an invisible
+    // sheet over the whole page that swallowed every click. pointer-events is
+    // belt and braces for the 240ms between the fade starting and hidden being
+    // applied.
+    '.sv-veil[hidden]{display:none}',
+    '.sv-veil[data-open="0"]{pointer-events:none}',
     '.sv-win{width:min(560px,100%);max-height:min(760px,92vh);display:flex;flex-direction:column;',
     '  background:var(--c-surface,#fff);border-radius:var(--r-lg,20px);overflow:hidden;',
     '  box-shadow:0 24px 64px -12px rgba(11,11,11,.30),0 2px 8px rgba(11,11,11,.08);',

@@ -95,17 +95,64 @@ def signup(email, name, password):
         return False, 'password must be 10+ chars with at least one letter and one number', None
     if password.lower() in COMMON_PASSWORDS:
         return False, 'password is too common — pick something less guessable', None
+    # Never reveal whether an address is already registered.
+    #
+    # Returning "account already exists" for known addresses while returning
+    # "verification code sent" for unknown ones turned signup into an account
+    # enumeration oracle: anyone could test an email and learn whether that
+    # person has a Cordia account. login() was already careful to stay generic;
+    # this sat right beside it and wasn't.
+    #
+    # The real owner is told by email instead, which is the only channel where
+    # it is safe to say it — they read their inbox, someone probing addresses
+    # does not. The response is byte-identical either way.
     with lock, _conn() as c, c.cursor() as cur:
-        if cur.execute('SELECT 1 FROM accounts WHERE email=%s', (email,)) or cur.fetchone():
-            return False, 'account already exists', None
-        salt = secrets.token_hex(16)
-        code = f'{secrets.randbelow(900000)+100000}'
-        cur.execute('''INSERT INTO pending VALUES(%s,%s,%s,%s,%s,%s)
-                       ON CONFLICT (email) DO UPDATE SET name=EXCLUDED.name, pw_hash=EXCLUDED.pw_hash,
-                       salt=EXCLUDED.salt, code=EXCLUDED.code, expires=EXCLUDED.expires''',
-                    (email, name or email.split('@')[0], _hash_pw(password, salt), salt, code, time.time()+CODE_TTL))
+        cur.execute('SELECT 1 FROM accounts WHERE email=%s', (email,))
+        existing = cur.fetchone() is not None
+        if not existing:
+            salt = secrets.token_hex(16)
+            code = f'{secrets.randbelow(900000)+100000}'
+            cur.execute('''INSERT INTO pending VALUES(%s,%s,%s,%s,%s,%s)
+                           ON CONFLICT (email) DO UPDATE SET name=EXCLUDED.name, pw_hash=EXCLUDED.pw_hash,
+                           salt=EXCLUDED.salt, code=EXCLUDED.code, expires=EXCLUDED.expires''',
+                        (email, name or email.split('@')[0], _hash_pw(password, salt), salt, code, time.time()+CODE_TTL))
+
+    if existing:
+        _notify_existing(email)
+        return True, 'verification code sent', None
+
     sent = _send_code(email, code)
     return True, 'verification code sent' if sent else 'dev mode: code on screen', (None if sent else code)
+
+
+def _notify_existing(email):
+    """Tell a real account holder that someone tried to register their address.
+
+    Best-effort and deliberately silent on failure: if this raises, signup must
+    still return the same generic response, or the timing and error behaviour
+    would leak exactly what the generic message exists to hide."""
+    try:
+        user = os.environ.get('GMAIL_USER')
+        pw = os.environ.get('GMAIL_APP_PASSWORD')
+        if not (user and pw):
+            return
+        msg = EmailMessage()
+        msg['From'] = user
+        msg['To'] = email
+        msg['Subject'] = 'Someone tried to create a Cordia account with your email'
+        msg.set_content(
+            'Someone just tried to sign up for Cordia using this address, which '
+            'already has an account.\n\n'
+            'If that was you, sign in instead — or use "forgot password" if you '
+            'need to reset it.\n\n'
+            'If it was not you, no action is needed. Your account was not changed '
+            'and no new account was created.\n')
+        with smtplib.SMTP('smtp.gmail.com', 587, timeout=15) as s:
+            s.starttls()
+            s.login(user, pw)
+            s.send_message(msg)
+    except Exception:
+        pass
 
 def verify_signup(email, code):
     email = email.strip().lower()
@@ -185,5 +232,21 @@ def whoami(token):
 def logout(token):
     with lock, _conn() as c, c.cursor() as cur:
         cur.execute('DELETE FROM sessions WHERE token=%s', (_hash_token(token),))
+
+
+def purge_expired():
+    """Delete expired sessions, login codes and pending signups.
+
+    whoami() already rejects an expired session, so this is hygiene rather than
+    a vulnerability fix: without it the tables grow forever and a database
+    compromise hands over a longer history of who was logged in and when.
+    Returns counts so the caller can log them."""
+    out = {}
+    now = time.time()
+    with lock, _conn() as c, c.cursor() as cur:
+        for table in ('sessions', 'login_codes', 'pending'):
+            cur.execute(f'DELETE FROM {table} WHERE expires < %s', (now,))
+            out[table] = cur.rowcount
+    return out
 
 init()

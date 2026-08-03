@@ -37,6 +37,23 @@ except BaseException as _surv_err:            # noqa: BLE001 - must never be fat
           f'exam and auth unaffected', file=sys.stderr)
 
 PORT = 9995
+
+# How many corpus rows an unauthenticated caller may read. Enough to inspect the
+# shape of the data, far short of a bulk export of everyone's answers.
+ANON_SAMPLE = 25
+
+# CORS was 'Access-Control-Allow-Origin: *' on every route including the
+# authenticated ones. Not directly exploitable — tokens live in localStorage
+# rather than cookies, so a hostile page has nothing to replay — but there is no
+# reason for any origin to be able to read these responses. In production the
+# browser and the API are same-origin behind Apache; only local development is
+# genuinely cross-origin.
+ALLOWED_ORIGINS = {
+    'https://cordiacode.com', 'https://www.cordiacode.com',
+    'http://localhost:8000', 'http://127.0.0.1:8000',
+    'http://localhost:5500', 'http://127.0.0.1:5500',
+}
+
 DATA = '/var/lib/cordia/corpus'
 CORPUS = os.path.join(DATA, 'corpus.jsonl')
 RATINGS = os.path.join(DATA, 'ratings.jsonl')
@@ -186,9 +203,12 @@ def call_llm(system, user, max_tokens=900):
 
 class H(BaseHTTPRequestHandler):
     def _cors(self):
-        self.send_header('Access-Control-Allow-Origin', '*')
+        origin = self.headers.get('Origin', '')
+        if origin in ALLOWED_ORIGINS:
+            self.send_header('Access-Control-Allow-Origin', origin)
+            self.send_header('Vary', 'Origin')
         self.send_header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
-        self.send_header('Access-Control-Allow-Headers', 'Content-Type')
+        self.send_header('Access-Control-Allow-Headers', 'Content-Type, Authorization')
 
     def _json(self, obj, code=200):
         b = json.dumps(obj).encode()
@@ -221,9 +241,23 @@ class H(BaseHTTPRequestHandler):
             if track: rows = [r for r in rows if r.get('track') == track]
             token = self.headers.get('Authorization', '').replace('Bearer ', '').strip()
             authed = bool(auth.whoami(token)) if token else False
-            if not authed:
-                rows = [{k: v for k, v in r.items() if k != 'learner'} for r in rows]
-            self._json({'responses': rows[-500:]})
+            if authed:
+                self._json({'responses': rows[-500:], 'total': len(rows)}); return
+            # Anonymous callers get a capped, de-identified sample.
+            #
+            # This used to hand out the entire corpus — 222 free-text answers —
+            # to anyone who asked. Stripping `learner` kept it out of PII
+            # territory, but it is still user-authored content published without
+            # consent, and it is the one dataset Cordia's own positioning calls
+            # rare and hard to copy. Giving it away wholesale was the problem,
+            # not the field names.
+            #
+            # A sample stays useful for anyone inspecting the shape of the data
+            # while ceasing to be a bulk export.
+            sample = [{k: v for k, v in r.items() if k != 'learner'} for r in rows[-ANON_SAMPLE:]]
+            self._json({'responses': sample, 'total': len(rows),
+                        'sampled': True, 'limit': ANON_SAMPLE,
+                        'note': 'sign in for the full corpus'})
         elif p == '/train/kappa':
             self._kappa()
         elif p == '/train/rate/queue':
@@ -1045,6 +1079,23 @@ class Server(ThreadingHTTPServer):
     daemon_threads = True
 
 
+def _housekeeping():
+    """Purge expired sessions, login codes and pending signups.
+
+    Runs at startup and daily. whoami() already rejects an expired session, so
+    this is hygiene rather than a fix: it stops the tables growing without
+    bound and shortens the history a database compromise would expose."""
+    while True:
+        try:
+            counts = auth.purge_expired()
+            if any(counts.values()):
+                print(f'purged expired rows: {counts}', file=sys.stderr)
+        except Exception as e:
+            print(f'housekeeping skipped ({type(e).__name__}: {e})', file=sys.stderr)
+        time.sleep(24 * 60 * 60)
+
+
 if __name__ == '__main__':
     print(f'cordia-training backend on :{PORT}')
+    threading.Thread(target=_housekeeping, daemon=True).start()
     Server(('0.0.0.0', PORT), H).serve_forever()
