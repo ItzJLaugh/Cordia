@@ -90,6 +90,13 @@
     '@keyframes svb{0%,60%,100%{opacity:.28;transform:translateY(0)}30%{opacity:1;transform:translateY(-3px)}}',
     '.sv-note{font-family:var(--f-label,sans-serif);font-size:var(--t-xs,11px);',
     '  color:#7A5B2E;background:#FBF6EC;border-radius:8px;padding:8px 11px;line-height:1.45}',
+    '.sv-chips{display:flex;flex-wrap:wrap;gap:6px;margin:-4px 0 2px;padding:0 2px}',
+    '.sv-chip{border:1px solid var(--c-hair,rgba(11,11,11,.14));background:#fff;',
+    '  border-radius:var(--r-pill,999px);padding:7px 13px;font-size:var(--t-xs,11px);',
+    '  font-family:var(--f-label,sans-serif);color:var(--c-ink-2,#333);cursor:pointer;',
+    '  transition:border-color .15s,color .15s}',
+    '.sv-chip:hover{border-color:var(--c-moss,#4A5A42);color:var(--c-moss,#4A5A42)}',
+    '.sv-chip:focus-visible{outline:2px solid var(--c-moss,#4A5A42);outline-offset:1px}',
     '.sv-foot{flex:0 0 auto;border-top:1px solid var(--c-hair,rgba(11,11,11,.08));background:#fff}',
     '.sv-compose{display:flex;gap:8px;padding:12px 14px;align-items:flex-end}',
     '.sv-compose textarea{flex:1;border:1px solid var(--c-hair,rgba(11,11,11,.12));',
@@ -155,7 +162,10 @@
     addEventListener('keydown', function (e) {
       if (e.key === 'Escape' && opened) close();
     });
-    sendEl.addEventListener('click', send);
+    // Wrapped, not passed directly: addEventListener hands the click Event to
+    // its listener, which send() would take as `preset` and post as the user's
+    // answer. That stored "{'isTrusted': true}" as a real survey response.
+    sendEl.addEventListener('click', function () { send(); });
     inputEl.addEventListener('keydown', function (e) {
       if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); }
     });
@@ -167,7 +177,8 @@
       var b = e.target.closest('.sv-act');
       if (!b) return;
       var a = b.dataset.act;
-      if (a === 'build') location.href = 'builder.html';
+      if (a === 'rec') location.href = 'profile.html';
+      else if (a === 'build') location.href = 'builder.html';
       else if (a === 'certs') location.href = 'certifications.html';
       else { inputEl.focus(); }
     });
@@ -196,12 +207,51 @@
     } else if (!on && t) { t.remove(); }
   }
 
+  // Suggested answers for the outstanding question. Tapping one posts the exact
+  // value alongside the label, so the backend stores what the person meant
+  // rather than inferring it from prose. Typing instead is always allowed —
+  // the chips are an offer, not a gate.
+  function chips(signal, options) {
+    var old = listEl.querySelector('.sv-chips');
+    if (old) old.remove();
+    if (!signal || !options || !options.length) return;
+    var box = document.createElement('div');
+    box.className = 'sv-chips';
+    box.setAttribute('role', 'group');
+    box.setAttribute('aria-label', 'Suggested answers');
+    options.forEach(function (o) {
+      var b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'sv-chip';
+      b.textContent = o.label;
+      b.addEventListener('click', function () {
+        send(o.label, { signal: signal, value: o.value });
+      });
+      box.appendChild(b);
+    });
+    listEl.appendChild(box);
+    listEl.scrollTop = listEl.scrollHeight;
+  }
+
   function note(text) {
     if (!text || listEl.querySelector('.sv-note')) return;
     var n = document.createElement('div');
     n.className = 'sv-note';
     n.textContent = text;
     listEl.appendChild(n);
+  }
+
+  // Survey complete: the recommendation is the payoff, so make it the obvious
+  // next move rather than one of three equal-weight buttons.
+  function doneState() {
+    var acts = root.querySelector('.sv-acts');
+    if (!acts || acts.dataset.done === '1') return;
+    acts.dataset.done = '1';
+    acts.innerHTML =
+      '<button class="sv-act" data-act="rec" type="button" ' +
+        'style="background:var(--c-moss,#4A5A42);color:#fff;border-color:transparent">' +
+        'See how to set up my system</button>' +
+      '<button class="sv-act" data-act="refine" type="button">Add more detail</button>';
   }
 
   function setLive(status) {
@@ -240,6 +290,8 @@
           return;
         }
         (r.data.messages || []).forEach(function (m) { bubble(m.role, m.content, m.created); });
+        chips(r.data.signal, r.data.options);
+        if (r.data.profile && (r.data.profile.percent_complete || 0) >= 100) doneState();
         inputEl.focus();
       });
       api('/surveyor/profile').then(function (r) { setLive(r.data && r.data.llm); });
@@ -255,18 +307,22 @@
     document.dispatchEvent(new CustomEvent('cordia:surveyor-closed'));
   }
 
-  function send() {
+  function send(preset, choice) {
     if (busy) return;
-    var text = (inputEl.value || '').trim();
+    var text = preset != null ? preset : (inputEl.value || '').trim();
     if (!text) return;
-    inputEl.value = '';
-    inputEl.style.height = 'auto';
+    if (preset == null) { inputEl.value = ''; inputEl.style.height = 'auto'; }
+    var old = listEl.querySelector('.sv-chips');
+    if (old) old.remove();
     bubble('user', text);
     busy = true;
     sendEl.disabled = true;
     typing(true);
 
-    api('/surveyor/message', { message: text }).then(function (r) {
+    var payload = { message: text };
+    if (choice) payload.choice = choice;
+
+    api('/surveyor/message', payload).then(function (r) {
       typing(false);
       busy = false;
       sendEl.disabled = false;
@@ -278,7 +334,9 @@
       }
       bubble('assistant', r.data.reply);
       setLive(r.data.llm);
+      chips(r.data.signal, r.data.options);
       document.dispatchEvent(new CustomEvent('cordia:profile-updated', { detail: r.data.profile }));
+      if (r.data.done) doneState();
       inputEl.focus();
     }).catch(function () {
       typing(false); busy = false; sendEl.disabled = false;

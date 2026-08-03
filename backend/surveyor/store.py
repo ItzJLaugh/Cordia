@@ -280,6 +280,44 @@ def archive_interface(email, iface_id, archived=True) -> bool:
         return cur.rowcount > 0
 
 
+def export_answers() -> list:
+    """Every survey exchange as flat rows, for phase-2 analysis.
+
+    One row per user answer, carrying the question that prompted it, the signal
+    it was meant to fill, and whether the person tapped a suggested answer or
+    typed freely. That last flag matters: tapped answers are ground truth, typed
+    ones are what a future extractor has to learn to read, and mixing them would
+    contaminate any training set built from this.
+    """
+    sql = """
+        SELECT c.email, m.conversation_id, m.id, m.role, m.content, m.meta, m.created,
+               LAG(m.content) OVER (PARTITION BY m.conversation_id ORDER BY m.id) AS prompted_by,
+               LAG(m.meta)    OVER (PARTITION BY m.conversation_id ORDER BY m.id) AS prompt_meta
+        FROM surveyor_messages m
+        JOIN surveyor_conversations c ON c.id = m.conversation_id
+        ORDER BY m.conversation_id, m.id
+    """
+    with _conn() as c, c.cursor() as cur:
+        cur.execute(sql)
+        rows = cur.fetchall()
+
+    out = []
+    for email, cid, mid, role, content, meta, created, prev, prev_meta in rows:
+        if role != "user":
+            continue
+        out.append({
+            "email": email,
+            "conversation_id": cid,
+            "message_id": mid,
+            "question": prev,
+            "signal": (prev_meta or {}).get("signal"),
+            "answer": content,
+            "tapped_suggestion": bool((meta or {}).get("choice")),
+            "created": str(created),
+        })
+    return out
+
+
 def record_recommendation(email, definition) -> bool:
     """Log what Cordia recommended into the existing 6S ``outcomes`` table.
 

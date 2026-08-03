@@ -95,8 +95,14 @@ SIGNAL_PRIORITY = (
     "interface_density",
 )
 
-# Enough signal to stop asking and offer to build something.
-ENOUGH_SIGNALS = 6
+# Enough signal to stop asking and offer a setup recommendation.
+#
+# 9 of the 13 priority signals — about 10-12 questions once the opener and the
+# close are counted. Below roughly 8 the recommendation has little to say about
+# surface, role and risk posture together; much above 10 and the survey starts
+# asking more than most people will finish. This is a judgement call, and real
+# completion data should override it.
+ENOUGH_SIGNALS = 9
 
 _MAX_TEXT = 400
 _MAX_LIST = 8

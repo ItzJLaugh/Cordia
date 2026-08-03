@@ -48,6 +48,102 @@ QUESTIONS = {
 CLOSING = ("Thank you — I'm building your profile now. This is what Cordia will use to "
            "personalise your workspace and recommendations.")
 
+# Tappable answers offered alongside each question.
+#
+# These exist because inference is the weak link. Measured on held-out
+# paraphrases, keyword extraction gets ~36% of closed-vocabulary signals right
+# and a local 3B model ~64%. Guessing which of four workspace types someone
+# meant is a solved problem if we simply let them point at one.
+#
+# Chips are never mandatory. Free text is always accepted, the questions still
+# adapt, and signals with no fixed vocabulary (domain, primary_goal) have no
+# chips at all. Tapping one captures the value exactly and skips extraction
+# entirely for that turn — which is both more accurate and faster.
+CHOICES = {
+    "role_tendency": [
+        ("prototyper", "A builder"),
+        ("analyzer", "An analyzer"),
+        ("manager", "A manager"),
+        ("human_facing", "Communicating with people"),
+        ("technical_specialist", "A technical specialist"),
+        ("mixed", "A bit of everything"),
+    ],
+    "graph_preference": [
+        ("high", "They really help"),
+        ("medium", "Sometimes"),
+        ("low", "They get in the way"),
+    ],
+    "drawing_preference": [
+        ("high", "Yes, constantly"),
+        ("medium", "Now and then"),
+        ("low", "Almost never"),
+    ],
+    "visual_preference": [
+        ("high", "Yes, a lot"),
+        ("medium", "Somewhat"),
+        ("low", "Not really"),
+    ],
+    "verbal_preference": [
+        ("high", "Yes, I talk it out"),
+        ("medium", "Depends"),
+        ("low", "I'd rather see it"),
+    ],
+    "risk_awareness": [
+        ("high", "Anything irreversible"),
+        ("medium", "Only the big calls"),
+        ("low", "I'd rather it kept moving"),
+    ],
+    "delegation_style": [
+        ("human_reviews_every_step", "Check every step"),
+        ("human_checkpoint_before_final", "Look once before it's final"),
+        ("agent_autonomous", "Let it run"),
+    ],
+    "preferred_workspace": [
+        ("chat_first", "A clean chat"),
+        ("dashboard", "A visual dashboard"),
+        ("canvas", "A canvas"),
+        ("graph_and_chat", "Graph and chat together"),
+        ("balanced", "A balanced mix"),
+    ],
+    "correction_style": [
+        ("specific_missing_detail", "What it left out"),
+        ("compare_examples", "How it differs from a good one"),
+        ("ask_steps", "How it got there"),
+        ("rewrite_prompt", "That I asked badly"),
+    ],
+    "verification_preference": [
+        ("evidence_first", "The evidence behind it"),
+        ("example_first", "An example to compare"),
+        ("speed_first", "Just the answer, quickly"),
+    ],
+    "interface_density": [
+        ("minimal", "A blank canvas"),
+        ("balanced", "A template"),
+        ("detailed", "A checklist"),
+    ],
+}
+
+
+def choices_for(signal):
+    """[{value,label}] for a signal, or [] when it's genuinely free-text."""
+    return [{"value": v, "label": l} for v, l in CHOICES.get(signal, [])]
+
+
+def valid_choice(signal, value) -> bool:
+    """Never trust a value from the browser — chips post back a signal and a
+    value, and both must be ones we actually offered."""
+    allowed = types.SIGNAL_SCHEMA.get(signal)
+    if not allowed or value == "unknown":
+        return False
+    return value in allowed and any(v == value for v, _ in CHOICES.get(signal, []))
+
+
+def label_for(signal, value):
+    for v, l in CHOICES.get(signal, []):
+        if v == value:
+            return l
+    return value
+
 
 def answered(profile) -> set:
     return {k for k, v in ((profile or {}).get("signals") or {}).items() if v}

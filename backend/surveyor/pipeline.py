@@ -24,6 +24,23 @@ from . import (adaptation, extractor, identifiers, prompts,
 
 MAX_ANSWER = 4000
 
+# Which hidden criterion a directly-chosen signal counts as evidence for.
+# Mirrors scorer._FROM_SIGNALS / _FROM_CATEGORY; kept here so a tapped answer
+# records evidence with the same shape an extracted one would.
+_CRITERION_FOR = {
+    "graph_preference": "visual_systems_thinking",
+    "drawing_preference": "visual_systems_thinking",
+    "visual_preference": "visual_systems_thinking",
+    "verbal_preference": "intent_clarity",
+    "risk_awareness": "risk_boundary_awareness",
+    "delegation_style": "delegation_readiness",
+    "verification_preference": "verification_instinct",
+    "correction_style": "gap_detection",
+    "interface_density": "constraint_setting",
+    "preferred_workspace": "visual_systems_thinking",
+    "role_tendency": "domain_specificity",
+}
+
 
 def load_profile(email) -> dict:
     stored = store.get_profile(email)
@@ -56,12 +73,24 @@ def start(email) -> dict:
         store.add_message(cid, "assistant", qs.OPENING, {"signal": None, "opening": True})
         store.log_event(email, "survey_started")
         history = store.messages(cid)
+    # chips for whatever question is currently outstanding, so a resumed
+    # conversation offers the same answers it did before the page reload
+    last_sig = next((( m.get("meta") or {}).get("signal")
+                     for m in reversed(history) if m.get("role") == "assistant"), None)
     return {"conversation_id": cid, "messages": history,
+            "signal": last_sig,
+            "options": qs.choices_for(last_sig),
             "profile": public_profile(email)}
 
 
-def turn(email, answer, call_llm) -> dict:
-    """Handle one user message. Never raises for a model or parsing problem."""
+def turn(email, answer, call_llm, choice=None) -> dict:
+    """Handle one user message. Never raises for a model or parsing problem.
+
+    ``choice`` is {"signal": ..., "value": ...} when the person tapped one of
+    the offered answers instead of typing. That path skips extraction entirely:
+    there is nothing to infer when someone has pointed directly at the answer,
+    and inference is the least reliable part of this pipeline.
+    """
     answer = (answer or "").strip()[:MAX_ANSWER]
     if not answer:
         return {"ok": False, "error": "empty message"}
@@ -74,16 +103,41 @@ def turn(email, answer, call_llm) -> dict:
     last_q = next((m["content"] for m in reversed(history)
                    if m.get("role") == "assistant"), None)
 
-    store.add_message(cid, "user", answer)
-    store.log_event(email, "survey_message_sent", {"chars": len(answer)})
+    # A chip is only honoured if it matches the signal we actually just asked
+    # about and a value we actually offered. The browser is not trusted to name
+    # either one.
+    picked = None
+    if isinstance(choice, dict):
+        sig, val = choice.get("signal"), choice.get("value")
+        last_sig = next((( m.get("meta") or {}).get("signal")
+                         for m in reversed(history) if m.get("role") == "assistant"), None)
+        if sig == last_sig and qs.valid_choice(sig, val):
+            picked = (sig, val)
+
+    store.add_message(cid, "user", answer, {"choice": bool(picked)})
+    store.log_event(email, "survey_message_sent",
+                    {"chars": len(answer), "tapped": bool(picked)})
 
     profile = load_profile(email)
+    err = None
 
-    observation, err = extractor.extract(call_llm, last_q, answer, history)
-    if err:
-        store.log_event(email, "profile_extraction_failed", {"reason": err})
+    if picked:
+        sig, val = picked
+        signals = dict(profile.get("signals") or {})
+        signals[sig] = val
+        profile["signals"] = signals
+        profile["evidence"] = (list(profile.get("evidence") or []) + [{
+            "criterion": _CRITERION_FOR.get(sig, "intent_clarity"),
+            "summary": f"Chose “{qs.label_for(sig, val)}”.",
+            "confidence": "high",
+            "source": "surveyor_conversation",
+        }])[-60:]
     else:
-        profile = types.merge_profile(profile, observation)
+        observation, err = extractor.extract(call_llm, last_q, answer, history)
+        if err:
+            store.log_event(email, "profile_extraction_failed", {"reason": err})
+        else:
+            profile = types.merge_profile(profile, observation)
 
     profile["questions_answered"] = int(profile.get("questions_answered") or 0) + 1
     profile["scores"] = scorer.score(profile)
@@ -118,6 +172,8 @@ def turn(email, answer, call_llm) -> dict:
         "ok": True,
         "reply": reply,
         "done": done,
+        "signal": signal,
+        "options": qs.choices_for(signal),
         "profile": public_profile(email, profile),
         "extraction_ok": err is None,
     }

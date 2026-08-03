@@ -18,7 +18,7 @@ work, the right move is to delete the feature, not to grow one.
 """
 
 from . import (adaptation, extractor, identifiers, llm, mock, pipeline, prompts,
-               question_strategy, scorer, store, types)
+               question_strategy, recommendation, scorer, store, types)
 
 __all__ = ["adaptation", "extractor", "identifiers", "llm", "mock", "pipeline",
-           "prompts", "question_strategy", "scorer", "store", "types"]
+           "prompts", "question_strategy", "recommendation", "scorer", "store", "types"]

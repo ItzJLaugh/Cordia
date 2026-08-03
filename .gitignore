@@ -20,3 +20,6 @@ node_modules/
 # local backups — contain copies of /etc/cordia/cordia.env and retired
 # assets. Never commit: cordia.env holds the Postgres DSN and app passwords.
 backups/
+
+# local GGUF weights (~3.5GB) — never commit binaries this size
+models/

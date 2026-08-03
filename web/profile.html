@@ -51,6 +51,27 @@
   .next p{margin:0;font-size:var(--t-sm);line-height:var(--lh-body);color:var(--c-ink-2)}
   .foot{margin:52px 0 0;padding:22px 0 0;border-top:1px solid var(--c-hair);max-width:640px;
     font-size:var(--t-sm);line-height:var(--lh-body);color:var(--c-ink-3)}
+
+  .rec{margin:64px 0 0;padding:44px 0 0;border-top:1px solid var(--c-hair)}
+  .rec h2{font-family:var(--f-title);font-optical-sizing:auto;font-weight:500;
+    font-size:var(--t-xl);line-height:var(--lh-title);color:var(--c-ink);margin:0 0 10px}
+  .rec .why{font-size:var(--t-sm);line-height:var(--lh-body);color:var(--c-ink-2);
+    margin:0 0 34px;max-width:620px}
+  .sec{margin:0 0 30px;max-width:760px}
+  .sec h3{font-family:var(--f-label);font-size:var(--t-xs);letter-spacing:var(--tr-caps);
+    text-transform:uppercase;color:var(--c-moss);margin:0 0 8px;font-weight:500}
+  .sec .lead{font-family:var(--f-title);font-weight:500;font-size:var(--t-md);
+    color:var(--c-ink);margin:0 0 8px;line-height:var(--lh-title)}
+  .sec p{font-size:var(--t-sm);line-height:var(--lh-body);color:var(--c-ink-2);margin:0}
+  .items{list-style:none;padding:0;margin:16px 0 0;display:grid;gap:2px}
+  .items li{display:flex;gap:14px;padding:12px 0;border-top:1px solid var(--c-hair);
+    font-size:var(--t-sm);line-height:var(--lh-body)}
+  .items b{flex:0 0 168px;color:var(--c-ink);font-weight:500}
+  .items span{color:var(--c-ink-2)}
+  @media (max-width:640px){.items li{flex-direction:column;gap:4px}.items b{flex:none}}
+  .partial{margin:0 0 26px;padding:12px 16px;border-radius:10px;background:var(--c-wash);
+    font-size:var(--t-xs);font-family:var(--f-label);color:var(--c-ink-2);line-height:1.5;
+    max-width:620px}
   .offline{margin:22px 0 0;padding:11px 15px;border-radius:10px;background:#FBF6EC;
     color:#7A5B2E;font-size:var(--t-xs);font-family:var(--f-label);line-height:1.5;max-width:620px}
 </style>
@@ -75,6 +96,8 @@
     </div>
 
     <div id="content"></div>
+
+    <section class="rec" id="rec" hidden></section>
 
     <p class="foot">These three are what came through most clearly in your conversation. Cordia
       shows strengths only — ranking people against each other on a short conversation would not
@@ -144,14 +167,49 @@
           + '<a class="btn" href="builder.html">' + esc(na.label || 'Build my workspace') + '</a></div>');
   }
 
-  fetch(API + '/surveyor/profile', {
-    headers: { Authorization: 'Bearer ' + (localStorage.getItem('cordia-token') || '') }
-  }).then(function (r) {
+  function renderRec(rec) {
+    if (!rec || !rec.ready || !(rec.sections || []).length) return;
+    var host = document.getElementById('rec');
+    host.hidden = false;
+
+    var sections = rec.sections.map(function (s) {
+      var items = (s.items || []).length
+        ? '<ul class="items">' + s.items.map(function (i) {
+            return '<li><b>' + esc(i.title) + '</b>' +
+                   (i.body ? '<span>' + esc(i.body) + '</span>' : '') + '</li>';
+          }).join('') + '</ul>'
+        : '';
+      return '<div class="sec">' +
+        '<h3>' + esc(({surface:'Where to work', agents:'Roles',
+                        checkpoints:'Human checkpoints', briefing:'Briefing',
+                        tools:'Capabilities'})[s.kind] || 'Setup') + '</h3>' +
+        '<p class="lead">' + esc(s.title) + '</p>' +
+        '<p>' + esc(s.body) + '</p>' + items + '</div>';
+    }).join('');
+
+    host.innerHTML =
+      '<h2>' + esc(rec.headline) + '</h2>' +
+      (rec.note ? '<p class="why">' + esc(rec.note) + '</p>' : '') +
+      (rec.partial
+        ? '<p class="partial">Based on ' + rec.completeness + '% of the survey. '
+          + 'Answering more sharpens this — nothing here changes retroactively.</p>'
+        : '') +
+      sections;
+  }
+
+  var H = { Authorization: 'Bearer ' + (localStorage.getItem('cordia-token') || '') };
+
+  fetch(API + '/surveyor/profile', { headers: H }).then(function (r) {
     if (r.status === 401) { empty('Sign in to see your Cordia profile.'); return null; }
     if (r.status === 503) { empty('Surveyor is unavailable right now. Nothing else is affected.'); return null; }
     return r.json();
   }).then(function (d) { if (d) render(d); })
     .catch(function () { empty('Could not load your profile. Please refresh.'); });
+
+  fetch(API + '/surveyor/recommendation', { headers: H })
+    .then(function (r) { return r.ok ? r.json() : null; })
+    .then(function (d) { if (d && d.ok) renderRec(d.recommendation); })
+    .catch(function () {});
 
   document.addEventListener('cordia:surveyor-closed', function () { location.reload(); });
 })();

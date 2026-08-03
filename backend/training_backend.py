@@ -252,6 +252,10 @@ class H(BaseHTTPRequestHandler):
             self._surv_list_interfaces()
         elif p == '/surveyor/admin':
             self._surv_admin()
+        elif p == '/surveyor/recommendation':
+            self._surv_recommendation()
+        elif p == '/surveyor/export':
+            self._surv_export()
         else:
             self._json({'error': 'not found'}, 404)
 
@@ -306,9 +310,45 @@ class H(BaseHTTPRequestHandler):
         if not rate_ok(self._client_ip(), email, llm=True):
             self._json({'ok': False, 'error': 'message limit reached — wait 10 minutes'}, 429)
             return
-        out = surveyor.pipeline.turn(email, str(body.get('message', '')), self._surv_llm())
+        out = surveyor.pipeline.turn(email, str(body.get('message', '')), self._surv_llm(),
+                                     choice=body.get('choice'))
         out['llm'] = surveyor.llm.status(nous_key)
         self._json(out)
+
+    def _surv_recommendation(self):
+        """The assessment at the end of the survey — how to set your system up."""
+        email, stop = self._surv_guard()
+        if stop: return
+        profile = surveyor.pipeline.load_profile(email)
+        self._json({'ok': True,
+                    'recommendation': surveyor.recommendation.build(profile),
+                    **surveyor.pipeline.public_profile(email, profile)})
+
+    def _surv_export(self):
+        """Survey answers as JSONL, for phase-2 analysis. Admin only — this is
+        every participant's raw text, not just the requester's."""
+        email, stop = self._surv_guard()
+        if stop: return
+        if not self._surv_is_admin(email):
+            self._json({'ok': False, 'error': 'not authorised'}, 403); return
+        rows = surveyor.store.export_answers()
+        body = '\n'.join(json.dumps(r) for r in rows).encode()
+        self.send_response(200)
+        self.send_header('Content-Type', 'application/x-ndjson')
+        self.send_header('Content-Disposition',
+                         'attachment; filename="cordia-survey-answers.jsonl"')
+        self.send_header('Content-Length', str(len(body)))
+        self._cors()
+        self.end_headers()
+        self.wfile.write(body)
+
+    def _surv_is_admin(self, email):
+        allowed = {e.strip().lower() for e in
+                   (os.environ.get('CORDIA_ADMINS', '') or '').split(',') if e.strip()}
+        allowed |= {os.environ.get('CORDIA_RATER_A', '').strip().lower(),
+                    os.environ.get('CORDIA_RATER_B', '').strip().lower()}
+        allowed.discard('')
+        return email.lower() in allowed
 
     def _surv_defaults(self, profile):
         return surveyor.adaptation.builder_defaults(profile)
@@ -401,12 +441,7 @@ class H(BaseHTTPRequestHandler):
         which are explicitly not learner-facing."""
         email, stop = self._surv_guard()
         if stop: return
-        allowed = {e.strip().lower() for e in
-                   (os.environ.get('CORDIA_ADMINS', '') or '').split(',') if e.strip()}
-        allowed |= {os.environ.get('CORDIA_RATER_A', '').strip().lower(),
-                    os.environ.get('CORDIA_RATER_B', '').strip().lower()}
-        allowed.discard('')
-        if email.lower() not in allowed:
+        if not self._surv_is_admin(email):
             self._json({'ok': False, 'error': 'not authorised'}, 403); return
         q = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
         target = (q.get('email', [email])[0] or email).strip().lower()

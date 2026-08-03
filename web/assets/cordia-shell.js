@@ -18,12 +18,15 @@
   // Surveyor has no page of its own — it is a modal that opens over wherever
   // you already are, so the link carries data-surveyor and cordia-surveyor.js
   // intercepts the click. surveyor.html exists only as a direct-link fallback.
+  // Survey-first. The builder, runtime and agentic pages all still work and are
+  // linked from the recommendation, but they are phase-2 scope — leaving them in
+  // the top nav made the product read as far larger than the thing we actually
+  // want people to do right now, which is answer the survey.
   var NAV = [
+    ['Surveyor', 'surveyor.html', 'surveyor', ' data-surveyor'],
+    ['Your profile', 'profile.html', 'profile'],
     ['Training', 'training.html', 'training'],
     ['Certifications', 'certifications.html', 'certifications'],
-    ['Surveyor', 'surveyor.html', 'surveyor', ' data-surveyor'],
-    ['Workspace', 'interfaces.html', 'workspace'],
-    ['Agentic', 'agentic.html', 'agentic'],
     ['Pricing', 'pricing.html', 'pricing'],
   ];
 
@@ -40,6 +43,9 @@
     ['Billing', 'pricing.html',
       'M6,13 C18,10 30,10 42,13 C42,22 42,28 42,35 C30,38 18,38 6,35 C6,28 6,22 6,13',
       'M6,20 C18,18 30,18 42,20'],
+    ['Workspace', 'interfaces.html',
+      'M7,12 C18,9 30,9 41,12 C41,20 41,28 41,36 C30,39 18,39 7,36 C7,28 7,20 7,12',
+      'M24,12 C24,20 24,28 24,38'],
     ['Feedback', 'survey.html',
       'M6,11 C18,7.5 30,7.5 42,11 C42,20 42,26 42,32 C33,35 24,35 16,33 C13,36 10,38.5 7,40 C8.5,36.5 9,34 9,32 C7.5,31.6 6.5,31.2 6,31 C6,25 6,18 6,11'],
     ['Sign out', '#signout',

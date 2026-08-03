@@ -290,7 +290,20 @@ def builder_defaults(profile) -> dict:
 
 def _reason(profile, surface) -> str:
     bits = []
-    if _is_high(profile, "graph_preference") or _is_high(profile, "drawing_preference"):
+    # An explicitly chosen workspace outranks anything inferred, so say that
+    # first. Without it the reason can read incoherently — citing visual
+    # thinking while recommending a plain chat, because the person asked for a
+    # plain chat and that (rightly) won.
+    stated = _level(profile, "preferred_workspace")
+    if stated:
+        bits.append("you asked for " + {
+            "chat_first": "a clean chat",
+            "dashboard": "a dashboard",
+            "canvas": "a canvas",
+            "graph_and_chat": "a graph beside the chat",
+            "balanced": "a balanced mix",
+        }.get(stated, "that layout"))
+    elif _is_high(profile, "graph_preference") or _is_high(profile, "drawing_preference"):
         bits.append("you think visually")
     if _is_high(profile, "verbal_preference"):
         bits.append("you think by talking things through")
@@ -299,11 +312,11 @@ def _reason(profile, surface) -> str:
         bits.append(f"you work like {'an' if role[0] in 'aeiou' else 'a'} {role.replace('_', '-')}")
     if _is_high(profile, "risk_awareness"):
         bits.append("you want a human checkpoint before anything final")
-    domain = _level(profile, "domain")
-    if domain:
-        # People answer this in a whole sentence. Keep the reason line readable
-        # rather than replaying their paragraph back at them.
-        short = " ".join(str(domain).split()[:6]).rstrip(".,;")
+    # Only name the field when the answer is a short noun phrase — see
+    # recommendation.short_domain for why truncating a sentence reads as a bug.
+    from .recommendation import short_domain
+    short = short_domain(_level(profile, "domain"))
+    if short:
         bits.append(f"your work is in {short}")
 
     if not bits:
