@@ -33,11 +33,13 @@ SKILLS = {
 # ---------------- hive helpers ----------------
 
 def hive_get(path):
-    return json.loads(urllib.request.urlopen(HIVE + path, timeout=15).read())
+    return json.loads(urllib.request.urlopen(urllib.request.Request(HIVE + path,
+        headers={'X-Cordia-Bus': os.environ.get('CORDIA_BUS_SECRET', '')}), timeout=15).read())
 
 def hive_post(path, obj):
     req = urllib.request.Request(HIVE + path, data=json.dumps(obj).encode(),
-                                 headers={'Content-Type': 'application/json'})
+                                 headers={'Content-Type': 'application/json',
+                 'X-Cordia-Bus': os.environ.get('CORDIA_BUS_SECRET', '')})
     return json.loads(urllib.request.urlopen(req, timeout=30).read())
 
 def report(task_id, skill, ok, text):
@@ -123,7 +125,8 @@ def register():
         hive_post_soul = urllib.request.Request(
             SOUL + '/soul/register',
             data=json.dumps({'agent': NAME, 'skills': SKILLS}).encode(),
-            headers={'Content-Type': 'application/json'})
+            headers={'Content-Type': 'application/json',
+                 'X-Cordia-Bus': os.environ.get('CORDIA_BUS_SECRET', '')})
         print(urllib.request.urlopen(hive_post_soul, timeout=10).read().decode())
     except Exception as e:
         print('register failed (will retry on boot only):', e)

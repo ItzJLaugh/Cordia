@@ -38,6 +38,19 @@ except BaseException as _surv_err:            # noqa: BLE001 - must never be fat
 
 PORT = 9995
 
+
+# Bind address. Defaults to loopback: these services have no authentication on
+# any route, and were previously bound to 0.0.0.0 AND proxied publicly, which
+# let anyone on the internet read the inter-agent message bus and POST a message
+# addressed to 'engineer' — whose poller feeds message text into `claude -p`
+# with --allowedTools Read,Write,Edit,Bash. Unauthenticated prompt injection
+# into an agent with shell access on this box.
+#
+# Everything that legitimately talks to these runs on this host and already uses
+# 127.0.0.1 (see cordia-engineer.service). Override only with a specific private
+# address; never 0.0.0.0.
+BIND = os.environ.get('CORDIA_BIND', '127.0.0.1')
+
 # How many corpus rows an unauthenticated caller may read. Enough to inspect the
 # shape of the data, far short of a bulk export of everyone's answers.
 ANON_SAMPLE = 25
@@ -1098,4 +1111,4 @@ def _housekeeping():
 if __name__ == '__main__':
     print(f'cordia-training backend on :{PORT}')
     threading.Thread(target=_housekeeping, daemon=True).start()
-    Server(('0.0.0.0', PORT), H).serve_forever()
+    Server((BIND, PORT), H).serve_forever()

@@ -4,10 +4,24 @@ Routes intent to skills. Agents (like cordia-engineer) register their own
 skill manifests; SOUL dispatches by posting tasks onto their HiveBus log.
 Stdlib only."""
 import json, os, re, time, threading, urllib.request, uuid
+import hmac
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from urllib.parse import urlparse
 
 PORT = 9992
+
+# Bind address. Defaults to loopback: these services have no authentication on
+# any route, and were previously bound to 0.0.0.0 AND proxied publicly, which
+# let anyone on the internet read the inter-agent message bus and POST a message
+# addressed to 'engineer' — whose poller feeds message text into `claude -p`
+# with --allowedTools Read,Write,Edit,Bash. Unauthenticated prompt injection
+# into an agent with shell access on this box.
+#
+# Everything that legitimately talks to these runs on this host and already uses
+# 127.0.0.1 (see cordia-engineer.service). Override only with a specific private
+# address; never 0.0.0.0.
+BIND = os.environ.get('CORDIA_BIND', '127.0.0.1')
+
 HIVE = 'http://127.0.0.1:9999'
 LOGDIR = '/var/lib/cordia/log'
 SKILLDIR = '/var/lib/cordia/skills'
@@ -20,7 +34,8 @@ START = time.time()
 
 def hive_post(path, obj):
     req = urllib.request.Request(HIVE + path, data=json.dumps(obj).encode(),
-                                 headers={'Content-Type': 'application/json'})
+                                 headers={'Content-Type': 'application/json',
+                          'X-Cordia-Bus': os.environ.get('CORDIA_BUS_SECRET', '')})
     return json.loads(urllib.request.urlopen(req, timeout=10).read())
 
 def sk_task_add(args, **_):
@@ -32,7 +47,9 @@ def sk_task_add(args, **_):
     return {'ok': True, 'msg': f"task queued ({r['id']})" + (' [urgent]' if urgent else '')}
 
 def sk_task_list(**_):
-    rows = json.loads(urllib.request.urlopen(HIVE + '/hive/messages?log=tasks&limit=20', timeout=10).read())
+    rows = json.loads(urllib.request.urlopen(urllib.request.Request(
+        HIVE + '/hive/messages?log=tasks&limit=20',
+        headers={'X-Cordia-Bus': os.environ.get('CORDIA_BUS_SECRET', '')}), timeout=10).read())
     msgs = [m for m in rows.get('messages', []) if m.get('type') == 'task_add']
     if not msgs: return {'ok': True, 'msg': 'no tasks'}
     lines = [f"- {'[!] ' if m.get('meta',{}).get('urgent') else ''}{m['text']}" for m in msgs[-10:]]
@@ -113,6 +130,39 @@ def route(prompt, caller='soul'):
     return {'ok': False, 'msg': 'unknown command. routes: ' + ', '.join(ROUTES) +
             (' | agents: ' + ', '.join(f"{a}({','.join(s)})" for a, s in agents.items()) if agents else '')}
 
+
+# ---------------- authentication ----------------
+#
+# The bus had no authentication on any route. Combined with a public Apache
+# proxy and a 0.0.0.0 bind, that meant anyone on the internet could read every
+# inter-agent message and, worse, POST one addressed to 'engineer' — whose
+# poller feeds message text straight into `claude -p` with
+# --allowedTools Read,Write,Edit,Bash. Unauthenticated prompt injection into an
+# agent holding a shell on this box.
+#
+# Network exposure is closed (loopback bind, proxy removed, ufw). This is the
+# control that does not depend on the network staying closed: an SSRF anywhere
+# on this host, or a future proxy rule added by mistake, should still not be
+# enough to drive the agents.
+#
+# Shared secret rather than anything richer because every caller is a local
+# systemd unit reading the same env file. Compared with compare_digest so a
+# wrong guess leaks nothing through timing.
+SECRET = os.environ.get('CORDIA_BUS_SECRET', '')
+
+
+def _authed(handler):
+    """True when the caller proved it holds the bus secret.
+
+    Fails CLOSED: with no secret configured nothing is accepted, because the
+    alternative — treating 'unset' as 'allow' — is exactly how this was wide
+    open in the first place."""
+    if not SECRET:
+        return False
+    supplied = handler.headers.get('X-Cordia-Bus', '')
+    return hmac.compare_digest(supplied, SECRET)
+
+
 class H(BaseHTTPRequestHandler):
     def _json(self, obj, code=200):
         b = json.dumps(obj).encode()
@@ -134,6 +184,8 @@ class H(BaseHTTPRequestHandler):
             self._json({'status': 'running', 'uptime': time.time() - START,
                         'skills': list(ROUTES), 'agents': {a: list(s) for a, s in agents.items()}})
         elif p == '/soul/routes':
+            if not _authed(self):
+                self._json({'error': 'unauthorised'}, 401); return
             r = dict(ROUTES)
             for a, s in load_agent_skills().items():
                 for sk, desc in s.items():
@@ -144,6 +196,8 @@ class H(BaseHTTPRequestHandler):
 
     def do_POST(self):
         p = urlparse(self.path).path
+        if not _authed(self):
+            self._json({'error': 'unauthorised'}, 401); return
         try:
             body = self._body()
         except Exception as e:
@@ -168,4 +222,4 @@ class H(BaseHTTPRequestHandler):
 
 if __name__ == '__main__':
     print(f'SOUL on :{PORT}')
-    HTTPServer(('0.0.0.0', PORT), H).serve_forever()
+    HTTPServer((BIND, PORT), H).serve_forever()

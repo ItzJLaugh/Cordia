@@ -280,6 +280,16 @@ document.getElementById('authForm').onsubmit = async e => {
       if(d.dev_code){
         devCodeNote.style.display = 'block';
         devCodeNote.textContent = `Dev mode (email not configured): your code is ${d.dev_code}`;
+      } else if(mode === 'signup'){
+        // Signup deliberately gives the same response whether or not the address
+        // already has an account — otherwise anyone could test an email and learn
+        // who has one. That means we genuinely cannot tell the person which case
+        // they are in, so say so plainly rather than promising a code that may
+        // never arrive.
+        devCodeNote.style.display = 'block';
+        devCodeNote.textContent = 'Check your email. If this address is already '
+          + 'registered we’ve told you that instead of sending a code — '
+          + 'sign in below rather than signing up.';
       } else {
         devCodeNote.style.display = 'none';
       }
