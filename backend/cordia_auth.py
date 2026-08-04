@@ -13,6 +13,7 @@ lock = threading.RLock()
 PBKDF2_ROUNDS = 200_000
 CODE_TTL = 600              # 10 min
 SESSION_TTL = 60*60*24*14   # 14 days
+DEVICE_TTL  = 60*60*24*90   # 90 days a device stays trusted for 2FA
 DEV_2FA = os.environ.get('CORDIA_DEV_2FA') == '1'
 DSN = os.environ.get('CORDIA_PG_DSN', '')
 
@@ -68,7 +69,30 @@ def init():
           email TEXT PRIMARY KEY,
           code TEXT NOT NULL,
           expires DOUBLE PRECISION NOT NULL
-        );''')
+        );
+        -- Devices that have already proved control of the inbox once.
+        --
+        -- Named trusted_devices, not devices: cordia_enroll.py already owns a
+        -- `devices` table (hostname/key_id/revoked) for machine enrollment, and
+        -- CREATE TABLE IF NOT EXISTS silently did nothing when this collided
+        -- with it — every login then failed on a missing column.
+        --
+        -- Emailing a code on every sign-in buys nothing after the first time:
+        -- the code proves the person owns the address, and that proof does not
+        -- expire when they close the tab. A device that has completed the code
+        -- flow once is trusted for DEVICE_TTL. The password is still required
+        -- every single time — this skips the emailed code, never the password.
+        --
+        -- Stored as a SHA-256 hash exactly like sessions, so a database leak
+        -- does not hand anyone a way to bypass 2FA.
+        CREATE TABLE IF NOT EXISTS trusted_devices(
+          token TEXT PRIMARY KEY,
+          email TEXT NOT NULL,
+          created DOUBLE PRECISION NOT NULL,
+          expires DOUBLE PRECISION NOT NULL,
+          last_used DOUBLE PRECISION NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS trusted_devices_email_idx ON trusted_devices(email);''')
 
 def _send_code(email, code):
     user = os.environ.get('GMAIL_USER')
@@ -159,15 +183,15 @@ def verify_signup(email, code):
     with lock, _conn() as c, c.cursor() as cur:
         cur.execute('SELECT name,pw_hash,salt,code,expires FROM pending WHERE email=%s', (email,))
         row = cur.fetchone()
-        if not row: return False, 'no pending signup', None
+        if not row: return False, 'no pending signup', None, None
         name, pw_hash, salt, real_code, exp = row
-        if time.time() > exp: return False, 'code expired', None
-        if not hmac.compare_digest(code.strip(), real_code): return False, 'wrong code', None
+        if time.time() > exp: return False, 'code expired', None, None
+        if not hmac.compare_digest(code.strip(), real_code): return False, 'wrong code', None, None
         cur.execute('INSERT INTO accounts VALUES(%s,%s,%s,%s,%s) ON CONFLICT (email) DO NOTHING',
                     (email, name, pw_hash, salt, time.time()))
         cur.execute('DELETE FROM pending WHERE email=%s', (email,))
     _fire_event(email, 'signup_verified', {'name': name})
-    return True, 'account created', _make_session(email)
+    return True, 'account created', _make_session(email), trust_device(email)
 
 
 def _fire_event(email, kind, meta=None):
@@ -184,33 +208,89 @@ def _fire_event(email, kind, meta=None):
     except Exception:
         pass  # pipeline not running — auth path stays unaffected
 
-def login(email, password):
+def trust_device(email):
+    """Issue a device token after the emailed code has been verified.
+
+    Only ever called from verify_login/verify_signup — a device becomes trusted
+    by proving inbox control once, never by asking."""
+    token = secrets.token_urlsafe(32)
+    now = time.time()
+    with lock, _conn() as c, c.cursor() as cur:
+        cur.execute('INSERT INTO trusted_devices VALUES(%s,%s,%s,%s,%s)',
+                    (_hash_token(token), email, now, now + DEVICE_TTL, now))
+    return token                       # raw token returned once; only the hash is stored
+
+
+def device_trusted(email, device_token):
+    """True when this device already completed the code flow for THIS account.
+
+    Scoped by email as well as token: a valid device token belonging to someone
+    else must never satisfy the check for a different address, or one person's
+    remembered laptop would skip 2FA for anyone whose password was known."""
+    if not device_token or not email:
+        return False
+    with lock, _conn() as c, c.cursor() as cur:
+        cur.execute('SELECT expires FROM trusted_devices WHERE token=%s AND email=%s',
+                    (_hash_token(device_token), email))
+        row = cur.fetchone()
+        if not row or time.time() > row[0]:
+            return False
+        cur.execute('UPDATE trusted_devices SET last_used=%s WHERE token=%s',
+                    (time.time(), _hash_token(device_token)))
+    return True
+
+
+def forget_devices(email):
+    """Drop every remembered device for an account. The 'sign out everywhere'
+    lever, and what a password reset should call."""
+    with lock, _conn() as c, c.cursor() as cur:
+        cur.execute('DELETE FROM trusted_devices WHERE email=%s', (email,))
+        return cur.rowcount
+
+
+def login(email, password, device_token=None):
+    """Verify the password, then decide whether a code is needed.
+
+    Returns (ok, msg, dev_code, session_token). session_token is non-None only
+    when the device is already trusted and the code step is skipped.
+    """
     email = email.strip().lower()
     with lock, _conn() as c, c.cursor() as cur:
         cur.execute('SELECT pw_hash,salt FROM accounts WHERE email=%s', (email,))
         row = cur.fetchone()
-        if not row: return False, 'invalid email or password', None
+        if not row: return False, 'invalid email or password', None, None
         pw_hash, salt = row
         if not hmac.compare_digest(_hash_pw(password, salt), pw_hash):
-            return False, 'invalid email or password', None
+            return False, 'invalid email or password', None, None
+
+    # Password is correct. A device that has already proved inbox control for
+    # this account skips the emailed code — but never the password above.
+    if device_trusted(email, device_token):
+        _fire_event(email, 'login_trusted_device')
+        return True, 'signed in', None, _make_session(email)
+
+    with lock, _conn() as c, c.cursor() as cur:
         code = f'{secrets.randbelow(900000)+100000}'
         cur.execute('''INSERT INTO login_codes VALUES(%s,%s,%s)
                        ON CONFLICT (email) DO UPDATE SET code=EXCLUDED.code, expires=EXCLUDED.expires''',
                     (email, code, time.time()+CODE_TTL))
     sent = _send_code(email, code)
-    return True, 'verification code sent' if sent else 'dev mode: code on screen', (None if sent else code)
+    return True, 'verification code sent' if sent else 'dev mode: code on screen', \
+           (None if sent else code), None
 
 def verify_login(email, code):
     email = email.strip().lower()
     with lock, _conn() as c, c.cursor() as cur:
         cur.execute('SELECT code,expires FROM login_codes WHERE email=%s', (email,))
         row = cur.fetchone()
-        if not row: return False, 'no pending login', None
+        if not row: return False, 'no pending login', None, None
         real_code, exp = row
-        if time.time() > exp: return False, 'code expired', None
-        if not hmac.compare_digest(code.strip(), real_code): return False, 'wrong code', None
+        if time.time() > exp: return False, 'code expired', None, None
+        if not hmac.compare_digest(code.strip(), real_code): return False, 'wrong code', None, None
         cur.execute('DELETE FROM login_codes WHERE email=%s', (email,))
-    return True, 'logged in', _make_session(email)
+    # Inbox control just proved. Remember this device so the next sign-in from
+    # it needs the password only.
+    return True, 'logged in', _make_session(email), trust_device(email)
 
 def _make_session(email):
     token = secrets.token_urlsafe(32)
@@ -244,7 +324,7 @@ def purge_expired():
     out = {}
     now = time.time()
     with lock, _conn() as c, c.cursor() as cur:
-        for table in ('sessions', 'login_codes', 'pending'):
+        for table in ('sessions', 'login_codes', 'pending', 'trusted_devices'):
             cur.execute(f'DELETE FROM {table} WHERE expires < %s', (now,))
             out[table] = cur.rowcount
     return out

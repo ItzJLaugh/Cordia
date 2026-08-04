@@ -205,9 +205,15 @@ document.getElementById('authForm').onsubmit = async e => {
   submitBtn.disabled = true;
   try {
     if(!awaitingCode){
+      // The device token proves this browser already completed the emailed-code
+      // flow for this account, so the code step is skipped. It is never a
+      // substitute for the password — the server checks that first regardless.
       const d = await api(mode === 'signup' ? '/auth/signup' : '/auth/login',
-        mode === 'signup' ? {email, name, password: pass} : {email, password: pass});
+        mode === 'signup'
+          ? {email, name, password: pass}
+          : {email, password: pass, device: localStorage.getItem('cordia-device') || ''});
       if(!d.ok){ showErr(d.msg || 'Something went wrong.'); return; }
+      if(d.token){ enterSpace(d.token, email); return; }   // trusted device — straight in
       awaitingCode = true;
       codeField.style.display = 'block';
       submitBtn.textContent = 'Verify code';
@@ -233,6 +239,9 @@ document.getElementById('authForm').onsubmit = async e => {
       const d = await api(mode === 'signup' ? '/auth/verify-signup' : '/auth/verify-login',
         {email, code});
       if(!d.ok){ showErr(d.msg || 'Verification failed.'); return; }
+      // Issued once, on the request that proved inbox control. Kept so the next
+      // sign-in from this browser needs the password only.
+      if(d.device){ try { localStorage.setItem('cordia-device', d.device); } catch(e){} }
       enterSpace(d.token, email);
     }
   } catch(err){

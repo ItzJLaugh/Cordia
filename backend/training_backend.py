@@ -775,7 +775,16 @@ class H(BaseHTTPRequestHandler):
         elif p == '/auth/verify-login':
             self._auth_verify(auth.verify_login, body)
         elif p == '/auth/logout':
-            auth.logout(str(body.get('token', '')))
+            # Ordinary sign-out ends the session but keeps the device trusted —
+            # otherwise "log out" would silently mean "email me a code next
+            # time", which is the friction this exists to remove. Passing
+            # forget_device makes it a real sign-out for shared machines.
+            tok = str(body.get('token', ''))
+            if body.get('forget_device'):
+                me = auth.whoami(tok)
+                if me:
+                    auth.forget_devices(me['email'])
+            auth.logout(tok)
             self._json({'ok': True})
         elif p == '/auth/enroll':
             self._enroll()
@@ -799,10 +808,20 @@ class H(BaseHTTPRequestHandler):
             return
         name = str(body.get('name', ''))[:120]
         pw = str(body.get('password', ''))[:200]
-        args = (email, name, pw) if fn is auth.signup else (email, pw)
-        ok, msg, dev_code = fn(*args)
+        if fn is auth.signup:
+            ok, msg, dev_code = fn(email, name, pw)
+            session = None
+        else:
+            # A device that has already completed the code flow for this account
+            # gets a session straight back and never sees a code. The password
+            # was still checked inside login().
+            device = str(body.get('device', ''))[:120]
+            ok, msg, dev_code, session = fn(email, pw, device)
         out = {'ok': ok, 'msg': msg}
         if dev_code: out['dev_code'] = dev_code
+        if session:
+            out['token'] = session
+            out['skipped_code'] = True
         self._json(out, 200 if ok else 400)
 
     def _auth_verify(self, fn, body):
@@ -812,9 +831,12 @@ class H(BaseHTTPRequestHandler):
             self._json({'ok': False, 'msg': 'too many attempts — wait 10 minutes and try again'}, 429)
             return
         code = str(body.get('code', ''))[:12]
-        ok, msg, token = fn(email, code)
+        ok, msg, token, device = fn(email, code)
         out = {'ok': ok, 'msg': msg}
         if token: out['token'] = token
+        # Returned once, on the request that proved inbox control. The browser
+        # keeps it and presents it on the next sign-in to skip the code.
+        if device: out['device'] = device
         self._json(out, 200 if ok else 400)
 
     def _enroll(self):
