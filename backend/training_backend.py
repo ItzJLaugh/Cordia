@@ -106,7 +106,8 @@ WINDOW = 600          # 10 min
 IP_CAP = 10           # auth attempts per IP per window
 EMAIL_CAP = 5         # auth attempts per target email per window
 LLM_CAP = 30          # llm calls per user per window (paid upstream)
-_rl = {'ip': {}, 'email': {}, 'llm': {}}
+ADMIN_CAP = 20        # admin/agent-control attempts per IP per window
+_rl = {'ip': {}, 'email': {}, 'llm': {}, 'admin': {}}
 
 def _hit(bucket, key, cap):
     now = time.time()
@@ -116,19 +117,19 @@ def _hit(bucket, key, cap):
     if len(dq) >= cap:
         return False
     dq.append(now)
-    if not dq:
-        bucket.pop(key, None)
     return True
 
-def rate_ok(ip, email=None, llm=False):
-    with lock:
-        if llm:
-            return _hit(_rl['llm'], (email or '').strip().lower() or ip, LLM_CAP)
-        if not _hit(_rl['ip'], ip, IP_CAP):
-            return False
-        if email and not _hit(_rl['email'], email.strip().lower(), EMAIL_CAP):
-            return False
-        return True
+def rate_ok(ip, email=None, llm=False, admin=False):
+    if admin:
+        return _hit(_rl['admin'], ip, ADMIN_CAP)
+    if llm:
+        return _hit(_rl['llm'], (email or '').strip().lower() or ip, LLM_CAP)
+    if not _hit(_rl['ip'], ip, IP_CAP):
+        return False
+    if email and not _hit(_rl['email'], email.strip().lower(), EMAIL_CAP):
+        return False
+    return True
+
 
 NOUS_URL = 'https://inference-api.nousresearch.com/v1/chat/completions'
 NOUS_MODEL = 'moonshotai/kimi-k3'
@@ -228,15 +229,32 @@ class H(BaseHTTPRequestHandler):
         self.send_response(code)
         self.send_header('Content-Type', 'application/json')
         self.send_header('Content-Length', str(len(b)))
+        self.send_header('X-Content-Type-Options', 'nosniff')
+        self.send_header('X-Frame-Options', 'DENY')
+        self.send_header('Referrer-Policy', 'strict-origin-when-cross-origin')
+        self.send_header('Permissions-Policy', 'geolocation=(), microphone=(), camera=()')
+        self.send_header('Strict-Transport-Security', 'max-age=31536000; includeSubDomains')
         self._cors()
         self.end_headers()
         self.wfile.write(b)
+
+    def _set_session_cookie(self, token):
+        if not token:
+            return
+        cookie = (f'cordia_session={token}; HttpOnly; Secure; SameSite=Strict; '
+                  f'Max-Age={int(os.environ.get("SESSION_TTL", 86400))}; Path=/;')
+        self.send_header('Set-Cookie', cookie)
+
+    def _clear_session_cookie(self):
+        self.send_header('Set-Cookie', 'cordia_session=; HttpOnly; Secure; SameSite=Strict; Max-Age=0; Path=/;')
 
     def do_OPTIONS(self):
         self.send_response(204); self._cors(); self.end_headers()
 
     def _body(self):
-        n = int(self.headers.get('Content-Length', 0))
+        n = int(self.headers.get('Content-Length', 0) or 0)
+        if n <= 0:
+            return {}
         if n > 2_000_000: raise ValueError('body too large')
         return json.loads(self.rfile.read(n) or b'{}')
 
@@ -293,6 +311,8 @@ class H(BaseHTTPRequestHandler):
             self._manifest()
         elif p == '/surveyor/profile':
             self._surv_profile()
+        elif p == '/account/profile':
+            self._account_profile()
         elif p == '/surveyor/conversation':
             self._surv_conversation()
         elif p == '/surveyor/interfaces':
@@ -303,6 +323,8 @@ class H(BaseHTTPRequestHandler):
             self._surv_recommendation()
         elif p == '/surveyor/export':
             self._surv_export()
+        elif p == '/admin/users':
+            self._admin_users()
         else:
             self._json({'error': 'not found'}, 404)
 
@@ -400,6 +422,20 @@ class H(BaseHTTPRequestHandler):
         allowed.discard('')
         return email.lower() in allowed
 
+    def _log_admin(self, email, route):
+        try:
+            import psycopg2
+            dsn = os.environ.get('CORDIA_PG_DSN') or os.environ.get('DATABASE_URL')
+            if not dsn:
+                return
+            with psycopg2.connect(dsn) as c, c.cursor() as cur:
+                cur.execute(
+                    "INSERT INTO admin_audit(email, route, ip, ua) VALUES(%s,%s,%s,%s)",
+                    (email.lower(), route, self._client_ip(),
+                     (self.headers.get('User-Agent', '') or '')[:200]))
+        except Exception:
+            pass
+
     def _surv_defaults(self, profile):
         return surveyor.adaptation.builder_defaults(profile)
 
@@ -493,19 +529,81 @@ class H(BaseHTTPRequestHandler):
         if stop: return
         if not self._surv_is_admin(email):
             self._json({'ok': False, 'error': 'not authorised'}, 403); return
+        ip = self._client_ip()
+        if not rate_ok(ip, email=email, admin=True):
+            self._json({'ok': False, 'error': 'rate limit — wait 10 minutes'}, 429); return
         q = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
         target = (q.get('email', [email])[0] or email).strip().lower()
-        profile = surveyor.pipeline.load_profile(target)
-        cid = surveyor.store.open_conversation(target)
-        self._json({'ok': True, 'email': target, 'profile': profile,
-                    'public': surveyor.pipeline.public_profile(target, profile),
-                    'messages': surveyor.store.messages(cid),
-                    'adaptation': surveyor.adaptation.builder_defaults(profile),
-                    'interfaces': surveyor.store.list_interfaces(target, True),
-                    'runs': surveyor.store.runs(target),
-                    'events': surveyor.store.events(target),
-                    'llm': surveyor.llm.status(nous_key),
-                    'personalization_mode': surveyor.adaptation.mode()})
+        try:
+            profile = surveyor.pipeline.load_profile(target)
+            cid = surveyor.store.open_conversation(target)
+            self._json({'ok': True, 'email': target, 'profile': profile,
+                        'public': surveyor.pipeline.public_profile(target, profile),
+                        'messages': surveyor.store.messages(cid),
+                        'adaptation': surveyor.adaptation.builder_defaults(profile),
+                        'interfaces': surveyor.store.list_interfaces(target, True),
+                        'runs': surveyor.store.runs(target),
+                        'events': surveyor.store.events(target),
+                        'llm': surveyor.llm.status(nous_key),
+                        'personalization_mode': surveyor.adaptation.mode()})
+        except Exception as e:
+            self._json({'ok': False, 'error': 'surveyor unavailable: ' + str(e)}, 503)
+
+    def _admin_users(self):
+        email, stop = self._surv_guard()
+        if stop: return
+        if not self._surv_is_admin(email):
+            self._json({'ok': False, 'error': 'not authorised'}, 403); return
+        self._log_admin(email, 'admin/users')
+        ip = self._client_ip()
+        if not rate_ok(ip, email=email, admin=True):
+            self._json({'ok': False, 'error': 'rate limit — wait 10 minutes'}, 429); return
+        import psycopg2
+        from psycopg2.extras import RealDictCursor
+        dsn = os.environ.get('CORDIA_PG_DSN') or os.environ.get('DATABASE_URL')
+        if not dsn:
+            self._json({'ok': False, 'error': 'database not configured'}, 500); return
+        users = []
+        try:
+            with psycopg2.connect(dsn) as conn, conn.cursor(cursor_factory=RealDictCursor) as cur:
+                cur.execute("""
+                    SELECT a.email,
+                           a.name,
+                           to_timestamp(a.created) AS created_at,
+                           COALESCE(s.cnt, 0) AS submissions,
+                           COALESCE(c.cnt, 0) AS surveyor_conversations,
+                           COALESCE(m.cnt, 0) AS surveyor_messages
+                    FROM accounts a
+                    LEFT JOIN (
+                        SELECT user_ref, COUNT(*) AS cnt
+                        FROM submissions
+                        GROUP BY user_ref
+                    ) s ON s.user_ref = a.email
+                    LEFT JOIN (
+                        SELECT email, COUNT(*) AS cnt
+                        FROM surveyor_conversations
+                        GROUP BY email
+                    ) c ON c.email = a.email
+                    LEFT JOIN (
+                        SELECT c.email, COUNT(*) AS cnt
+                        FROM surveyor_messages m
+                        JOIN surveyor_conversations c ON c.id = m.conversation_id
+                        GROUP BY c.email
+                    ) m ON m.email = a.email
+                    ORDER BY a.created DESC
+                """)
+                for r in cur.fetchall():
+                    users.append({
+                        'email': r['email'],
+                        'name': r['name'],
+                        'created_at': r['created_at'].isoformat() if r['created_at'] else '',
+                        'submissions': int(r['submissions'] or 0),
+                        'surveyor_conversations': int(r['surveyor_conversations'] or 0),
+                        'surveyor_messages': int(r['surveyor_messages'] or 0),
+                    })
+        except Exception as e:
+            self._json({'ok': False, 'error': str(e)}, 500); return
+        self._json({'ok': True, 'users': users})
 
     def _kappa(self):
         """Cohen's kappa between rater A and rater B over paired /train/rate
@@ -786,8 +884,23 @@ class H(BaseHTTPRequestHandler):
                     auth.forget_devices(me['email'])
             auth.logout(tok)
             self._json({'ok': True})
+        elif p == '/auth/session':
+            # NOTE: must reuse the already-parsed body. do_POST consumed the
+            # request stream at the top; calling self._body() again blocks on
+            # rfile.read(Content-Length) forever (bytes already read), which
+            # hung every /auth/session call until Apache's proxy timeout —
+            # seen in the logs as AH01102 504s and broken auth-gate checks.
+            token = self._surv_body.get('token', '') or self.headers.get('Authorization', '').replace('Bearer ', '')
+            me = auth.whoami(token)
+            if not me:
+                self._json({'ok': False, 'authed': False}, 401); return
+            self._json({'ok': True, 'authed': True, 'user': me})
         elif p == '/auth/enroll':
             self._enroll()
+        elif p == '/auth/forgot-password':
+            self._forgot_password()
+        elif p == '/auth/reset-password':
+            self._reset_password()
         elif p == '/pay/reach-webhook':
             self._reach_webhook(body)
         else:
@@ -822,6 +935,7 @@ class H(BaseHTTPRequestHandler):
         if session:
             out['token'] = session
             out['skipped_code'] = True
+            self._set_session_cookie(session)
         self._json(out, 200 if ok else 400)
 
     def _auth_verify(self, fn, body):
@@ -838,6 +952,29 @@ class H(BaseHTTPRequestHandler):
         # keeps it and presents it on the next sign-in to skip the code.
         if device: out['device'] = device
         self._json(out, 200 if ok else 400)
+
+    def _forgot_password(self):
+        ip = self._client_ip()
+        body = self._surv_body if isinstance(self._surv_body, dict) else {}
+        email = str(body.get('email', '')).strip().lower()
+        if not email:
+            self._json({'ok': False, 'msg': 'email required'}, 400); return
+        if not rate_ok(ip, email):
+            self._json({'ok': False, 'msg': 'too many attempts — wait 10 minutes'}, 429); return
+        ok, msg = auth.request_password_reset(email)
+        self._json({'ok': ok, 'msg': msg}, 200 if ok else 400)
+
+    def _reset_password(self):
+        body = self._surv_body if isinstance(self._surv_body, dict) else {}
+        email = str(body.get('email', '')).strip().lower()
+        code = str(body.get('code', '')).strip()
+        new_password = str(body.get('new_password', '')).strip()
+        if not email or not code or not new_password:
+            self._json({'ok': False, 'msg': 'email, code, and new_password required'}, 400); return
+        if len(new_password) < 6:
+            self._json({'ok': False, 'msg': 'password must be at least 6 characters'}, 400); return
+        ok, msg = auth.reset_password(email, code, new_password)
+        self._json({'ok': ok, 'msg': msg}, 200 if ok else 400)
 
     def _enroll(self):
         ip = self._client_ip()
@@ -873,6 +1010,41 @@ class H(BaseHTTPRequestHandler):
                          'paid_tracks': [track] if track else None})
         self._json({'ok': ok, 'msg': msg}, 200 if ok else 403)
 
+    def _account_profile(self):
+        token = self.headers.get('Authorization', '').replace('Bearer ', '').strip()
+        me = auth.whoami(token) if token else None
+        if not me:
+            self._json({'ok': False, 'error': 'sign in required'}, 401); return
+        import urllib.parse as up
+        method = self.command.upper()
+        qs = up.parse_qs(up.urlparse(self.path).query)
+        if method == 'GET':
+            with lock, _conn() as c, c.cursor() as cur:
+                cur.execute('SELECT avatar_url,display_name,bio,locale FROM accounts WHERE email=%s', (me['email'],))
+                row = cur.fetchone() or (None, None, None, 'en')
+                self._json({'ok': True, 'email': me['email'], 'name': me['name'],
+                            'avatar_url': row[0], 'display_name': row[1],
+                            'bio': row[2], 'locale': row[3]})
+        elif method == 'PATCH':
+            length = int(self.headers.get('Content-Length', '0') or '0')
+            body = json.loads(self.rfile.read(length) or '{}')
+            fields = {}
+            for key in ('display_name', 'bio', 'locale'):
+                if key in body: fields[key] = str(body.get(key, '') or '')
+            if 'avatar_url' in body:
+                url = str(body.get('avatar_url', '') or '')
+                if url and not re.match(r'^https?://[^\s]+$', url):
+                    self._json({'ok': False, 'error': 'avatar_url must be a valid URL'}, 400); return
+                fields['avatar_url'] = url
+            if not fields:
+                self._json({'ok': False, 'error': 'nothing to update'}, 400); return
+            set_sql = ', '.join(f'{k}=%s' for k in fields.keys())
+            with lock, _conn() as c, c.cursor() as cur:
+                cur.execute(f'UPDATE accounts SET {set_sql} WHERE email=%s', (*fields.values(), me['email']))
+            self._json({'ok': True, 'updated': list(fields.keys())})
+        else:
+            self._json({'error': 'method not allowed'}, 405)
+
     def _my_access(self):
         token = self.headers.get('Authorization', '').replace('Bearer ', '').strip()
         me = auth.whoami(token) if token else None
@@ -898,7 +1070,7 @@ class H(BaseHTTPRequestHandler):
             self._json({'ok': False, 'msg': f'manifest unavailable: {e}'}, 503); return
         import urllib.parse as up
         q = up.parse_qs(up.urlparse(self.path).query)
-        industries = [i for i in q.get('industries', [''])[0].split(',') if i]
+        industries = [i for i in q.get('industries', [''])[0].split(',') if i][:20]
         profile = compile_profile(me['email'])
         if not profile:
             self._json({'ok': False, 'msg': 'no score data yet — take the exam first'}, 404); return

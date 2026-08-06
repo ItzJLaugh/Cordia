@@ -21,7 +21,7 @@ STATE_DIR = Path("/var/lib/cordia/irp")
 ROUNDS = STATE_DIR / "rounds.jsonl"
 MOTHER_STATE = STATE_DIR / "mother_state.json"
 BROADCAST_INTERVAL = 1.0
-REPLY_TIMEOUT = 0.4
+REPLY_TIMEOUT = 15.0
 LANES = ["source", "success", "safety", "steering", "switch", "sharpen"]
 
 

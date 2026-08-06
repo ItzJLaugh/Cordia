@@ -92,7 +92,22 @@ def init():
           expires DOUBLE PRECISION NOT NULL,
           last_used DOUBLE PRECISION NOT NULL
         );
-        CREATE INDEX IF NOT EXISTS trusted_devices_email_idx ON trusted_devices(email);''')
+        CREATE INDEX IF NOT EXISTS trusted_devices_email_idx ON trusted_devices(email);
+        CREATE TABLE IF NOT EXISTS admin_audit(
+          id BIGSERIAL PRIMARY KEY,
+          ts DOUBLE PRECISION NOT NULL,
+          email TEXT NOT NULL,
+          route TEXT NOT NULL,
+          ip TEXT,
+          ua TEXT
+        );
+        CREATE INDEX IF NOT EXISTS admin_audit_email_idx ON admin_audit(email);
+        CREATE INDEX IF NOT EXISTS admin_audit_ts_idx ON admin_audit(ts);
+        CREATE TABLE IF NOT EXISTS reset_codes(
+          email TEXT PRIMARY KEY,
+          code TEXT NOT NULL,
+          expires DOUBLE PRECISION NOT NULL
+        );''')
 
 def _send_code(email, code):
     user = os.environ.get('GMAIL_USER')
@@ -129,22 +144,29 @@ def signup(email, name, password):
     #
     # The real owner is told by email instead, which is the only channel where
     # it is safe to say it — they read their inbox, someone probing addresses
-    # does not. The response is byte-identical either way.
+    email = email.strip().lower()
+    if not email or '@' not in email:
+        return False, 'valid email required', None
+    if (len(password) < 10 or not any(c.isalpha() for c in password)
+            or not any(c.isdigit() for c in password)):
+        return False, 'password must be 10+ chars with at least one letter and one number', None
+    if password.lower() in COMMON_PASSWORDS:
+        return False, 'password is too common — pick something less guessable', None
+    # Never reveal whether an address is already registered.
     with lock, _conn() as c, c.cursor() as cur:
         cur.execute('SELECT 1 FROM accounts WHERE email=%s', (email,))
         existing = cur.fetchone() is not None
-        if not existing:
-            salt = secrets.token_hex(16)
-            code = f'{secrets.randbelow(900000)+100000}'
-            cur.execute('''INSERT INTO pending VALUES(%s,%s,%s,%s,%s,%s)
-                           ON CONFLICT (email) DO UPDATE SET name=EXCLUDED.name, pw_hash=EXCLUDED.pw_hash,
-                           salt=EXCLUDED.salt, code=EXCLUDED.code, expires=EXCLUDED.expires''',
-                        (email, name or email.split('@')[0], _hash_pw(password, salt), salt, code, time.time()+CODE_TTL))
-
-    if existing:
-        _notify_existing(email)
-        return True, 'verification code sent', None
-
+        if existing:
+            _notify_existing(email)
+            # Return the same generic response as a new signup so we never
+            # reveal account existence via timing or message differences.
+            return True, 'verification code sent', None
+        salt = secrets.token_hex(16)
+        code = f'{secrets.randbelow(900000)+100000}'
+        cur.execute('''INSERT INTO pending VALUES(%s,%s,%s,%s,%s,%s)
+                       ON CONFLICT (email) DO UPDATE SET name=EXCLUDED.name, pw_hash=EXCLUDED.pw_hash,
+                       salt=EXCLUDED.salt, code=EXCLUDED.code, expires=EXCLUDED.expires''',
+                    (email, name or email.split('@')[0], _hash_pw(password, salt), salt, code, time.time()+CODE_TTL))
     sent = _send_code(email, code)
     return True, 'verification code sent' if sent else 'dev mode: code on screen', (None if sent else code)
 
@@ -283,14 +305,48 @@ def verify_login(email, code):
     with lock, _conn() as c, c.cursor() as cur:
         cur.execute('SELECT code,expires FROM login_codes WHERE email=%s', (email,))
         row = cur.fetchone()
-        if not row: return False, 'no pending login', None, None
+        if not row: return False, 'invalid code', None, None
         real_code, exp = row
-        if time.time() > exp: return False, 'code expired', None, None
-        if not hmac.compare_digest(code.strip(), real_code): return False, 'wrong code', None, None
+        if time.time() > exp:
+            cur.execute('DELETE FROM login_codes WHERE email=%s', (email,))
+            return False, 'invalid code', None, None
+        if not hmac.compare_digest(code.strip(), real_code):
+            return False, 'invalid code', None, None
         cur.execute('DELETE FROM login_codes WHERE email=%s', (email,))
-    # Inbox control just proved. Remember this device so the next sign-in from
-    # it needs the password only.
     return True, 'logged in', _make_session(email), trust_device(email)
+
+def request_password_reset(email):
+    email = email.strip().lower()
+    with lock, _conn() as c, c.cursor() as cur:
+        cur.execute('SELECT email FROM accounts WHERE email=%s', (email,))
+        if not cur.fetchone():
+            # Return the same generic response regardless of account existence.
+            return False, 'if that email exists, a reset code was sent'
+        code = f'{secrets.randbelow(900000)+100000}'
+        cur.execute('''INSERT INTO reset_codes VALUES(%s,%s,%s)
+                       ON CONFLICT (email) DO UPDATE SET code=EXCLUDED.code, expires=EXCLUDED.expires''',
+                    (email, code, time.time() + CODE_TTL))
+    sent = _send_code(email, code)
+    return True, 'reset code sent' if sent else 'dev mode: code on screen'
+
+def reset_password(email, code, new_password):
+    email = email.strip().lower()
+    with lock, _conn() as c, c.cursor() as cur:
+        cur.execute('SELECT code,expires FROM reset_codes WHERE email=%s', (email,))
+        row = cur.fetchone()
+        if not row: return False, 'no reset requested'
+        real_code, exp = row
+        if time.time() > exp: return False, 'code expired'
+        if not hmac.compare_digest(code.strip(), real_code): return False, 'wrong code'
+        cur.execute('SELECT email FROM accounts WHERE email=%s', (email,))
+        if not cur.fetchone(): return False, 'no account'
+        salt = secrets.token_hex(16)
+        pw_hash = _hash_pw(new_password, salt)
+        cur.execute('UPDATE accounts SET pw_hash=%s, salt=%s WHERE email=%s',
+                    (pw_hash, salt, email))
+        cur.execute('DELETE FROM reset_codes WHERE email=%s', (email,))
+        cur.execute('DELETE FROM trusted_devices WHERE email=%s', (email,))
+    return True, 'password updated'
 
 def _make_session(email):
     token = secrets.token_urlsafe(32)
@@ -309,6 +365,7 @@ def whoami(token):
         name = cur.fetchone()
         return {'email': row[0], 'name': name[0] if name else row[0]}
 
+
 def logout(token):
     with lock, _conn() as c, c.cursor() as cur:
         cur.execute('DELETE FROM sessions WHERE token=%s', (_hash_token(token),))
@@ -324,7 +381,7 @@ def purge_expired():
     out = {}
     now = time.time()
     with lock, _conn() as c, c.cursor() as cur:
-        for table in ('sessions', 'login_codes', 'pending', 'trusted_devices'):
+        for table in ('sessions', 'login_codes', 'pending', 'trusted_devices', 'reset_codes'):
             cur.execute(f'DELETE FROM {table} WHERE expires < %s', (now,))
             out[table] = cur.rowcount
     return out
