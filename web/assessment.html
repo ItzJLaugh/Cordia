@@ -135,8 +135,9 @@
   </div>
 </div>
 
+<script src="assets/cordia-auth.js"></script>
+<script>document.body.setAttribute('data-auth-gate','');</script>
 <script>
-if(sessionStorage.getItem('cordia-auth') !== '1') location.replace('index.html');
 const token = localStorage.getItem('cordia-token') || '';
 const DIMS = ['Source','Success','Safety','Steering','Switch','Sharpen'];
 const INDUSTRIES = ['healthcare','legal','finance','construction','software','education','energy','marketing','sales','hr','supplychain','public','trades','engineering','frontline'];

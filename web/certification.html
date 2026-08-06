@@ -43,8 +43,9 @@
     <div id="questions"></div>
   </div>
 </div>
+<script src="assets/cordia-auth.js"></script>
+<script>document.body.setAttribute('data-auth-gate','');</script>
 <script>
-if(sessionStorage.getItem('cordia-auth') !== '1') location.replace('index.html');
 const API = (location.hostname === 'localhost' || location.hostname === '127.0.0.1' ? 'http://127.0.0.1:9995' : location.protocol + '//' + location.hostname + (location.protocol === 'https:' ? '' : ':9995'));
 /* sign-out handled by cordia-shell.js */
 async function go(){

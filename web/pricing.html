@@ -89,8 +89,9 @@
   <p class="note">Payments are processed by Hostinger Reach. Cordia never sees or stores card details.</p>
 </div>
 
+<script src="assets/cordia-auth.js"></script>
+<script>document.body.setAttribute('data-auth-gate','');</script>
 <script>
-if(sessionStorage.getItem('cordia-auth') !== '1') location.replace('index.html');
 /* sign-out handled by cordia-shell.js */
 </script>
 <script src="assets/cordia-shell.js" data-nav="pricing"></script>
