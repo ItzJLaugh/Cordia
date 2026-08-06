@@ -102,10 +102,87 @@
           scores[c].toFixed(3) + '</td><td>' + evid + '</td></tr>';
       }).join('');
 
+    var simple = !!p.simple_mode_forced;
+
+    function plainProfile() {
+      var pub = d.public || {};
+      var out = [];
+      out.push('<p><b>Identifier type:</b> ' + esc(pub.identifier_type || '—') + '</p>');
+      out.push('<p><b>Suggested workflow:</b> ' + esc((pub.suggested_workflow || []).join(', ') || '—') + '</p>');
+      out.push('<p><b>Triggers:</b> ' + esc((pub.triggers || []).join(', ') || '—') + '</p>');
+      out.push('<p><b>Constraints:</b> ' + esc((pub.constraints || []).join(', ') || '—') + '</p>');
+      out.push('<p><b>Confidence:</b> ' + esc((pub.confidence || '—')) + '</p>');
+      return out.join('');
+    }
+
+    function plainSignals() {
+      var sig = p.signals || {};
+      var out = [];
+      var keys = Object.keys(sig).sort();
+      if (!keys.length) return '<p style="margin:0;color:var(--c-ink-3)">No signals recorded yet.</p>';
+      keys.forEach(function (k) {
+        var item = sig[k];
+        if (item && typeof item === 'object') {
+          out.push('<div class="msg"><b>' + esc(k) + '</b>');
+          if (item.question) out.push('<div><b>Question</b><br>' + esc(item.question) + '</div>');
+          if (item.answer) out.push('<div><b>Answer</b><br>' + esc(item.answer) + '</div>');
+          if (item.evidence) out.push('<div><b>Evidence</b><br>' + esc(item.evidence) + '</div>');
+          if (item.interpretation) out.push('<div><b>Outcome</b><br>' + esc(item.interpretation) + '</div>');
+          out.push('</div>');
+        } else {
+          out.push('<div class="msg"><b>' + esc(k) + '</b>' + esc(String(item)) + '</div>');
+        }
+      });
+      return out.join('');
+    }
+
+    function plainAdaptation() {
+      var a = d.adaptation || {};
+      var out = [];
+      if (a.mode) out.push('<p><b>Mode:</b> ' + esc(a.mode) + '</p>');
+      if (a.scenarios && a.scenarios.length) out.push('<p><b>Scenarios:</b> ' + esc(a.scenarios.join(', ')) + '</p>');
+      if (a.recommendation) out.push('<p><b>Recommendation:</b> ' + esc(a.recommendation) + '</p>');
+      if (a.reason) out.push('<p><b>Reason:</b> ' + esc(a.reason) + '</p>');
+      if (!out.length) return '<p style="margin:0;color:var(--c-ink-3)">No adaptation output yet.</p>';
+      return out.join('');
+    }
+
+    function renderInterface(iface) {
+      var defn = iface.definition || {};
+      var agents = (defn.agents || []).map(function (a) {
+        return '<li><b>' + esc(a.name) + '</b> — ' + esc(a.role) + '<br><small>' + esc(a.instructions) + '</small></li>';
+      }).join('');
+      var tools = (defn.tools || []).map(function (t) {
+        return '<li>' + esc(t.name) + ' <span style="color:var(--c-ink-4)">(' + esc(t.type) + ')</span></li>';
+      }).join('');
+      var steps = (defn.workflow && defn.workflow.steps || []).map(function (s, i) {
+        return '<li><b>Step ' + (i+1) + ':</b> ' + esc(s.agentId) + (s.toolIds && s.toolIds.length ? ' — tools: ' + esc(s.toolIds.join(', ')) : '') + '<br><small>' + esc(s.instruction) + '</small></li>';
+      }).join('');
+      return '<div style="border:1px solid var(--c-hair);border-radius:var(--r-md);padding:14px;margin:8px 0">' +
+        '<p style="margin:0 0 6px"><b>' + esc(iface.name || iface.id) + '</b> <span style="color:var(--c-ink-4)">' + (iface.archived ? 'archived' : 'active') + '</span></p>' +
+        '<p style="margin:0 0 8px;color:var(--c-ink-3)">' + esc(iface.description || '') + '</p>' +
+        '<p style="margin:0 0 4px"><b>Surface:</b> ' + esc((defn.surface || {}).type || '—') + ' / ' + esc((defn.surface || {}).theme || '—') + '</p>' +
+        '<div style="display:flex;gap:24px;flex-wrap:wrap">' +
+          '<div style="flex:1;min-width:180px"><p style="margin:0 0 4px;font-family:var(--f-label);font-size:var(--t-xs);text-transform:uppercase;letter-spacing:.08em;color:var(--c-ink-3)">Agents</p><ul style="margin:0;padding-left:18px">' + (agents || '<li>—</li>') + '</ul></div>' +
+          '<div style="flex:1;min-width:180px"><p style="margin:0 0 4px;font-family:var(--f-label);font-size:var(--t-xs);text-transform:uppercase;letter-spacing:.08em;color:var(--c-ink-3)">Tools</p><ul style="margin:0;padding-left:18px">' + (tools || '<li>—</li>') + '</ul></div>' +
+          '<div style="flex:1;min-width:180px"><p style="margin:0 0 4px;font-family:var(--f-label);font-size:var(--t-xs);text-transform:uppercase;letter-spacing:.08em;color:var(--c-ink-3)">Workflow</p><ol style="margin:0;padding-left:18px">' + (steps || '<li>—</li>') + '</ol></div>' +
+        '</div>' +
+        '<p style="margin:8px 0 0;color:var(--c-ink-4);font-size:11px">Updated: ' + esc((iface.updated || '').slice(0, 19)) + '</p>' +
+      '</div>';
+    }
+
+    function interfaceBlock() {
+      if (!(d.interfaces || []).length) return '<p style="margin:0;color:var(--c-ink-3)">No interfaces yet.</p>';
+      return '<div style="display:flex;flex-direction:column;gap:6px">' +
+        (d.interfaces || []).map(renderInterface).join('') +
+      '</div>';
+    }
+
     content.innerHTML =
       '<div class="bar">' +
-        '<input type="text" id="who" value="' + esc(d.email || '') + '" aria-label="Email">' +
+        '<input type="text" id="who" value="' + esc(d.email || '') + '" aria-label="Email" placeholder="email">' +
         '<button class="btn ghost" type="button" id="go">Look up</button>' +
+        '<button class="btn ghost" type="button" id="usersTab">Users</button>' +
         '<span class="flag">PERSONALIZATION_MODE = ' + esc(d.personalization_mode) + '</span>' +
         '<span class="flag"' + (d.llm && d.llm.live === false ? ' data-warn="1"' : '') + '>' +
           'model: ' + esc((d.llm || {}).mode || '?') + '</span>' +
@@ -113,6 +190,7 @@
           'simple_mode_forced = ' + (p.simple_mode_forced ? 'true' : 'false') + '</span>' +
         '<button class="btn" type="button" id="toggle">' +
           (p.simple_mode_forced ? 'Unforce simple mode' : 'Force simple mode') + '</button>' +
+        '<span class="flag" style="margin-left:auto">View: ' + (simple ? 'Simple' : 'JSON') + '</span>' +
       '</div>' +
 
       '<section><h2>Hidden criteria &mdash; ' + Object.keys(scores).length + ' observed of 10</h2>' +
@@ -123,13 +201,11 @@
         '</div></section>' +
 
       '<section><h2>Learner-facing profile (what they actually see)</h2>' +
-        '<div class="panel"><pre>' + esc(JSON.stringify(d.public, null, 2)) + '</pre></div></section>' +
+        '<div class="panel">' + (simple ? plainProfile() : '<pre>' + esc(JSON.stringify(d.public, null, 2)) + '</pre>') + '</div></section>' +
 
-      '<section><h2>Signals</h2><div class="panel"><pre>' +
-        esc(JSON.stringify(p.signals || {}, null, 2)) + '</pre></div></section>' +
+      '<section><h2>Signals</h2><div class="panel">' + (simple ? plainSignals() : '<pre>' + esc(JSON.stringify(p.signals || {}, null, 2)) + '</pre>') + '</div></section>' +
 
-      '<section><h2>Adaptation output</h2><div class="panel"><pre>' +
-        esc(JSON.stringify(d.adaptation || {}, null, 2)) + '</pre></div></section>' +
+      '<section><h2>Adaptation output</h2><div class="panel">' + (simple ? plainAdaptation() : '<pre>' + esc(JSON.stringify(d.adaptation || {}, null, 2)) + '</pre>') + '</div></section>' +
 
       '<section><h2>Conversation &mdash; ' + (d.messages || []).length + ' messages</h2>' +
         '<div class="panel scroll" style="max-height:400px;overflow-y:auto">' +
@@ -139,10 +215,7 @@
         '</div></section>' +
 
       '<section><h2>Interfaces (' + (d.interfaces || []).length + ') and runs (' +
-        (d.runs || []).length + ')</h2><div class="panel"><pre>' +
-        esc(JSON.stringify((d.interfaces || []).map(function (x) {
-          return { id: x.id, name: x.name, archived: x.archived, updated: x.updated };
-        }), null, 2)) + '</pre></div></section>' +
+        (d.runs || []).length + ')</h2><div class="panel">' + interfaceBlock() + '</div></section>' +
 
       '<section><h2>Events</h2><div class="panel scroll"><table>' +
         '<thead><tr><th>When</th><th>Event</th><th>Payload</th></tr></thead><tbody>' +
@@ -155,6 +228,9 @@
 
     document.getElementById('go').addEventListener('click', function () {
       load(document.getElementById('who').value.trim());
+    });
+    document.getElementById('usersTab').addEventListener('click', function () {
+      loadUsers();
     });
     document.getElementById('toggle').addEventListener('click', function () {
       this.disabled = true;
@@ -178,6 +254,41 @@
         content.innerHTML = '<div class="deny">Could not load. Please refresh.</div>';
       });
   }
+
+  function renderUsers(users) {
+    var list = (users || []).map(function (u) {
+      return '<tr>'
+        + '<td><a href="/surveyor/admin?email=' + esc(u.email) + '">' + esc(u.email) + '</a></td>'
+        + '<td>' + esc(u.name || '') + '</td>'
+        + '<td class="num">' + esc((u.created_at || '').slice(0, 19).replace('T', ' ')) + '</td>'
+        + '<td class="num">' + esc(String(u.submissions || 0)) + '</td>'
+        + '<td class="num">' + esc(String(u.surveyor_conversations || 0)) + '</td>'
+        + '<td class="num">' + esc(String(u.surveyor_messages || 0)) + '</td>'
+        + '</tr>';
+    }).join('');
+    content.innerHTML =
+      '<section><h2>Users</h2>'
+      + '<div class="panel scroll"><table>'
+      + '<thead><tr><th>Email</th><th>Name</th><th>Joined</th><th class="num">Submissions</th><th class="num">Conversations</th><th class="num">Messages</th></tr></thead>'
+      + '<tbody>' + (list || '<tr><td colspan="6">No users.</td></tr>') + '</tbody></table></div></section>'
+      + '<p style="color:var(--c-ink-3);font-size:var(--t-sm)">Select an email to inspect their surveyor profile.</p>';
+  }
+
+  function loadUsers() {
+    api('/admin/users')
+      .then(function (r) {
+        if (r.code === 401 || r.code === 403) {
+          content.innerHTML = '<div class="deny">Sign in with an admin account to view users.</div>';
+        } else if (r.code === 500) {
+          content.innerHTML = '<div class="deny">Users view unavailable: ' + esc(r.data.error || 'server error') + '</div>';
+        } else {
+          renderUsers((r.data || {}).users);
+        }
+      }).catch(function () {
+        content.innerHTML = '<div class="deny">Could not load users. Please refresh.</div>';
+      });
+  }
+
   load('');
 })();
 </script>

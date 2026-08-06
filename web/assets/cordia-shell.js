@@ -23,8 +23,8 @@
   // the top nav made the product read as far larger than the thing we actually
   // want people to do right now, which is answer the survey.
   var NAV = [
-    ['Surveyor', 'surveyor.html', 'surveyor', ' data-surveyor'],
     ['Your profile', 'profile.html', 'profile'],
+    ['Surveyor', 'surveyor.html', 'surveyor', ' data-surveyor'],
     ['Training', 'training.html', 'training'],
     ['Certifications', 'certifications.html', 'certifications'],
     ['Pricing', 'pricing.html', 'pricing'],

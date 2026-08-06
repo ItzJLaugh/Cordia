@@ -11,12 +11,13 @@
 <link rel="stylesheet" href="assets/cordia-ui.css">
 <link rel="stylesheet" href="assets/cordia-logo.css">
 <style>
-  body{min-height:100vh;overflow-x:hidden;background:var(--c-bg)}
+  body{min-height:100vh;overflow-x:hidden;background:var(--c-bg);color:var(--c-ink)}
+  .bg{position:fixed;inset:0;z-index:0;pointer-events:none;
+    background:url('assets/img/login-bg.jpg') center/cover no-repeat;
+    opacity:.22;filter:grayscale(.2)}
+  @media (max-width:640px){.bg{opacity:.14}}
 
-  /* Single centred column. The previous two-column grid left a large empty
-     band on wide screens because the right-hand card was pinned to the edge
-     while the left column ran out of content. Centring removes the gap
-     instead of trying to fill it. */
+  /* Single centred column. */
   .login{position:relative;z-index:2;min-height:100vh;display:flex;
     flex-direction:column;align-items:center;justify-content:center;
     gap:26px;padding:40px 22px 48px;max-width:520px;margin:0 auto;text-align:center}
@@ -29,12 +30,12 @@
   .statement-sub{font-size:var(--t-sm);line-height:1.6;color:var(--c-ink-3);
     margin:0;max-width:34ch}
 
-  /* ---- auth card: sits over the tree, deliberately overlapping it ---- */
   .auth-card{width:100%;max-width:392px;position:relative;z-index:3;
     animation:rise .7s cubic-bezier(.22,.8,.3,1)}
   @keyframes rise{from{opacity:0;transform:translateY(18px)}to{opacity:1;transform:none}}
   .auth-body{padding:28px 28px 24px;background:var(--c-surface);
-    border-radius:var(--r-md);box-shadow:var(--e-3);text-align:left}
+    border-radius:var(--r-md);box-shadow:var(--e-3);text-align:left;
+    border:1px solid rgba(0,0,0,.06)}
   .auth-title{font-family:var(--f-title);font-optical-sizing:auto;font-weight:500;
     font-size:var(--t-lg);color:var(--c-ink);margin:0 0 18px}
   .auth-tabs{display:flex;gap:6px;margin-bottom:20px;background:var(--c-wash);
@@ -50,27 +51,16 @@
   .demo-note{margin-top:18px;padding-top:15px;border-top:1px solid var(--c-hair);
     font-family:var(--f-label);font-size:11px;color:var(--c-ink-4);
     text-align:center;line-height:1.6}
-
-  /* ---- the tree / neural network ---- */
-  /* Centred and full-height rather than pushed into a corner: the form sits on
-     top of it, so the trunk reads behind the card and the root network spreads
-     out beneath. Kept to a light transparent grey so it never competes with
-     the form it sits under. */
-  .tree{position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);
-    width:100vw;height:auto;aspect-ratio:1.6/1;z-index:0;
-    pointer-events:none;color:var(--c-ink);opacity:.16}
-  @media (min-width:1000px){.tree{width:min(100vw,1680px);opacity:.18}}
-  @media (max-width:640px){.tree{opacity:.11;width:230vw}}
 </style>
 </head>
 <body>
+
+<div class="bg" aria-hidden="true"></div>
 
 <div class="cordia-loader" id="loader">
   <img src="/assets/img/cordia-icon.png" alt="" style="height:64px;width:auto;display:block;margin:0 auto">
   <div class="load-word">Entering your space</div>
 </div>
-
-<svg class="tree" id="treeGraph" aria-hidden="true"></svg>
 
 <div class="login">
   <img class="mark" src="assets/img/cordia-logo-header.webp" alt="Cordia" width="382" height="60">
@@ -100,12 +90,21 @@
         </div>
         <div class="field">
           <label for="password">Password</label>
-          <input id="password" type="password" placeholder="••••••••" required minlength="6">
+          <input id="password" type="password" placeholder="••••••••••" required minlength="10" title="10+ characters, with at least one letter and one number">
+          <small id="pwHint" style="display:none;color:var(--warn)">Use 10+ characters, with at least one letter and one number.</small>
+        </div>
+        <div class="auth-foot" style="margin-top:-8px;margin-bottom:10px">
+          <a href="#" id="forgotLink">Forgot password?</a>
         </div>
         <div class="field" id="codeField" style="display:none">
           <label for="code">Verification code</label>
           <input id="code" type="text" inputmode="numeric" placeholder="6-digit code" maxlength="6">
           <div id="devCodeNote" style="display:none;font-family:var(--f-label);font-size:12px;color:#7A5B2E;margin-top:8px"></div>
+        </div>
+        <div class="field" id="newPasswordField" style="display:none">
+          <label for="newPassword">New password</label>
+          <input id="newPassword" name="new_password" type="password" placeholder="••••••••••" minlength="10">
+          <small style="color:var(--warn)">Use 10+ characters, with at least one letter and one number.</small>
         </div>
         <button class="btn btn-primary" type="submit" style="width:100%" id="submitBtn">Sign in</button>
       </form>
@@ -121,10 +120,7 @@ Email-verified. Passwords hashed server-side.
   </div>
 </div>
 
-<script src="assets/cordia-treegraph.js"></script>
 <script>
-CordiaTreeGraph.mount(document.getElementById('treeGraph'));
-
 /* ================= auth logic — unchanged ================= */
 const API = (location.hostname === 'localhost' || location.hostname === '127.0.0.1'
   ? 'http://127.0.0.1:9995'
@@ -155,14 +151,17 @@ const codeField = document.getElementById('codeField');
 const devCodeNote = document.getElementById('devCodeNote');
 const submitBtn = document.getElementById('submitBtn');
 const footText = document.getElementById('footText');
+const forgotLink = document.getElementById('forgotLink');
 const errBox = document.getElementById('authError');
 const loader = document.getElementById('loader');
 let mode = 'login';
 let awaitingCode = false;
+let forgotStep = 0; // 0=off, 1=email, 2=code+newpw
 
 function setMode(m){
   mode = m;
   awaitingCode = false;
+  forgotStep = 0;
   codeField.style.display = 'none';
   tabLogin.classList.toggle('active', m==='login');
   tabSignup.classList.toggle('active', m==='signup');
@@ -172,10 +171,12 @@ function setMode(m){
     ? 'New to Cordia? <a href="#" id="footLink">Create an account</a>'
     : 'Already have an account? <a href="#" id="footLink">Sign in</a>';
   errBox.style.display = 'none';
+  forgotLink.style.display = m==='login' ? 'inline' : 'none';
 }
 tabLogin.onclick = () => setMode('login');
 tabSignup.onclick = () => setMode('signup');
 footText.onclick = e => { if(e.target.id==='footLink'){ e.preventDefault(); setMode(mode==='login'?'signup':'login'); } };
+forgotLink.onclick = e => { e.preventDefault(); forgotStep=1; updateForgotUI(); };
 
 async function api(path, body){
   const r = await fetch(API + path, {
@@ -196,6 +197,23 @@ function enterSpace(token, email){
   setTimeout(() => location.replace('surveyor.html'), 1400);
 }
 
+function updateForgotUI(){
+  if(forgotStep === 1){
+    errBox.style.display='none';
+    codeField.style.display='none';
+    submitBtn.textContent='Send reset code';
+    footText.innerHTML='Remembered it? <a href="#" id="footLink">Sign in</a>';
+    forgotLink.style.display='none';
+  } else if(forgotStep === 2){
+    codeField.style.display = 'block';
+    document.getElementById('newPasswordField').style.display = 'block';
+    submitBtn.textContent = 'Reset password';
+    footText.innerHTML = 'Remembered it? <a href="#" id="footLink">Sign in</a>';
+    forgotLink.style.display = 'none';
+    document.getElementById('newPassword').focus();
+  }
+}
+
 document.getElementById('authForm').onsubmit = async e => {
   e.preventDefault();
   const email = document.getElementById('email').value.trim().toLowerCase();
@@ -204,16 +222,33 @@ document.getElementById('authForm').onsubmit = async e => {
   const code = document.getElementById('code').value.trim();
   submitBtn.disabled = true;
   try {
+    if(forgotStep === 1){
+      const d = await api('/auth/forgot-password', {email});
+      if(!d.ok){ showErr(d.msg || 'Something went wrong.'); return; }
+      forgotStep = 2;
+      updateForgotUI();
+      document.getElementById('code').focus();
+      return;
+    }
+    if(forgotStep === 2){
+      const newPass = document.getElementById('newPassword')?.value || '';
+      if(!code){ showErr('Enter the 6-digit code.'); return; }
+      if(!newPass || newPass.length < 6){ showErr('Enter a new password (6+ characters).'); return; }
+      const d = await api('/auth/reset-password', {email, code, new_password: newPass});
+      if(!d.ok){ showErr(d.msg || 'Reset failed.'); return; }
+      errBox.style.display='none';
+      devCodeNote.style.display='block';
+      devCodeNote.textContent='Password updated. You can sign in now.';
+      setTimeout(()=> setMode('login'), 1200);
+      return;
+    }
     if(!awaitingCode){
-      // The device token proves this browser already completed the emailed-code
-      // flow for this account, so the code step is skipped. It is never a
-      // substitute for the password — the server checks that first regardless.
       const d = await api(mode === 'signup' ? '/auth/signup' : '/auth/login',
         mode === 'signup'
           ? {email, name, password: pass}
           : {email, password: pass, device: localStorage.getItem('cordia-device') || ''});
       if(!d.ok){ showErr(d.msg || 'Something went wrong.'); return; }
-      if(d.token){ enterSpace(d.token, email); return; }   // trusted device — straight in
+      if(d.token){ enterSpace(d.token, email); return; }
       awaitingCode = true;
       codeField.style.display = 'block';
       submitBtn.textContent = 'Verify code';
@@ -221,11 +256,6 @@ document.getElementById('authForm').onsubmit = async e => {
         devCodeNote.style.display = 'block';
         devCodeNote.textContent = `Dev mode (email not configured): your code is ${d.dev_code}`;
       } else if(mode === 'signup'){
-        // Signup deliberately gives the same response whether or not the address
-        // already has an account — otherwise anyone could test an email and learn
-        // who has one. That means we genuinely cannot tell the person which case
-        // they are in, so say so plainly rather than promising a code that may
-        // never arrive.
         devCodeNote.style.display = 'block';
         devCodeNote.textContent = 'Check your email. If this address is already '
           + 'registered we’ve told you that instead of sending a code — '
@@ -239,8 +269,6 @@ document.getElementById('authForm').onsubmit = async e => {
       const d = await api(mode === 'signup' ? '/auth/verify-signup' : '/auth/verify-login',
         {email, code});
       if(!d.ok){ showErr(d.msg || 'Verification failed.'); return; }
-      // Issued once, on the request that proved inbox control. Kept so the next
-      // sign-in from this browser needs the password only.
       if(d.device){ try { localStorage.setItem('cordia-device', d.device); } catch(e){} }
       enterSpace(d.token, email);
     }

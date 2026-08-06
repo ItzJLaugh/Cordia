@@ -139,28 +139,7 @@
     return '<i data-b="'+b+'" title="'+b+'"></i>';
   }).join('');
 
-  // progress from the learner's own rows
-  fetch(API+'/train/responses?track=aie1',{headers:{Authorization:'Bearer '+tok}})
-    .then(function(r){return r.ok?r.json():null;})
-    .then(function(d){
-      if(!d){ $('progNote').textContent='Sign in to see your progress.'; return; }
-      // /train/responses strips `learner` when unauthenticated, so an
-      // unauthenticated caller cannot be attributed to anyone — only count
-      // rows we can actually confirm are ours.
-      var mine = (d.responses||[]).filter(function(r){return r.learner;});
-      var done = {};
-      mine.forEach(function(r){ if(r.value && r.value.trim()) done[r.block]=1; });
-      var n = BLOCKS.filter(function(b){return done[b];}).length;
-      $('statDone').textContent = n+' / '+BLOCKS.length;
-      $('progNote').textContent = n===0 ? 'You have not answered any items yet.'
-        : (n<BLOCKS.length ? (BLOCKS.length-n)+' items left before you can be scored.'
-                           : 'All items answered. You can be scored.');
-      BLOCKS.forEach(function(b){
-        var cell = document.querySelector('.blocks i[data-b="'+b+'"]');
-        if(cell && done[b]) cell.classList.add('done');
-      });
-    })
-    .catch(function(){ $('progNote').textContent='Could not load progress.'; });
+  // progress note — progress is computed from saved exam blocks state
 
   // result
   fetch(API+'/train/certification',{headers:{Authorization:'Bearer '+tok}})

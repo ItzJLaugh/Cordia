@@ -165,7 +165,7 @@
 
   function fail(res){
     main.innerHTML = '<div class="state">'+
-      (res.status === 401 ? 'Sign in required. <a href="index.html">Sign in</a>, then reload this page.' :
+      (res.status === 401 ? 'Sign in required. <a href="/">Sign in</a>, then reload this page.' :
        res.status === 403 ? esc(res.body.error || 'This account is not on the rater list.') :
        'Error: '+esc(res.body.error || res.status))+'</div>';
   }

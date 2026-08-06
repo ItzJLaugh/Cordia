@@ -12,9 +12,13 @@
     return Array.from(b,function(x){return x.toString(16).padStart(2,'0');}).join('')
       .replace(/(.{8})(.{4})(.{4})(.{4})(.{12})/,'$1-$2-$3-$4-$5');
   }
+  function esc(s){
+    return String(s||'').replace(/[&<>\"']/g, function(m){ return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;','\'':'&#39;'}[m]; });
+  }
+  window.__cordiaEsc = esc;
   function setCookie(n,v,d){
     var t=new Date(); t.setTime(t.getTime()+d*864e5);
-    document.cookie=n+'='+v+'; expires='+t.toUTCString()+'; path=/; SameSite=Lax';
+    document.cookie=n+'='+v+'; expires='+t.toUTCString()+'; path=/; SameSite=Lax; Secure';
   }
   function getCookie(n){
     return document.cookie.split('; ').reduce(function(a,c){
