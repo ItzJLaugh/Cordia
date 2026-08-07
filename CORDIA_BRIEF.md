@@ -129,7 +129,11 @@ number above as synthetic until real participants run through it.
    from the public catalogue because it read as a stray extra exam.
 
 2. **The certification is unvalidated.** κ is undefined. Any claim that the
-   score means something is currently unsupported.
+   score means something is currently unsupported. Running it is a config
+   change and an afternoon of grading — `docs/RUNBOOK-kappa-study.md` has the
+   steps, the pass bar, and the two things that make the result meaningless if
+   you get them wrong. Start with its section 0: it prints whether the pool is
+   even large enough before you spend the afternoon.
 
 3. **The profile is composition, not inference.** Six of ten identifiers are
    ≥90% determined by a single answer — `risk_awareness = high` produces "Risk
