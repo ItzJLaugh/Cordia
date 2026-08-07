@@ -59,7 +59,8 @@
       <h1>Your agentic system, compiled.</h1>
       <p class="muted" style="font-family:var(--sans);font-size:14px;max-width:56ch;margin-top:8px">
         Your certification didn't just grade you — it compiled a personal agent architecture.
-        Strong dimensions run autonomously. Weak ones get human checkpoints. Unmeasured ones observe until proven.</p>
+        Your CordiaAIE score sets how far the system can reach. Your survey answers set how it runs,
+        and where a human looks. Dimensions with no measurement yet observe until there's evidence.</p>
     </div>
     <div style="text-align:center">
       <div class="score-big" id="finalScore">—</div>
@@ -73,6 +74,15 @@
       <canvas id="radar" width="340" height="340"></canvas>
       <div class="dim-list" id="dimList"></div>
     </div>
+  </div>
+
+  <div class="glass section" id="selfreportSection" hidden>
+    <h3>Three more, from you</h3>
+    <p class="muted" style="font-family:var(--sans);font-size:13px;margin-bottom:14px">
+      The six above were measured from what you wrote. These three came from your feedback after the
+      exam — things no amount of reading your answers could tell us.</p>
+    <div class="dim-list" id="selfreportList"></div>
+    <p class="muted" id="calibNote" style="font-family:var(--sans);font-size:13px;margin-top:14px"></p>
   </div>
 
   <div class="glass section">
@@ -289,17 +299,37 @@ async function loadManifest(){
   const m = await r.json().catch(()=>null);
   if(m && m.ok){
     MANIFEST = m.manifest; PROFILE = m.profile;
-    drawRadar(PROFILE.measured, PROFILE.strong_dims, PROFILE.weak_dims);
+    // developing_dims is the current name; weak_dims is a deprecated alias the
+    // backend still sends. Read the new one, fall back once, so this page keeps
+    // working through the rename in either direction.
+    const developing = PROFILE.developing_dims || PROFILE.weak_dims || [];
+    drawRadar(PROFILE.measured, PROFILE.strong_dims, developing);
     document.getElementById('dimList').innerHTML = DIMS.map(d => {
       const v = PROFILE.measured[d];
-      const cls = v == null ? 'gap' : PROFILE.strong_dims.includes(d) ? 'strong' : PROFILE.weak_dims.includes(d) ? 'weak-d' : '';
+      const cls = v == null ? 'gap' : PROFILE.strong_dims.includes(d) ? 'strong' : developing.includes(d) ? 'weak-d' : '';
       return `<div class="dim ${cls}"><span>${d}</span><span class="val">${v == null ? 'unmeasured' : v.toFixed(1)}</span></div>`;
     }).join('');
+    renderSelfreport(m.selfreport);
     drawSysmap(MANIFEST);
     renderCards(MANIFEST);
   } else {
     document.getElementById('dimList').innerHTML = '<div class="dim gap"><span>No score data yet</span><span class="val">—</span></div>';
   }
+}
+
+/* The three self-report parameters. Scored 0-1 by the backend; shown on the
+   same 0-100 face as the 6S dimensions so nine measures read as one set. */
+function renderSelfreport(sr){
+  const sec = document.getElementById('selfreportSection');
+  if(!sr || !sr.answered || !sr.parameters || !sr.parameters.length){ sec.hidden = true; return; }
+  sec.hidden = false;
+  document.getElementById('selfreportList').innerHTML = sr.parameters.map(p => {
+    const cls = p.score >= 0.7 ? 'strong' : '';
+    return `<div class="dim ${cls}" title="${p.means.replace(/"/g,'&quot;')}">`
+         + `<span>${p.label}</span><span class="val">${(p.score * 100).toFixed(0)}</span></div>`;
+  }).join('');
+  const calib = sr.parameters.find(p => p.id === 'calibration');
+  document.getElementById('calibNote').textContent = calib ? calib.reading : '';
 }
 
 renderIndustries();

@@ -97,6 +97,7 @@ textarea:focus{outline:none;border-color:var(--sage);box-shadow:var(--elev-2-hov
     <span id="prog">0 / 6 answered</span>
     <button class="btn btn-primary" id="submitBtn" disabled>Unlock my assessment →</button>
   </div>
+  <p id="surveyMsg" class="why" style="display:none;margin-top:12px"></p>
 </div>
 
 <script src="assets/cordia-auth.js"></script>
@@ -149,7 +150,19 @@ document.getElementById('submitBtn').onclick = async () => {
     body: JSON.stringify({answers, ts: Date.now()/1000})
   });
   const d = await r.json().catch(()=>({}));
-  location.replace('assessment.html');
+  if(r.ok && d.ok){ location.replace('assessment.html'); return; }
+
+  // These questions ask you to look back on answers you've already written, so
+  // the backend refuses them before the exam is finished. Say which it is
+  // rather than bouncing the person to a page that will refuse them too.
+  const msg = document.getElementById('surveyMsg');
+  msg.textContent = d.exam_required
+    ? 'Finish the CordiaAIE first — these questions ask you to look back on answers you have already written.'
+    : (d.msg || 'That didn’t save. Check your answers and try again.');
+  msg.style.display = 'block';
+  btn.textContent = d.exam_required ? 'Go to the exam →' : 'Try again';
+  btn.disabled = false;
+  if(d.exam_required) btn.onclick = () => location.replace('exam.html');
 };
 </script>
 <script src="assets/cordia-shell.js" data-nav="certifications"></script>

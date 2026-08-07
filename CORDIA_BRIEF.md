@@ -52,6 +52,24 @@ Two structural rules, both enforced in code:
 **Certification (CordiaAIE-1)** — a 12-item free-text exam, $79, live and
 sellable. Scored by `cordaie_scoring.py`.
 
+**Exit survey** — six questions, taken *after* the exam and enforced as such
+(`/train/survey` returns 409 `exam_required` otherwise). Three of its answers
+are scored alongside the 6S matrix by `sixs/selfreport.py` — intent clarity,
+interpretation alignment, and calibration — giving the assessment nine measures
+rather than six. The other three (effort source, role, free text) are carried as
+context and deliberately not scored: neither answer to "what vs how" is better,
+so scoring it would invent a direction the question does not have.
+
+**Who decides the agentic setup.** The survey decides *behaviour* — how much rope
+each agent gets and where a human looks — read from the Surveyor profile with
+stage-2 scenario choices layered over stated answers. The exam decides *reach* —
+tier ceiling, hop budget, and whether a dimension has enough measurement to leave
+shadow. Before 2026-08-07 `agent_manifest` derived oversight from the bottom two
+6S dimensions **by rank**, so a learner strong across the board still got two
+supervised agents. `profile_compiler` now classifies against absolute thresholds
+(`STRONG_FLOOR`, `DEVELOPING_CEILING`) and never ranks a learner against
+themselves. `sixs/test_selfreport.py` holds that line.
+
 **Courses** — 16 domain tracks under Training. Domains are *courses*, not
 certifications.
 
@@ -152,8 +170,14 @@ email. Password is always required.
 
 ## Standing constraints
 
-- **No ML.** Rules plus at most one extraction call. If a feature needs a model
-  to work, delete it rather than grow it.
+- **No ML on the live learner path.** Rules plus at most one extraction call. If
+  a *learner-visible* feature needs a model to work, delete it rather than grow
+  one. The boundary is the authority, not the import list: `embedding_scoring.py`
+  (sentence-transformers + FAISS) and the char n-gram TF-IDF half of
+  `sixs/scorer.py` both exist and both run, but neither can certify or gate
+  anyone. Anything that decides something a person sees stays stdlib and
+  debuggable at 2am. The earlier flat "No ML" line no longer described the
+  repository and was read as gospel at least once.
 - **Never-negative is not negotiable.** Rename a card rather than loosen the guard.
 - Host is 2 cores / ~7 GB / no GPU. Any real model must be hosted behind the
   `call_llm` seam.
