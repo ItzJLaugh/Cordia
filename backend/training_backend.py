@@ -85,6 +85,32 @@ def _course_rows(course_id, learner=None):
     return rows
 
 
+def _course_blocks(course_id):
+    """Every block the rubric expects for a course, in rubric order."""
+    try:
+        rubrics = scoring._load_rubrics()[course_id]
+    except Exception:
+        return []
+    return [b for m in rubrics.get('modules', []) for b in m.get('questions', {})]
+
+
+def _completed_course(email, course_id):
+    """Has this learner actually finished the course?
+
+    A saved certificate is the direct answer. Where there is none — the learner
+    never opened their result — every rubric block having an answer is the same
+    fact arrived at the long way. Both are checked because the exit survey gate
+    should turn on finishing the work, not on having viewed a page.
+    """
+    if _latest_cert(email, course_id):
+        return True
+    blocks = _course_blocks(course_id)
+    if not blocks:
+        return False
+    answered = {r.get('block') for r in _course_rows(course_id, email) if str(r.get('value', '')).strip()}
+    return all(b in answered for b in blocks)
+
+
 def _course_summary(course_id, learner):
     rows = _course_rows(course_id, learner)
     if not rows:
@@ -1066,6 +1092,7 @@ class H(BaseHTTPRequestHandler):
         try:
             from sixs.profile_compiler import compile_profile
             from sixs.agent_manifest import build_manifest
+            from sixs import selfreport
         except Exception as e:
             self._json({'ok': False, 'msg': f'manifest unavailable: {e}'}, 503); return
         import urllib.parse as up
@@ -1075,13 +1102,35 @@ class H(BaseHTTPRequestHandler):
         if not profile:
             self._json({'ok': False, 'msg': 'no score data yet — take the exam first'}, 404); return
         # survey gate: the assessment is "paid for" with the exit survey
-        done = any(r.get('kind') == 'aie1-exit-survey' and r.get('learner') == me['email']
-                   for r in read_all(CORPUS))
-        if not done:
+        rows = read_all(CORPUS)
+        survey_rec = selfreport.latest_survey(rows, me['email'])
+        if not survey_rec:
             self._json({'ok': False, 'survey_required': True,
                         'msg': 'complete the 90-second exit survey to unlock your assessment'}, 402); return
+
+        # The Surveyor profile decides how the assigned system behaves. Loaded
+        # softly: Surveyor is an optional module here, and a learner may hold a
+        # certificate without ever having talked to it. Either way the manifest
+        # still builds — it just reports survey_led false and defaults oversight
+        # to the cautious end rather than inventing a preference.
+        surveyor_profile = None
+        try:
+            from surveyor import pipeline as surv_pipeline
+            from surveyor import scenarios as surv_scenarios
+            surveyor_profile = surv_pipeline.load_profile(me['email'])
+            if surveyor_profile:
+                # Scenario choices beat stated answers on any dimension they
+                # cross-check — the single enforcement point for "the scenario
+                # wins", applied here so oversight follows what they'd actually do.
+                surveyor_profile = dict(surveyor_profile)
+                surveyor_profile['signals'] = surv_scenarios.effective(surveyor_profile)
+        except Exception as e:
+            print(f'surveyor profile unavailable for manifest (non-fatal): {e}', file=sys.stderr)
+
         self._json({'ok': True, 'profile': profile,
-                    'manifest': build_manifest(profile, industries)})
+                    'selfreport': selfreport.score_selfreport(
+                        survey_rec, profile.get('latest_final_composite')),
+                    'manifest': build_manifest(profile, industries, surveyor_profile)})
 
     def _sixs_status(self):
         """Read-only health of the 6S shadow scorer.
@@ -1178,6 +1227,21 @@ class H(BaseHTTPRequestHandler):
         me = auth.whoami(token) if token else None
         if not me:
             self._json({'ok': False, 'msg': 'sign in required'}, 401); return
+        # The feedback comes AFTER the CordiaAIE, not alongside it. Three of its
+        # six questions ask the learner to look back on answers they have
+        # already written and scored — "how clear were you before you started",
+        # "did the exercises read you the way you meant", "would your answers
+        # work as written". Taken before the exam they are speculation, and
+        # `calibration` in particular is meaningless: it is the distance between
+        # a self-assessment and a measured result that does not exist yet.
+        #
+        # A certificate is the cheap proof of completion. Falling back to block
+        # coverage keeps anyone who finished the work but never opened their
+        # result from being locked out of their own assessment.
+        if not _completed_course(me['email'], 'aie1'):
+            self._json({'ok': False, 'exam_required': True,
+                        'msg': 'finish the CordiaAIE first — these questions ask you to '
+                               'look back on answers you have already written'}, 409); return
         answers = body.get('answers')
         if not isinstance(answers, dict):
             self._json({'ok': False, 'msg': 'answers required'}, 400); return

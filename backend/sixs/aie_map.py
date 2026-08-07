@@ -31,9 +31,19 @@ DIMENSIONS
 
     That fills the entire foundation row: all six dimensions covered.
 
-STATUS — DRAFT, NEEDS CURRICULUM SIGN-OFF
-    Two assignments are genuinely arguable and should be confirmed by whoever
-    owns the curriculum: m0e2 (Safety vs Switch) and m3e2 (Switch vs Sharpen).
+STATUS — DIMENSION MAP SIGNED OFF; ANCHORS STILL DRAFT
+    The two arguable assignments were confirmed by the curriculum owner on
+    2026-08-07, both keeping their original dimension:
+
+      m0e2  Safety  (not Switch) — read as setting the permission boundary up
+            front, who may decide what, rather than as the handoff itself. This
+            is also the only block assigned to Safety, so moving it would have
+            left the dimension unmeasured and broken full foundation-row cover.
+      m3e2  Switch  (not Sharpen) — read as routing to the layer responsible,
+            which is escalation work, rather than as the revision that follows.
+
+    That settles the dimension map. It does NOT make the scoring validated —
+    the two are independent, and only the first one is done.
 
     The anchors below are a FIRST DRAFT written from the `why` fields, not
     validated exemplars. The fix instructions call for 5-8 anchors per item
