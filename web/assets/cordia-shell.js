@@ -23,7 +23,6 @@
   // the top nav made the product read as far larger than the thing we actually
   // want people to do right now, which is answer the survey.
   var NAV = [
-    ['Your profile', 'profile.html', 'profile'],
     ['Surveyor', 'surveyor.html', 'surveyor', ' data-surveyor'],
     ['Training', 'training.html', 'training'],
     ['Certifications', 'certifications.html', 'certifications'],
@@ -31,6 +30,8 @@
   ];
 
   var MENU = [
+    ['Your profile', 'profile.html',
+      'M24,8 C28,8 31,11 31,15 C31,19 28,22 24,22 C20,22 17,19 17,15 C17,11 20,8 24,8 M12,40 C12,32 18,27 24,27 C30,27 36,32 36,40'],
     ['Certification', 'certification.html',
       'M24,6 C33.5,6 41.5,14 41.5,23.5 C41.5,33 33.5,41 24,41 C14.5,41 6.5,33 6.5,23.5 C6.5,14 14.5,6 24,6',
       'M16,23 L21.5,28.5 L32,18'],
