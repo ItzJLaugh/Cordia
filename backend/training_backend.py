@@ -1318,18 +1318,9 @@ class H(BaseHTTPRequestHandler):
 
 
 def _fire_event(email, kind, meta=None):
-    """Best-effort fire-and-forget to cordia-pipeline. Never blocks the request."""
-    try:
-        import urllib.request, json as _json
-        body = _json.dumps({'email': email, 'kind': kind, 'meta': meta or {}}).encode()
-        req = urllib.request.Request('http://127.0.0.1:9997/pipeline/track',
-                                      data=body, method='POST', headers={
-                                          'Content-Type': 'application/json',
-                                          'User-Agent': 'cordia-training/1.0',
-                                      })
-        urllib.request.urlopen(req, timeout=2).read()
-    except Exception:
-        pass
+    """No-op. The marketing pipeline it used to POST to was removed — dead
+    code for lifecycle email automation that never shipped."""
+    pass
 
 
 import urllib.parse

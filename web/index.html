@@ -249,6 +249,9 @@ document.getElementById('authForm').onsubmit = async e => {
           : {email, password: pass, device: localStorage.getItem('cordia-device') || ''});
       if(!d.ok){ showErr(d.msg || 'Something went wrong.'); return; }
       if(d.token){ enterSpace(d.token, email); return; }
+      // Device not trusted — clear the stale token so the next attempt
+      // doesn't keep sending it, and show the code entry field.
+      try { localStorage.removeItem('cordia-device'); } catch(e){}
       awaitingCode = true;
       codeField.style.display = 'block';
       submitBtn.textContent = 'Verify code';

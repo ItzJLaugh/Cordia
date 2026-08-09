@@ -217,18 +217,10 @@ def verify_signup(email, code):
 
 
 def _fire_event(email, kind, meta=None):
-    """Best-effort fire-and-forget to cordia-pipeline. Never blocks auth."""
-    try:
-        import urllib.request, json as _json
-        body = _json.dumps({'email': email, 'kind': kind, 'meta': meta or {}}).encode()
-        req = urllib.request.Request('http://127.0.0.1:9997/pipeline/track',
-                                      data=body, method='POST', headers={
-                                          'Content-Type': 'application/json',
-                                          'User-Agent': 'cordia-auth/1.0',
-                                      })
-        urllib.request.urlopen(req, timeout=2).read()
-    except Exception:
-        pass  # pipeline not running — auth path stays unaffected
+    """No-op. The marketing pipeline it used to POST to was removed — it was
+    dead code for lifecycle email automation that never shipped. Kept as a
+    stub so callers don't need to change."""
+    pass
 
 def trust_device(email):
     """Issue a device token after the emailed code has been verified.
@@ -290,6 +282,14 @@ def login(email, password, device_token=None):
     if device_trusted(email, device_token):
         _fire_event(email, 'login_trusted_device')
         return True, 'signed in', None, _make_session(email)
+
+    # Stale or missing device token — fall back to code flow. If the browser
+    # sent a token we don't recognize, clear it server-side too so the next
+    # attempt doesn't keep trying the same dead token.
+    if device_token:
+        with lock, _conn() as c, c.cursor() as cur:
+            cur.execute('DELETE FROM trusted_devices WHERE token=%s',
+                        (_hash_token(device_token),))
 
     with lock, _conn() as c, c.cursor() as cur:
         code = f'{secrets.randbelow(900000)+100000}'
