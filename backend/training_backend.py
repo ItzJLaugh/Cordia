@@ -157,12 +157,23 @@ def rate_ok(ip, email=None, llm=False, admin=False):
     return True
 
 
-NOUS_URL = 'https://inference-api.nousresearch.com/v1/chat/completions'
-NOUS_MODEL = 'moonshotai/kimi-k3'
+# LLM provider is env-driven so switching backends is a config change, not a
+# code change. Defaults preserve the original Nous behavior exactly; set
+# LLM_BASE_URL / LLM_MODEL / LLM_KEY in /etc/cordia/cordia.env to move to
+# another OpenAI-compatible provider (e.g. NVIDIA integrate.api.nvidia.com).
+def _llm_config():
+    url = os.environ.get('LLM_BASE_URL') or 'https://inference-api.nousresearch.com/v1/chat/completions'
+    model = os.environ.get('LLM_MODEL') or 'moonshotai/kimi-k3'
+    key = os.environ.get('LLM_KEY')
+    if not key:
+        d = json.load(open('/root/.hermes/auth.json'))
+        key = d['providers']['nous']['agent_key']
+    return url, model, key
 
 def nous_key():
-    d = json.load(open('/root/.hermes/auth.json'))
-    return d['providers']['nous']['agent_key']
+    # Kept as the credential probe for the surveyor status path — returns the
+    # active provider key so callers can tell configured from unconfigured.
+    return _llm_config()[2]
 
 def append(path, obj):
     with lock:
@@ -222,8 +233,9 @@ def _rateable_candidates(course_id='aie1'):
     return [r for r in latest.values() if (r.get('value') or '').strip()]
 
 def call_llm(system, user, max_tokens=900):
+    url, model, key = _llm_config()
     body = json.dumps({
-        'model': NOUS_MODEL,
+        'model': model,
         'messages': [{'role': 'system', 'content': system}, {'role': 'user', 'content': user}],
         'max_tokens': max_tokens, 'temperature': 0.4
     }).encode()
@@ -232,10 +244,10 @@ def call_llm(system, user, max_tokens=900):
     # with a 403 (Cloudflare 1010) before the key is ever examined — which
     # looked exactly like an auth failure. Verified: curl reaches the API fine,
     # urllib without this header does not, urllib with it does.
-    req = urllib.request.Request(NOUS_URL, data=body, headers={
+    req = urllib.request.Request(url, data=body, headers={
         'Content-Type': 'application/json',
         'User-Agent': 'cordia-training/1.0',
-        'Authorization': 'Bearer ' + nous_key()
+        'Authorization': 'Bearer ' + key
     })
     with urllib.request.urlopen(req, timeout=90) as r:
         d = json.loads(r.read())
