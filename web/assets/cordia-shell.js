@@ -141,7 +141,7 @@
     if (window.Cordia && window.Cordia.surveyor) return;
     if (document.querySelector('script[data-cordia-surveyor]')) return;
     var s = document.createElement('script');
-    s.src = 'assets/cordia-surveyor.js';
+    s.src = 'assets/cordia-surveyor.js?v=28c08944';
     s.defer = true;
     s.setAttribute('data-cordia-surveyor', '1');
     document.head.appendChild(s);
