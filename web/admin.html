@@ -75,8 +75,7 @@
   function api(path, body) {
     return fetch(API + path, {
       method: body ? 'POST' : 'GET',
-      headers: { 'Content-Type': 'application/json',
-                 Authorization: 'Bearer ' + (localStorage.getItem('cordia-token') || '') },
+      credentials:'same-origin',
       body: body ? JSON.stringify(body) : undefined
     }).then(function (r) {
       return r.json().catch(function () { return {}; })

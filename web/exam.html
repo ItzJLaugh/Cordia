@@ -91,7 +91,6 @@
 <script>
 (function(){
   var API = location.hostname==='localhost' ? 'http://127.0.0.1:9995' : '';
-  var tok = localStorage.getItem('cordia-token')||'';
   function esc(s){return String(s==null?'':s).replace(/[&<>"]/g,function(c){
     return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];});}
   function $(id){return document.getElementById(id);}
@@ -142,7 +141,7 @@
   // progress note — progress is computed from saved exam blocks state
 
   // result
-  fetch(API+'/train/certification',{headers:{Authorization:'Bearer '+tok}})
+  fetch(API+'/train/certification',{credentials:'same-origin'})
     .then(function(r){return r.json().then(function(j){return {s:r.status,j:j};});})
     .then(function(res){
       var box = $('result');

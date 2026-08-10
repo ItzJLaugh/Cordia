@@ -141,7 +141,6 @@
 (function () {
   'use strict';
   var API = location.hostname === 'localhost' ? 'http://127.0.0.1:9995' : '';
-  var TOKEN = function () { return localStorage.getItem('cordia-token') || ''; };
   var state = { id: null, agents: [], tools: [], steps: [], defaults: {} };
 
   function esc(s) {
@@ -152,7 +151,8 @@
   function api(path, body) {
     return fetch(API + path, {
       method: body ? 'POST' : 'GET',
-      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + TOKEN() },
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'same-origin',
       body: body ? JSON.stringify(body) : undefined
     }).then(function (r) {
       return r.json().catch(function () { return {}; })

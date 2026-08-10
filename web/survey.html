@@ -103,7 +103,6 @@ textarea:focus{outline:none;border-color:var(--sage);box-shadow:var(--elev-2-hov
 <script src="assets/cordia-auth.js"></script>
 <script>document.body.setAttribute('data-auth-gate','');</script>
 <script>
-const token = localStorage.getItem('cordia-token') || '';
 const answers = {};
 
 /* build 1-5 scales */
@@ -146,7 +145,8 @@ document.getElementById('submitBtn').onclick = async () => {
   btn.disabled = true; btn.textContent = 'Submitting…';
   const r = await fetch('/train/survey', {
     method:'POST',
-    headers:{'Content-Type':'application/json','Authorization':'Bearer ' + token},
+    headers:{'Content-Type':'application/json'},
+    credentials:'same-origin',
     body: JSON.stringify({answers, ts: Date.now()/1000})
   });
   const d = await r.json().catch(()=>({}));

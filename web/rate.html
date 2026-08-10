@@ -56,7 +56,6 @@
 <script>
 (function(){
   var API = location.hostname === 'localhost' ? 'http://127.0.0.1:9995' : '';
-  var tok = localStorage.getItem('cordia-token') || '';
   var main = document.getElementById('main');
 
   function esc(s){ return String(s==null?'':s).replace(/[&<>"]/g,function(c){
@@ -64,8 +63,7 @@
 
   function api(path, opts){
     opts = opts || {};
-    var headers = Object.assign({Authorization:'Bearer '+tok}, opts.headers||{});
-    return fetch(API+path, Object.assign({}, opts, {headers:headers}))
+    return fetch(API+path, Object.assign({credentials:'same-origin'}, opts))
       .then(function(r){ return r.json().then(function(j){ return {status:r.status, body:j}; }); });
   }
 

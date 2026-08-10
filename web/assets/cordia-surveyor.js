@@ -18,12 +18,11 @@
   var root = null, listEl = null, inputEl = null, sendEl = null, statusEl = null;
   var busy = false, opened = false;
 
-  function token() { return localStorage.getItem('cordia-token') || ''; }
-
   function api(path, body) {
     return fetch(API + path, {
       method: body ? 'POST' : 'GET',
-      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token() },
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'same-origin',
       body: body ? JSON.stringify(body) : undefined
     }).then(function (r) {
       return r.json().catch(function () { return {}; })
@@ -271,9 +270,19 @@
     if (off) note(status.note);
   }
 
-  function open() {
+  async function signedIn() {
+    try {
+      var r = await fetch(API + '/auth/session', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: '{}', credentials: 'same-origin'
+      });
+      return r.ok;
+    } catch (e) { return false; }
+  }
+
+  async function open() {
     if (!root) build();
-    if (!token()) {
+    if (!(await signedIn())) {
       root.hidden = false;
       requestAnimationFrame(function () { root.setAttribute('data-open', '1'); });
       opened = true;

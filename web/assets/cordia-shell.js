@@ -114,16 +114,13 @@
       var a = e.target.closest('a[href="#signout"]');
       if (!a) return;
       e.preventDefault();
-      try { fetch(API + '/auth/logout', { method: 'POST' }).catch(function () {}); } catch (_) {}
-      localStorage.removeItem('cordia-token');
+      try { fetch(API + '/auth/logout', { method: 'POST', credentials: 'same-origin' }).catch(function () {}); } catch (_) {}
       sessionStorage.removeItem('cordia-auth');
-      location.replace('index.html');
+      location.replace('/');
     });
 
     // initials from the real session; the mark, not a placeholder, when out
-    fetch(API + '/auth/me', {
-      headers: { Authorization: 'Bearer ' + (localStorage.getItem('cordia-token') || '') }
-    })
+    fetch(API + '/auth/me', { credentials: 'same-origin' })
       .then(function (r) { return r.ok ? r.json() : null; })
       .then(function (d) {
         var slot = document.getElementById('avatarInitials');

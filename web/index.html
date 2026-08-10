@@ -126,11 +126,10 @@ const API = (location.hostname === 'localhost' || location.hostname === '127.0.0
   ? 'http://127.0.0.1:9995'
   : location.protocol + '//' + location.hostname + (location.protocol === 'https:' ? '' : ':9995'));
 
-/* --- session restore: 14-day token in localStorage means "remembered" --- */
+/* --- session restore: the HttpOnly cookie is the session. If it exists and
+     is valid, the browser sends it automatically — no token in JS at all. --- */
 (function restore(){
-  const token = localStorage.getItem('cordia-token');
-  if(!token) return;
-  fetch(API + '/auth/me', {headers: {'Authorization': 'Bearer ' + token}})
+  fetch(API + '/auth/me', {credentials: 'same-origin'})
     .then(r => r.json())
     .then(d => {
       if(d.ok && d.user){
@@ -138,8 +137,6 @@ const API = (location.hostname === 'localhost' || location.hostname === '127.0.0
         sessionStorage.setItem('cordia-user', d.user.email);
         localStorage.setItem('cordia-learner', d.user.email);
         location.replace('surveyor.html');
-      } else {
-        localStorage.removeItem('cordia-token');
       }
     })
     .catch(() => {});
@@ -181,17 +178,22 @@ forgotLink.onclick = e => { e.preventDefault(); forgotStep=1; updateForgotUI(); 
 async function api(path, body){
   const r = await fetch(API + path, {
     method: 'POST', headers: {'Content-Type':'application/json'},
+    credentials: 'same-origin',
     body: JSON.stringify(body)
   });
+  if(r.status === 429){
+    const e = new Error('rate limited'); e.rateLimited = true; throw e;
+  }
   return r.json();
 }
 
 function showErr(msg){ errBox.textContent = msg; errBox.style.display = 'block'; }
 
 function enterSpace(token, email){
+  // The session cookie was already set by the server — token is accepted for
+  // backward compatibility but no longer stored in JS-readable storage.
   sessionStorage.setItem('cordia-auth','1');
   sessionStorage.setItem('cordia-user', email);
-  localStorage.setItem('cordia-token', token);
   localStorage.setItem('cordia-learner', email);
   loader.classList.add('show');
   setTimeout(() => location.replace('surveyor.html'), 1400);
@@ -276,7 +278,11 @@ document.getElementById('authForm').onsubmit = async e => {
       enterSpace(d.token, email);
     }
   } catch(err){
-    showErr('Server unreachable — is the backend running?');
+    if(err && err.rateLimited){
+      showErr('Too many attempts — wait 10 minutes and try again.');
+    } else {
+      showErr('Could not reach the server — check your connection and try again.');
+    }
   } finally {
     submitBtn.disabled = false;
   }

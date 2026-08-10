@@ -108,7 +108,7 @@ function render(){
   body.appendChild(nav);
   document.getElementById('nextBtn').onclick = async () => {
     if(isLast){
-      const r = await fetch(API + '/train/certification', {headers:{'Authorization':'Bearer ' + (localStorage.getItem('cordia-token')||'')}});
+      const r = await fetch(API + '/train/certification', {credentials:'same-origin'});
       const d = await r.json();
       if(d.ok){ location.href = 'certification.html'; }
       else { alert(d.error || 'Could not generate certification result.'); }

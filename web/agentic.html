@@ -128,7 +128,6 @@
 <script>
 (function(){
   var API = location.hostname==='localhost' ? 'http://127.0.0.1:9995' : '';
-  var tok = localStorage.getItem('cordia-token')||'';
   var NS='http://www.w3.org/2000/svg';
   var reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
   function esc(s){return String(s==null?'':s).replace(/[&<>"]/g,function(c){
@@ -280,13 +279,14 @@
     $('tree').hidden=false; document.querySelector('.stage').style.display='none';
   };
 
-  if(!tok){
-    showGate('<b>Sign in to compile</b>Your agent system is derived from your own '+
-      'certification. <a href="index.html">Sign in</a> to see it.');
-    return;
-  }
-
-  fetch(API+'/train/manifest',{headers:{Authorization:'Bearer '+tok}})
+  fetch(API+'/auth/session',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}',credentials:'same-origin'})
+  .then(function(r){
+    if(!r.ok){
+      showGate('<b>Sign in to compile</b>Your agent system is derived from your own '+
+        'certification. <a href="/">Sign in</a> to see it.');
+      return null;
+    }
+    return fetch(API+'/train/manifest',{credentials:'same-origin'})
     .then(function(r){return r.json().then(function(j){return {s:r.status,j:j};});})
     .then(function(res){
       if(res.s===402 || (res.j && res.j.survey_required)){
@@ -324,6 +324,10 @@
     .catch(function(){
       showGate('<b>Backend unreachable</b>The manifest service did not respond.');
     });
+  })
+  .catch(function(){
+    showGate('<b>Backend unreachable</b>The manifest service did not respond.');
+  });
 })();
 </script>
 </body>

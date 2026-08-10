@@ -49,7 +49,7 @@
 const API = (location.hostname === 'localhost' || location.hostname === '127.0.0.1' ? 'http://127.0.0.1:9995' : location.protocol + '//' + location.hostname + (location.protocol === 'https:' ? '' : ':9995'));
 /* sign-out handled by cordia-shell.js */
 async function go(){
-  const r = await fetch(API + '/train/certification', {headers:{'Authorization':'Bearer ' + (localStorage.getItem('cordia-token')||'')}});
+  const r = await fetch(API + '/train/certification', {credentials:'same-origin'});
   const d = await r.json();
   if(!d.ok){ document.getElementById('meta').textContent = d.error || 'could not load result'; return; }
   document.title = 'Cordia — ' + (d.passed ? 'Pass' : 'Needs work');

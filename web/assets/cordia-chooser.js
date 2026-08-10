@@ -426,10 +426,9 @@
       var a = e.target.closest('a[href="#signout"]');
       if (!a) return;
       e.preventDefault();
-      try { fetch(API + '/auth/logout', { method: 'POST' }).catch(function () {}); } catch (_) {}
-      localStorage.removeItem('cordia-token');
+      try { fetch(API + '/auth/logout', { method: 'POST', credentials: 'same-origin' }).catch(function () {}); } catch (_) {}
       sessionStorage.removeItem('cordia-auth');
-      location.replace('index.html');
+      location.replace('/');
     });
   }
 
@@ -444,9 +443,7 @@
   // account menu is provided by cordia-shell.js
   apply();
 
-  fetch(API + '/pay/my-access', {
-    headers: { Authorization: 'Bearer ' + (localStorage.getItem('cordia-token') || '') }
-  })
+  fetch(API + '/pay/my-access', { credentials: 'same-origin' })
     .then(function (r) { return r.ok ? r.json() : null; })
     .then(function (d) { if (d && d.ok) ACCESS = d; })
     .catch(function () {})
@@ -461,9 +458,7 @@
   (function () {
     var slot = document.getElementById('avatarInitials');
     if (!slot) return;
-    fetch(API + '/auth/me', {
-      headers: { Authorization: 'Bearer ' + (localStorage.getItem('cordia-token') || '') }
-    })
+    fetch(API + '/auth/me', { credentials: 'same-origin' })
       .then(function (r) { return r.ok ? r.json() : null; })
       .then(function (d) {
         var u = d && d.ok && d.user;

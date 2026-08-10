@@ -255,6 +255,15 @@ class H(BaseHTTPRequestHandler):
         self.send_response(code)
         self.send_header('Content-Type', 'application/json')
         self.send_header('Content-Length', str(len(b)))
+        # Pending session-cookie mutation rides inside the response's own
+        # header block. Calling send_header() before send_response() writes
+        # the cookie bytes straight to the socket BEFORE the status line —
+        # protocol corruption that showed up as clients receiving
+        # "Set-Cookie: ...HTTP/1.0 200 OK" as the body.
+        pending = getattr(self, '_pending_cookie', None)
+        if pending:
+            self.send_header('Set-Cookie', pending)
+            self._pending_cookie = None
         self.send_header('X-Content-Type-Options', 'nosniff')
         self.send_header('X-Frame-Options', 'DENY')
         self.send_header('Referrer-Policy', 'strict-origin-when-cross-origin')
@@ -267,12 +276,22 @@ class H(BaseHTTPRequestHandler):
     def _set_session_cookie(self, token):
         if not token:
             return
-        cookie = (f'cordia_session={token}; HttpOnly; Secure; SameSite=Strict; '
-                  f'Max-Age={int(os.environ.get("SESSION_TTL", 86400))}; Path=/;')
-        self.send_header('Set-Cookie', cookie)
+        self._pending_cookie = (f'cordia_session={token}; HttpOnly; Secure; SameSite=Strict; '
+                                f'Max-Age={int(os.environ.get("SESSION_TTL", 86400))}; Path=/;')
 
     def _clear_session_cookie(self):
-        self.send_header('Set-Cookie', 'cordia_session=; HttpOnly; Secure; SameSite=Strict; Max-Age=0; Path=/;')
+        self._pending_cookie = 'cordia_session=; HttpOnly; Secure; SameSite=Strict; Max-Age=0; Path=/;'
+
+    def _token(self):
+        """Session token for this request. Cookie first, Authorization header
+        second — the cookie is the canonical path (browser sends it
+        automatically, JS never touches it); the header stays for CLI/API
+        callers that already use it."""
+        for part in (self.headers.get('Cookie', '') or '').split(';'):
+            k, _, v = part.strip().partition('=')
+            if k == 'cordia_session' and v:
+                return v.strip()
+        return self.headers.get('Authorization', '').replace('Bearer ', '').strip()
 
     def do_OPTIONS(self):
         self.send_response(204); self._cors(); self.end_headers()
@@ -296,7 +315,7 @@ class H(BaseHTTPRequestHandler):
             track = q.get('track', [None])[0]
             rows = read_all(CORPUS)
             if track: rows = [r for r in rows if r.get('track') == track]
-            token = self.headers.get('Authorization', '').replace('Bearer ', '').strip()
+            token = self._token()
             authed = bool(auth.whoami(token)) if token else False
             if authed:
                 self._json({'responses': rows[-500:], 'total': len(rows)}); return
@@ -320,7 +339,7 @@ class H(BaseHTTPRequestHandler):
         elif p == '/train/rate/queue':
             self._rate_queue()
         elif p == '/auth/me':
-            token = self.headers.get('Authorization', '').replace('Bearer ', '').strip()
+            token = self._token()
             me = auth.whoami(token)
             self._json({'ok': bool(me), 'user': me}, 200 if me else 401)
         elif p == '/train/research':
@@ -362,7 +381,7 @@ class H(BaseHTTPRequestHandler):
         Token from the Authorization header or the JSON body, matching the two
         conventions already in use on this server (GET /auth/me reads the
         header, POST /train/llm reads the body)."""
-        token = self.headers.get('Authorization', '').replace('Bearer ', '').strip()
+        token = self._token()
         if not token:
             token = str(getattr(self, '_surv_body', {}).get('token', ''))
         return auth.whoami(token) if token else None
@@ -715,7 +734,7 @@ class H(BaseHTTPRequestHandler):
         know whose answer they're reading). Items already rated by the OTHER
         rater are surfaced first, so pairs complete before new ground gets
         opened — the kappa gate only cares about pairs, not raw rating count."""
-        token = self.headers.get('Authorization', '').replace('Bearer ', '').strip()
+        token = self._token()
         me = auth.whoami(token) if token else None
         if not me:
             self._json({'error': 'sign in required'}, 401); return
@@ -761,7 +780,7 @@ class H(BaseHTTPRequestHandler):
         })
 
     def _research(self):
-        token = self.headers.get('Authorization', '').replace('Bearer ', '').strip()
+        token = self._token()
         if not (token and auth.whoami(token)):
             self._json({'error': 'sign in required'}, 401); return
         rows = read_all(CORPUS)
@@ -801,7 +820,7 @@ class H(BaseHTTPRequestHandler):
                     'note': 'features for articulation-gap ML; import into pandas directly'})
 
     def _certification(self):
-        token = self.headers.get('Authorization', '').replace('Bearer ', '').strip()
+        token = self._token()
         me = auth.whoami(token) if token else None
         if not me:
             self._json({'error': 'sign in required'}, 401); return
@@ -865,6 +884,14 @@ class H(BaseHTTPRequestHandler):
                          'course_id': course_id})
         self._json({'ok': True, **cert_obj})
 
+    def do_PATCH(self):
+        # BaseHTTPRequestHandler routes nothing here by default — the account
+        # profile update path 501'd until this existed.
+        if self.path.split('?')[0] == '/account/profile':
+            self._account_profile()
+        else:
+            self._json({'error': 'not found'}, 404)
+
     def do_POST(self):
         p = self.path.split('?')[0]
         try:
@@ -903,12 +930,13 @@ class H(BaseHTTPRequestHandler):
             # otherwise "log out" would silently mean "email me a code next
             # time", which is the friction this exists to remove. Passing
             # forget_device makes it a real sign-out for shared machines.
-            tok = str(body.get('token', ''))
+            tok = self._token() or str(body.get('token', ''))
             if body.get('forget_device'):
                 me = auth.whoami(tok)
                 if me:
                     auth.forget_devices(me['email'])
             auth.logout(tok)
+            self._clear_session_cookie()
             self._json({'ok': True})
         elif p == '/auth/session':
             # NOTE: must reuse the already-parsed body. do_POST consumed the
@@ -916,7 +944,7 @@ class H(BaseHTTPRequestHandler):
             # rfile.read(Content-Length) forever (bytes already read), which
             # hung every /auth/session call until Apache's proxy timeout —
             # seen in the logs as AH01102 504s and broken auth-gate checks.
-            token = self._surv_body.get('token', '') or self.headers.get('Authorization', '').replace('Bearer ', '')
+            token = self._token() or self._surv_body.get('token', '')
             me = auth.whoami(token)
             if not me:
                 self._json({'ok': False, 'authed': False}, 401); return
@@ -973,7 +1001,12 @@ class H(BaseHTTPRequestHandler):
         code = str(body.get('code', ''))[:12]
         ok, msg, token, device = fn(email, code)
         out = {'ok': ok, 'msg': msg}
-        if token: out['token'] = token
+        if token:
+            out['token'] = token
+            # The HttpOnly cookie is the canonical session — the browser sends
+            # it automatically on every request, so no page JS ever has to
+            # store or attach a token again.
+            self._set_session_cookie(token)
         # Returned once, on the request that proved inbox control. The browser
         # keeps it and presents it on the next sign-in to skip the code.
         if device: out['device'] = device
@@ -1006,7 +1039,7 @@ class H(BaseHTTPRequestHandler):
         ip = self._client_ip()
         if not rate_ok(ip, None):
             self._json({'ok': False, 'msg': 'too many attempts'}, 429); return
-        token = self.headers.get('Authorization', '').replace('Bearer ', '').strip()
+        token = self._token()
         try:
             import cordia_enroll as enr
         except Exception as e:
@@ -1037,7 +1070,7 @@ class H(BaseHTTPRequestHandler):
         self._json({'ok': ok, 'msg': msg}, 200 if ok else 403)
 
     def _account_profile(self):
-        token = self.headers.get('Authorization', '').replace('Bearer ', '').strip()
+        token = self._token()
         me = auth.whoami(token) if token else None
         if not me:
             self._json({'ok': False, 'error': 'sign in required'}, 401); return
@@ -1045,7 +1078,7 @@ class H(BaseHTTPRequestHandler):
         method = self.command.upper()
         qs = up.parse_qs(up.urlparse(self.path).query)
         if method == 'GET':
-            with lock, _conn() as c, c.cursor() as cur:
+            with lock, auth._conn() as c, c.cursor() as cur:
                 cur.execute('SELECT avatar_url,display_name,bio,locale FROM accounts WHERE email=%s', (me['email'],))
                 row = cur.fetchone() or (None, None, None, 'en')
                 self._json({'ok': True, 'email': me['email'], 'name': me['name'],
@@ -1065,14 +1098,14 @@ class H(BaseHTTPRequestHandler):
             if not fields:
                 self._json({'ok': False, 'error': 'nothing to update'}, 400); return
             set_sql = ', '.join(f'{k}=%s' for k in fields.keys())
-            with lock, _conn() as c, c.cursor() as cur:
+            with lock, auth._conn() as c, c.cursor() as cur:
                 cur.execute(f'UPDATE accounts SET {set_sql} WHERE email=%s', (*fields.values(), me['email']))
             self._json({'ok': True, 'updated': list(fields.keys())})
         else:
             self._json({'error': 'method not allowed'}, 405)
 
     def _my_access(self):
-        token = self.headers.get('Authorization', '').replace('Bearer ', '').strip()
+        token = self._token()
         me = auth.whoami(token) if token else None
         if not me:
             self._json({'ok': False, 'msg': 'sign in required'}, 401); return
@@ -1085,7 +1118,7 @@ class H(BaseHTTPRequestHandler):
                     'entitlements': pw.my_entitlements(me['email'])})
 
     def _manifest(self):
-        token = self.headers.get('Authorization', '').replace('Bearer ', '').strip()
+        token = self._token()
         me = auth.whoami(token) if token else None
         if not me:
             self._json({'ok': False, 'msg': 'sign in required'}, 401); return
@@ -1163,7 +1196,7 @@ class H(BaseHTTPRequestHandler):
         A signed-in user sees only their own rows. Reading everyone's rows
         requires being listed in CORDIA_6S_ADMIN (comma-separated emails).
         """
-        token = self.headers.get('Authorization', '').replace('Bearer ', '').strip()
+        token = self._token()
         me = auth.whoami(token) if token else None
         if not me:
             self._json({'ok': False, 'msg': 'sign in required'}, 401); return
@@ -1202,8 +1235,7 @@ class H(BaseHTTPRequestHandler):
         # Anonymous practice is deliberately still allowed: no token simply means
         # the row is filed under 'anon' and belongs to nobody. What is no longer
         # possible is claiming to be somebody.
-        token = str(body.get('token', '')) or \
-            self.headers.get('Authorization', '').replace('Bearer ', '').strip()
+        token = self._token() or str(body.get('token', ''))
         me = auth.whoami(token) if token else None
         learner = me['email'] if me else 'anon'
         if not track or not block or not value.strip():
@@ -1223,7 +1255,7 @@ class H(BaseHTTPRequestHandler):
         self._json({'ok': True, 'id': rec['id']})
 
     def _survey(self, body):
-        token = self.headers.get('Authorization', '').replace('Bearer ', '').strip()
+        token = self._token()
         me = auth.whoami(token) if token else None
         if not me:
             self._json({'ok': False, 'msg': 'sign in required'}, 401); return
@@ -1266,7 +1298,7 @@ class H(BaseHTTPRequestHandler):
         # no auth at all, meaning anyone could post as either rater and
         # invalidate the entire kappa study. The whole point of this endpoint
         # is independent human judgment; that only holds if identity is real.
-        token = self.headers.get('Authorization', '').replace('Bearer ', '').strip()
+        token = self._token()
         me = auth.whoami(token) if token else None
         if not me:
             self._json({'error': 'sign in required'}, 401); return

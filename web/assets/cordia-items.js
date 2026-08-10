@@ -17,8 +17,7 @@ const CordiaItems = (() => {
     try {
       fetch(API + '/train/respond', {
         method: 'POST', headers: {'Content-Type':'application/json'},
-        body: JSON.stringify({track: trackId, block, value, learner: learner(),
-                              token: localStorage.getItem('cordia-token') || ''})
+        body: JSON.stringify({track: trackId, block, value, learner: learner()})
       }).catch(()=>{});
     } catch(e) {}
   };
@@ -150,8 +149,7 @@ const CordiaItems = (() => {
       try {
         const r = await fetch(API + '/train/llm', {
           method:'POST', headers:{'Content-Type':'application/json'},
-          body: JSON.stringify({env: envKey, instruction,
-                                token: localStorage.getItem('cordia-token') || ''})
+          body: JSON.stringify({env: envKey, instruction})
         });
         const d = await r.json();
         if(d.ok){

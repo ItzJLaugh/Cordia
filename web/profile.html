@@ -115,7 +115,6 @@
 (function () {
   'use strict';
   var API = location.hostname === 'localhost' ? 'http://127.0.0.1:9995' : '';
-  var H = { Authorization: 'Bearer ' + (localStorage.getItem('cordia-token') || '') };
   var els = {
     email: document.getElementById('email'),
     displayName: document.getElementById('displayName'),
@@ -149,7 +148,7 @@
   }
 
   async function loadAccount() {
-    var r = await fetch(API + '/account/profile', { headers: H });
+    var r = await fetch(API + '/account/profile', { credentials: 'same-origin' });
     if (r.status === 401) { location.replace('index.html'); return; }
     var d = await r.json();
     if (!d.ok) return;
@@ -167,7 +166,7 @@
     setStatus('Saving...', true);
     els.saveBtn.disabled = true;
     var body = { display_name: els.displayName.value, bio: els.bio.value, locale: els.locale.value, avatar_url: els.avatarUrl.value };
-    var r = await fetch(API + '/account/profile', { method: 'PATCH', headers: Object.assign({}, H, {'Content-Type': 'application/json'}), body: JSON.stringify(body) });
+    var r = await fetch(API + '/account/profile', { method: 'PATCH', headers: {'Content-Type': 'application/json'}, credentials: 'same-origin', body: JSON.stringify(body) });
     var d = await r.json();
     if (d.ok) setStatus('Saved.', true);
     else setStatus(d.error || 'Save failed.', false);
@@ -177,7 +176,7 @@
   els.resetBtn.addEventListener('click', function () { loadAccount(); setStatus(''); });
 
   async function loadAI() {
-    var r = await fetch(API + '/surveyor/profile', { headers: H });
+    var r = await fetch(API + '/surveyor/profile', { credentials: 'same-origin' });
     if (r.status === 401) { els.ai.innerHTML = '<p class="ai-empty">Sign in to see your AI profile.</p>'; return; }
     var d = await r.json();
     if (!d.ok) { els.ai.innerHTML = '<p class="ai-empty">Surveyor is unavailable right now.</p>'; return; }
