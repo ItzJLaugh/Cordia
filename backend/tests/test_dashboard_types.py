@@ -52,7 +52,15 @@ class TestRoundTrip(unittest.TestCase):
     def test_adaptation_defaults_round_trip(self):
         """The definitions the adaptation layer generates (with step ids and
         no futureHooks) must survive validation unchanged — the two modules
-        speak the same contract or the starting canvas silently mutates."""
+        speak the same contract or the starting canvas silently mutates.
+
+        Hermetic against the developer's environment: under
+        PERSONALIZATION_MODE=off builder_defaults returns the GENERIC shape,
+        which has no workflow key and would fail here for the wrong reason.
+        """
+        prior = os.environ.pop("PERSONALIZATION_MODE", None)
+        if prior is not None:
+            self.addCleanup(os.environ.__setitem__, "PERSONALIZATION_MODE", prior)
         defaults = adaptation.builder_defaults(stypes.empty_profile())
         d = {"surface": defaults["surface"], "agents": defaults["agents"],
              "tools": defaults["tools"], "workflow": defaults["workflow"]}
