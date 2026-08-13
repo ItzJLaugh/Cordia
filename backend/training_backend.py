@@ -541,14 +541,14 @@ class H(BaseHTTPRequestHandler):
         if not existing:
             # Record what we recommended, so it can later be compared against
             # whether it worked. outcomes.outcome_worked stays NULL until then.
-            self._surv_record_outcome(email, definition)
+            self._surv_record_outcome(email, definition, iid)
         self._json({'ok': True, 'id': iid})
 
-    def _surv_record_outcome(self, email, definition):
+    def _surv_record_outcome(self, email, definition, interface_id=None):
         """Best-effort write into the existing 6S outcomes table. Silent no-op
         for a learner with no submission to attach to — see store.record_recommendation."""
         try:
-            surveyor.store.record_recommendation(email, definition)
+            surveyor.store.record_recommendation(email, definition, interface_id)
         except Exception:
             pass
 
@@ -676,7 +676,7 @@ class H(BaseHTTPRequestHandler):
         if not existing:
             # Same outcome hook as the surveyor save path: record what was
             # recommended so "did this help?" has something to land on.
-            self._surv_record_outcome(email, cleaned['definition'])
+            self._surv_record_outcome(email, cleaned['definition'], iid)
         self._json({'ok': True, 'id': iid, 'definition': cleaned['definition']})
 
     def _dash_skills_search(self, body):
@@ -695,6 +695,23 @@ class H(BaseHTTPRequestHandler):
         self._json({'ok': True,
                     'skills': dashboard.skills.retrieve(req['framework'],
                                                         req['intent'], req['limit'])})
+
+    def _dash_outcome(self, body):
+        """The "did this help?" capture. Best-effort by design: a learner
+        without an exam submission has no outcomes row to land on, and the
+        honest response is recorded=false, never an error — their answer
+        simply has nowhere to attach yet."""
+        email, stop = self._dash_guard()
+        if stop: return
+        err, req = dashboard.api.outcome_request(body)
+        if err:
+            self._json({'ok': False, 'error': err}, 400); return
+        recorded = surveyor.store.record_outcome_worked(
+            email, req['interface_id'], req['worked'], req['description'])
+        surveyor.store.log_event(email, 'dashboard_outcome',
+                                 {'interface_id': req['interface_id'],
+                                  'worked': req['worked'], 'recorded': recorded})
+        self._json({'ok': True, 'recorded': recorded})
 
     def _dash_run(self, body):
         """Run an interface from the dashboard. Same runtime, same LLM rate
@@ -1077,6 +1094,8 @@ class H(BaseHTTPRequestHandler):
             self._dash_skills_search(body)
         elif p == '/dashboard/run':
             self._dash_run(body)
+        elif p == '/dashboard/outcome':
+            self._dash_outcome(body)
         elif p == '/train/survey':
             self._survey(body)
         elif p == '/train/rate':

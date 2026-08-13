@@ -103,6 +103,35 @@ def skills_search_request(body, profile_framework):
             "limit": b.get("limit", 8)}
 
 
+def outcome_request(body):
+    """Shape a "did this help?" answer: ``(error, None)`` or
+    ``(None, {interface_id, worked, description})``.
+
+    ``interface_id`` is required: the verdict must attach to the interface
+    the person actually ran — a target of "whatever row is newest" writes
+    false pairings into the outcomes dataset the moment someone owns two
+    interfaces. ``worked`` must be a real boolean — this is a person's
+    explicit yes/no, and coercing a stray string into a verdict would put
+    words in their mouth. ``description`` is optional prose, capped like
+    the interface description field.
+    """
+    if not isinstance(body, dict):
+        return "invalid request", None
+    interface_id = str(body.get("interface_id") or "").strip()
+    if not interface_id:
+        return "interface_id required", None
+    worked = body.get("worked")
+    if not isinstance(worked, bool):
+        return "worked must be true or false", None
+    description = body.get("description")
+    if isinstance(description, str):
+        description = description.strip()[:_MAX_DESCRIPTION] or None
+    else:
+        description = None
+    return None, {"interface_id": interface_id[:80], "worked": worked,
+                  "description": description}
+
+
 def public_interface(row):
     """A stored interface row, with its definition canonicalised for the
     canvas. Old rows may predate validation; the canvas should never have

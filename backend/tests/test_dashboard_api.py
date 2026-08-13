@@ -184,6 +184,50 @@ class TestSkillsSearchRequest(EnvHermeticCase):
         self.assertEqual(api.skills_search_request({"limit": 3}, {})["limit"], 3)
 
 
+class TestOutcomeRequest(EnvHermeticCase):
+    def test_interface_id_required(self):
+        """The verdict must attach to the interface the person ran — a
+        'newest row' target writes false pairings the moment someone owns
+        two interfaces."""
+        for bad in ({}, {"interface_id": ""}, {"interface_id": "  "},
+                    {"interface_id": None}):
+            err, req = api.outcome_request(dict({"worked": True}, **bad))
+            self.assertEqual(err, "interface_id required", bad)
+        err, req = api.outcome_request({"interface_id": " abc123 ", "worked": True})
+        self.assertIsNone(err)
+        self.assertEqual(req["interface_id"], "abc123")
+
+    def test_explicit_boolean_required(self):
+        """'Did this help?' is a person's explicit yes/no — truthy strings
+        must not be coerced into a verdict."""
+        for bad in ("yes", "true", 1, 0, None, [], {}):
+            err, req = api.outcome_request({"interface_id": "i1", "worked": bad})
+            self.assertEqual(err, "worked must be true or false", repr(bad))
+        for good in (True, False):
+            err, req = api.outcome_request({"interface_id": "i1", "worked": good})
+            self.assertIsNone(err)
+            self.assertIs(req["worked"], good)
+
+    def test_description_optional_capped_and_cleaned(self):
+        base = {"interface_id": "i1", "worked": True}
+        err, req = api.outcome_request(dict(base, description="  helped  "))
+        self.assertEqual(req["description"], "helped")
+        err, req = api.outcome_request(dict(base, description="d" * 5000))
+        self.assertEqual(len(req["description"]), 600)
+        for absent in ({}, {"description": None}, {"description": 7},
+                       {"description": "   "}):
+            err, req = api.outcome_request(dict(base, **absent))
+            self.assertIsNone(req["description"], absent)
+
+    def test_non_dict_body_and_error_copy(self):
+        err, req = api.outcome_request(None)
+        self.assertEqual(err, "invalid request")
+        for bad_body in ({"worked": "maybe", "interface_id": "i1"},
+                         {"worked": True}):
+            err, _ = api.outcome_request(bad_body)
+            self.assertEqual(stypes.assert_positive(err), [], bad_body)
+
+
 class TestPublicInterface(EnvHermeticCase):
     def test_definition_is_canonicalised(self):
         row = {"id": "i1", "name": "W", "definition": {"agents": [{"id": "a"}, "junk"],
