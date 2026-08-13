@@ -218,7 +218,10 @@ class TestMalformed(unittest.TestCase):
         self.assertLess(elapsed, 0.5)
         ids = [a["id"] for a in out["agents"]]
         self.assertEqual(ids[0], "a")
-        self.assertEqual(ids[1:], [f"a-{k}" for k in range(n, n + 39)])
+        # the 39 repaired duplicates dodge the whole declared ladder…
+        self.assertEqual(ids[1:40], [f"a-{k}" for k in range(n, n + 39)])
+        # …and the rest of the emitted 200 are the ladder's own head
+        self.assertEqual(ids[40:], [f"a-{k}" for k in range(2, 162)])
 
     def test_repair_dodges_ids_declared_beyond_the_item_cap(self):
         """The declared-id set spans the FULL incoming list. An id declared
@@ -227,11 +230,11 @@ class TestMalformed(unittest.TestCase):
         repaired duplicate."""
         agents = ([{"id": "a", "instructions": "first"},
                    {"id": "a", "instructions": "second"}]
-                  + [{"id": f"filler{i}"} for i in range(38)]
+                  + [{"id": f"filler{i}"} for i in range(198)]
                   + [{"id": "a-2", "instructions": "beyond-cap owner"}])
         d = {"agents": agents, "workflow": {"steps": [{"agentId": "a-2"}]}}
         out = dtypes.validate_definition(d)
-        self.assertEqual(len(out["agents"]), 40)
+        self.assertEqual(len(out["agents"]), 200)
         self.assertEqual(out["agents"][1]["id"], "a-3")   # skipped a-2
         g = dtypes.as_graph(out)
         target_node = next(n for n in g["nodes"] if n["id"] == "a-2")
@@ -316,11 +319,11 @@ class TestMalformed(unittest.TestCase):
         """If the length cap lands on whitespace, re-validation must be a
         fixed point — not a slow trim that changes the payload every pass."""
         d = {"name": "n" * 119 + " z",
-             "agents": [{"id": "a", "instructions": "x" * 1999 + " y"}]}
+             "agents": [{"id": "a", "instructions": "x" * 9999 + " y"}]}
         once = dtypes.validate_definition(d)
         self.assertEqual(dtypes.validate_definition(copy.deepcopy(once)), once)
         self.assertEqual(once["name"], "n" * 119)
-        self.assertEqual(once["agents"][0]["instructions"], "x" * 1999)
+        self.assertEqual(once["agents"][0]["instructions"], "x" * 9999)
 
 
 class TestApprovalSemantics(unittest.TestCase):
@@ -358,17 +361,216 @@ class TestUnicodeAndSize(unittest.TestCase):
                                     for _ in range(1000)]},
              "name": "n" * 10_000, "description": "d" * 10_000}
         out = dtypes.validate_definition(d)
-        self.assertEqual(len(out["agents"]), 40)
-        self.assertEqual(len(out["tools"]), 40)
-        self.assertEqual(len(out["workflow"]["steps"]), 40)
-        self.assertEqual(len(out["workflow"]["steps"][0]["toolIds"]), 40)
+        self.assertEqual(len(out["agents"]), 200)
+        self.assertEqual(len(out["tools"]), 200)
+        self.assertEqual(len(out["workflow"]["steps"]), 200)
+        self.assertEqual(len(out["workflow"]["steps"][0]["toolIds"]), 200)
         self.assertEqual(len(out["name"]), 120)
         self.assertEqual(len(out["description"]), 600)
 
     def test_long_instructions_truncate(self):
-        d = {"agents": [{"id": "a", "instructions": "x" * 5000}]}
+        d = {"agents": [{"id": "a", "instructions": "x" * 20000}]}
         self.assertEqual(len(dtypes.validate_definition(d)["agents"][0]["instructions"]),
-                         2000)
+                         10000)
+
+
+class TestWriteBlockers(unittest.TestCase):
+    """The write path refuses, rather than truncates, well-formed data —
+    the load→save round-trip must never delete what a person stored."""
+
+    def test_loss_free_definitions_have_no_blockers(self):
+        self.assertEqual(dtypes.write_blockers(builder_definition()), [])
+        self.assertEqual(dtypes.write_blockers(dtypes.empty_definition()), [])
+        self.assertEqual(dtypes.write_blockers(None), [])
+        self.assertEqual(dtypes.write_blockers("junk"), [])
+
+    def test_realistic_large_definition_round_trips_without_loss(self):
+        """The exact shape the sweep used to prove data loss: 45 agents and
+        45 steps must survive validation intact now that the cap bounds
+        hostile payloads instead of people."""
+        d = {"agents": [{"id": f"a{i}", "name": f"A{i}"} for i in range(45)],
+             "workflow": {"steps": [{"agentId": f"a{i}"} for i in range(45)]}}
+        self.assertEqual(dtypes.write_blockers(d), [])
+        out = dtypes.validate_definition(d)
+        self.assertEqual(len(out["agents"]), 45)
+        self.assertEqual(len(out["workflow"]["steps"]), 45)
+
+    def test_over_cap_lists_block_the_write(self):
+        d = {"agents": [{"id": f"a{i}"} for i in range(201)]}
+        blockers = dtypes.write_blockers(d)
+        self.assertEqual(len(blockers), 1)
+        self.assertIn("more than 200 agents", blockers[0])
+        d = {"workflow": {"steps": [{"agentId": "a"}] * 201}}
+        self.assertIn("more than 200 steps", dtypes.write_blockers(d)[0])
+
+    def test_step_toolids_over_cap_blocks_the_write(self):
+        """The one list the first guard forgot: a single step's toolIds."""
+        d = {"agents": [{"id": "a"}],
+             "workflow": {"steps": [
+                 {"agentId": "a", "toolIds": [f"t{i}" for i in range(201)]}]}}
+        blockers = dtypes.write_blockers(d)
+        self.assertEqual(len(blockers), 1)
+        self.assertIn("more than 200 tools", blockers[0])
+
+    def test_over_length_instructions_block_instead_of_truncating(self):
+        """People paste prose; the builder's textareas have no ceiling.
+        Cutting at the cap silently discards the tail — refuse instead."""
+        d = {"agents": [{"id": "a", "instructions": "x" * 10_001}]}
+        self.assertIn("instructions run past 10000",
+                      dtypes.write_blockers(d)[0])
+        d = {"agents": [{"id": "a"}],
+             "workflow": {"steps": [{"agentId": "a",
+                                     "instruction": "y" * 10_001}]}}
+        self.assertIn("instruction runs past 10000",
+                      dtypes.write_blockers(d)[0])
+        # exactly at the cap is loss-free
+        d = {"agents": [{"id": "a", "instructions": "x" * 10_000}]}
+        self.assertEqual(dtypes.write_blockers(d), [])
+
+    def test_unsupported_tool_type_blocks_the_write(self):
+        d = {"tools": [{"id": "t1", "name": "T", "type": "translate"}]}
+        blockers = dtypes.write_blockers(d)
+        self.assertEqual(len(blockers), 1)
+        self.assertIn("'translate'", blockers[0])
+        # a tool with a malformed id is junk, not data — no blocker
+        self.assertEqual(dtypes.write_blockers(
+            {"tools": [{"id": "??", "type": "translate"}]}), [])
+
+    def test_content_bearing_records_with_unusable_ids_block(self):
+        """Deleting a record because its id is unusable throws away the
+        person's name/instructions too — the pre-cap builder minted uncapped
+        name-slugs, so a 200+-char id is ordinary-user data, not junk."""
+        long_id = "a" * 217
+        d = {"agents": [{"id": long_id, "name": "Long", "instructions": "real prose"}]}
+        self.assertIn("id the canvas cannot use", dtypes.write_blockers(d)[0])
+        d = {"tools": [{"id": "my tool", "name": "My Tool", "type": "summarize"}]}
+        self.assertIn("id the canvas cannot use", dtypes.write_blockers(d)[0])
+        d = {"workflow": {"steps": [{"agentId": long_id, "instruction": "do it"}]}}
+        self.assertIn("agent id the canvas cannot use", dtypes.write_blockers(d)[0])
+        # content-free junk ids stay silent — never data
+        self.assertEqual(dtypes.write_blockers({"agents": [{"id": "??"}]}), [])
+        self.assertEqual(dtypes.write_blockers(
+            {"workflow": {"steps": [{"agentId": "??"}]}}), [])
+
+    def test_absent_or_wrong_typed_ids_with_content_block_too(self):
+        """The id being absent, null, or a number fails validation the same
+        way an unusable string does — the record's content is what counts,
+        and it must not vanish at 200."""
+        for bad_id_agent in ({"name": "Researcher", "instructions": "prose"},
+                             {"id": None, "name": "R", "instructions": "p"},
+                             {"id": 7, "name": "Numbered", "instructions": "p"},
+                             {"id": ["x"], "name": "L", "instructions": "p"}):
+            blockers = dtypes.write_blockers({"agents": [bad_id_agent]})
+            self.assertIn("id the canvas cannot use", blockers[0], bad_id_agent)
+        self.assertIn("id the canvas cannot use", dtypes.write_blockers(
+            {"tools": [{"name": "Web search", "type": "search"}]})[0])
+        self.assertIn("agent id the canvas cannot use", dtypes.write_blockers(
+            {"workflow": {"steps": [{"agentId": None,
+                                     "instruction": "real step"}]}})[0])
+        # content-free variants stay silent
+        self.assertEqual(dtypes.write_blockers({"agents": [{}]}), [])
+        self.assertEqual(dtypes.write_blockers(
+            {"workflow": {"steps": [{"agentId": None}]}}), [])
+
+    def test_step_content_is_more_than_prose(self):
+        """A step's chosen tools and its approval checkpoint are deliberate
+        content — a checkpoint a person set must never vanish silently, per
+        this module's own oldest promise."""
+        for step in ({"agentId": "", "toolIds": ["summarize"], "instruction": ""},
+                     {"agentId": "", "requiresApproval": True},
+                     {"agentId": "x" * 250, "toolIds": ["summarize"],
+                      "requiresApproval": True}):
+            blockers = dtypes.write_blockers({"workflow": {"steps": [step]}})
+            self.assertIn("agent id the canvas cannot use", blockers[0], step)
+        # structural-only or junk-valued steps stay silent
+        for step in ({"agentId": "", "toolIds": []},
+                     {"agentId": "", "toolIds": ["", "  "]},
+                     {"agentId": "", "requiresApproval": False},
+                     {"agentId": "", "id": "s9"}):
+            self.assertEqual(dtypes.write_blockers(
+                {"workflow": {"steps": [step]}}), [], step)
+
+    def test_non_default_role_and_type_count_as_content(self):
+        self.assertIn("id the canvas cannot use", dtypes.write_blockers(
+            {"agents": [{"id": "??", "role": "clarify"}]})[0])
+        self.assertEqual(dtypes.write_blockers(
+            {"agents": [{"id": "??", "role": "custom"}]}), [])
+        self.assertIn("id the canvas cannot use", dtypes.write_blockers(
+            {"tools": [{"id": "??", "type": "search"}]})[0])
+        self.assertEqual(dtypes.write_blockers(
+            {"tools": [{"id": "??", "type": "custom"}]}), [])
+
+    def test_unsupported_surface_vocabulary_blocks(self):
+        """Dropping the surface object or substituting theme 'minimal' for a
+        value the vocabulary lacks silently changes meaning — refuse."""
+        self.assertIn("surface type 'form'", dtypes.write_blockers(
+            {"surface": {"type": "form", "theme": "data"}})[0])
+        self.assertIn("surface theme 'dark'", dtypes.write_blockers(
+            {"surface": {"type": "chat", "theme": "dark"}})[0])
+        # non-string junk stays silent canonicalisation
+        self.assertEqual(dtypes.write_blockers(
+            {"surface": {"type": "chat", "theme": None}}), [])
+
+    def test_wrong_typed_containers_block_instead_of_vanishing(self):
+        """The type-gate hole: a container that is present but not its
+        contract shape is discarded wholesale by validation, so the guard
+        must refuse it — an LLM's agents-keyed-by-id object holding real
+        instructions must not vanish at 200."""
+        cases = (
+            ({"agents": {"researcher": {"name": "R", "instructions": "prose"}}},
+             "agents are not stored as a list"),
+            ({"tools": {"t": {"name": "T", "type": "search"}}},
+             "tools are not stored as a list"),
+            ({"workflow": [{"agentId": "a"}]},
+             "workflow is not"),                     # foreign-shaped container
+            ({"workflow": {"steps": {"0": {"agentId": "a"}}}},
+             "steps are not stored as a list"),
+            ({"agents": [{"id": "a"}],
+              "workflow": {"steps": [{"agentId": "a", "toolIds": "t"}]}},
+             "tools are not stored as a list"),
+            ({"futureHooks": ["langGraphCompatible"]},
+             "futureHooks are not stored as an object"),
+            ({"surface": {"theme": "data"}}, "surface has no usable type"),
+            ({"surface": "chat"}, "surface is not stored as an object"),
+        )
+        for d, expected in cases:
+            blockers = dtypes.write_blockers(d)
+            self.assertTrue(any(expected in b for b in blockers), (d, blockers))
+            self.assertEqual(stypes.assert_positive(blockers), [], d)
+        # absent keys and empty-dict surface stay silent — nothing to lose
+        self.assertEqual(dtypes.write_blockers({"surface": {}}), [])
+        self.assertEqual(dtypes.write_blockers({"agents": None}), [])
+
+    def test_container_foreign_keys_block(self):
+        cases = (({"workflow": {"steps": [], "mode": "dag"}}, "workflow carries"),
+                 ({"surface": {"type": "chat", "theme": "formal", "layout": "split"}},
+                  "surface carries"),
+                 ({"futureHooks": {"langGraphCompatible": True,
+                                   "auditTrailReady": True}}, "futureHooks carries"))
+        for d, expected in cases:
+            blockers = dtypes.write_blockers(d)
+            self.assertTrue(any(expected in b for b in blockers), (d, blockers))
+
+    def test_unknown_top_level_keys_block_the_write(self):
+        d = {"agents": [], "junkTop": "KEEPME", "another": 1}
+        blockers = dtypes.write_blockers(d)
+        self.assertEqual(len(blockers), 1)
+        self.assertIn("another, junkTop", blockers[0])
+
+    def test_blocker_messages_are_never_negative(self):
+        cases = ({"agents": [{"id": f"a{i}"} for i in range(201)]},
+                 {"tools": [{"id": "t", "type": "telepathy"}]},
+                 {"extra": True})
+        for d in cases:
+            self.assertEqual(stypes.assert_positive(dtypes.write_blockers(d)),
+                             [], d.keys())
+
+    def test_hostile_shapes_never_raise(self):
+        for d in ({"agents": 5, "tools": "x", "workflow": 9},
+                  {"workflow": {"steps": 7}},
+                  {"tools": [None, 5, {"id": ["x"], "type": "search"}]},
+                  {1: "non-string-key", "agents": []}):
+            self.assertIsInstance(dtypes.write_blockers(d), list, repr(d))
 
 
 class TestNeverNegative(unittest.TestCase):

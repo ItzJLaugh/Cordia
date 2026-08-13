@@ -14,6 +14,6 @@ Same ground rules as the surveyor package it sits beside:
   * Nothing negative is ever surfaced to the user.
 """
 
-from . import framework, skills, types
+from . import api, framework, skills, types
 
-__all__ = ["framework", "skills", "types"]
+__all__ = ["api", "framework", "skills", "types"]

@@ -73,13 +73,25 @@ FUTURE_HOOKS = ("langGraphCompatible", "cordiaCompilerCompatible",
                 "durableStateReady", "humanInLoopReady")
 
 # Caps. Text caps match surveyor.types._MAX_TEXT and the /surveyor/interface
-# route's own name/description truncation; item caps are far above anything
-# the builder produces while keeping a hostile payload's cost bounded.
+# route's own name/description truncation. The item cap exists to bound a
+# hostile payload's cost, NOT to limit people: the builder puts no ceiling
+# on agents/steps, so the cap must sit far above anything a person would
+# assemble by hand — and the write path refuses (write_blockers) rather
+# than truncates when a definition genuinely exceeds it.
 _MAX_TEXT = 400
 _MAX_NAME = 120
 _MAX_DESCRIPTION = 600
-_MAX_INSTRUCTION = 2000
-_MAX_ITEMS = 40
+# Instructions are prose people paste; the builder's textareas put no ceiling
+# on them, so this cap too must bound hostile payloads rather than people —
+# and the write path refuses over-length instructions instead of truncating.
+_MAX_INSTRUCTION = 10000
+_MAX_ITEMS = 200
+
+# The full top-level contract. validate_definition() keeps nothing outside
+# it, so a write of a definition carrying other keys would destroy them —
+# write_blockers() names that instead of letting it happen silently.
+DEFINITION_KEYS = ("name", "description", "surface", "agents", "tools",
+                   "workflow", "futureHooks")
 
 # Ids reach DOM attributes, React keys and store lookups; the safe charset is
 # the same spirit as the shell's escUrl. First char alphanumeric, then up to
@@ -295,6 +307,204 @@ def validate_definition(raw) -> dict:
     if hooks:
         out["futureHooks"] = hooks
     return out
+
+
+# ------------------------------------------------------------- write guard
+
+def write_blockers(raw) -> list:
+    """Reasons a *write* of this definition would destroy well-formed data.
+
+    validate_definition() drops malformed parts silently — right for a
+    display path, catastrophic for persistence: adversarial review proved a
+    plain load→save round-trip deleting stored agents. The write path
+    therefore refuses, with a plain-English reason, whenever validation
+    would discard something a person (or another surface) stored on
+    purpose:
+
+    The rule, stated once: CONTAINERS refuse, ITEMS canonicalise.
+
+    Containers — the definition's top level and its ``workflow`` /
+    ``surface`` / ``futureHooks`` sub-objects — are contract surfaces.
+    Anything there the contract does not carry is another writer's data or
+    a vocabulary the dashboard does not speak, and a save would destroy or
+    silently rewrite it, so it refuses:
+
+      * a list longer than the item cap — including a single step's
+        ``toolIds`` (truncation would delete the rest);
+      * an instruction longer than the instruction cap (people paste
+        prose; cutting the tail is losing their work);
+      * an agent/tool/step that CARRIES CONTENT (a name, instructions) but
+        whose id or agentId validation cannot use — deleting the record
+        because its id is unusable throws away the content too, and a
+        pre-cap builder minted uncapped name-slugs, so this is reachable
+        by ordinary people;
+      * unsupported vocabulary VALUES: a tool ``type``, ``surface.type``
+        or ``surface.theme`` outside the vocabulary (dropping the object
+        or substituting a plausible default would silently change meaning);
+      * foreign keys at the top level or inside workflow/surface/
+        futureHooks.
+
+    Items — individual agent/tool/step records — are rebuilt from their
+    contract fields: foreign sub-keys drop silently, hook flags and
+    ``requiresApproval`` coerce by truthiness (the hitl precedent), and
+    content-free junk (non-dict entries, bare unusable ids) was never data.
+
+    Returns [] when a write is loss-free. Never raises. Callers guarding an
+    *edit* must run this over the STORED definition as well as the incoming
+    one: the read path canonicalises, so a client can innocently post back
+    a clean-looking payload whose save would still destroy what the row
+    actually holds.
+    """
+    if not isinstance(raw, dict):
+        return []                            # degrades to empty; nothing stored is lost
+    blockers = []
+
+    def _has_content(item, *fields):
+        return any(isinstance(item.get(f), str) and item[f].strip()
+                   for f in fields)
+
+    def _agent_has_content(a):
+        # role counts only when it differs from the default the
+        # canonicaliser would assign anyway.
+        role = a.get("role")
+        return (_has_content(a, "name", "instructions")
+                or (isinstance(role, str) and role.strip()
+                    and role.strip() != "custom"))
+
+    def _tool_has_content(t):
+        ttype = t.get("type")
+        return (_has_content(t, "name")
+                or (ttype in TOOL_TYPES and ttype != "custom"))
+
+    def _step_has_content(s):
+        # A step's content is not only prose: chosen tools and an approval
+        # checkpoint are deliberate too — and silently removing a checkpoint
+        # a person set is the one failure this module vows never to allow.
+        tool_ids = s.get("toolIds")
+        return (_has_content(s, "instruction")
+                or (isinstance(tool_ids, list)
+                    and any(isinstance(t, str) and t.strip() for t in tool_ids))
+                or bool(s.get("requiresApproval")))
+
+    # A container that is PRESENT but not its contract shape is refused
+    # outright: validation would discard it wholesale, and whatever content
+    # it holds (an LLM's agents-keyed-by-id object, another surface's list-
+    # shaped workflow) would vanish with it. The isinstance gates must never
+    # mirror what validation accepts, or the guard goes blind exactly where
+    # validation destroys.
+    for key, label in (("agents", "agents"), ("tools", "tools")):
+        v = raw.get(key)
+        if isinstance(v, list):
+            if len(v) > _MAX_ITEMS:
+                blockers.append(f"definition has more than {_MAX_ITEMS} {label}")
+        elif v is not None:
+            blockers.append(f"definition's {label} are not stored as a list")
+
+    agents = raw.get("agents")
+    if isinstance(agents, list):
+        for a in agents[:_MAX_ITEMS]:
+            if not isinstance(a, dict):
+                continue
+            if isinstance(a.get("instructions"), str) \
+                    and len(a["instructions"].strip()) > _MAX_INSTRUCTION:
+                blockers.append(
+                    f"an agent's instructions run past {_MAX_INSTRUCTION} characters")
+                break
+        for a in agents[:_MAX_ITEMS]:
+            # not gated on the id being a str: an ABSENT or wrong-typed id
+            # fails _clean_id just the same, and the content is what counts.
+            if isinstance(a, dict) and not _clean_id(a.get("id")) \
+                    and _agent_has_content(a):
+                blockers.append("an agent has an id the canvas cannot use")
+                break
+
+    tools = raw.get("tools")
+    if isinstance(tools, list):
+        for t in tools[:_MAX_ITEMS]:
+            if not isinstance(t, dict):
+                continue
+            if _clean_id(t.get("id")) and t.get("type") not in TOOL_TYPES:
+                blockers.append(
+                    f"tool type {str(t.get('type'))[:40]!r} is not supported")
+                break
+        for t in tools[:_MAX_ITEMS]:
+            if isinstance(t, dict) and not _clean_id(t.get("id")) \
+                    and _tool_has_content(t):
+                blockers.append("a tool has an id the canvas cannot use")
+                break
+
+    workflow = raw.get("workflow")
+    if isinstance(workflow, dict):
+        foreign = sorted(k for k in workflow if isinstance(k, str) and k != "steps")
+        if foreign:
+            blockers.append("workflow carries keys the dashboard does not keep: "
+                            + ", ".join(k[:40] for k in foreign[:5]))
+        steps = workflow.get("steps")
+        if not isinstance(steps, list) and steps is not None:
+            blockers.append("workflow steps are not stored as a list")
+        if isinstance(steps, list):
+            if len(steps) > _MAX_ITEMS:
+                blockers.append(f"workflow has more than {_MAX_ITEMS} steps")
+            for s in steps[:_MAX_ITEMS]:
+                if not isinstance(s, dict):
+                    continue
+                tool_ids = s.get("toolIds")
+                if isinstance(tool_ids, list):
+                    if len(tool_ids) > _MAX_ITEMS:
+                        blockers.append(f"a step lists more than {_MAX_ITEMS} tools")
+                        break
+                elif tool_ids is not None:
+                    blockers.append("a step's tools are not stored as a list")
+                    break
+            for s in steps[:_MAX_ITEMS]:
+                if isinstance(s, dict) and isinstance(s.get("instruction"), str) \
+                        and len(s["instruction"].strip()) > _MAX_INSTRUCTION:
+                    blockers.append(
+                        f"a step's instruction runs past {_MAX_INSTRUCTION} characters")
+                    break
+            for s in steps[:_MAX_ITEMS]:
+                if isinstance(s, dict) and not _clean_id(s.get("agentId")) \
+                        and _step_has_content(s):
+                    blockers.append("a step names an agent id the canvas cannot use")
+                    break
+    elif workflow is not None:
+        blockers.append("workflow is not stored as an object")
+
+    surface = raw.get("surface")
+    if isinstance(surface, dict):
+        foreign = sorted(k for k in surface
+                         if isinstance(k, str) and k not in ("type", "theme"))
+        if foreign:
+            blockers.append("surface carries keys the dashboard does not keep: "
+                            + ", ".join(k[:40] for k in foreign[:5]))
+        stype = surface.get("type")
+        if isinstance(stype, str) and stype not in SURFACE_TYPES:
+            blockers.append(f"surface type {stype[:40]!r} is not supported")
+        elif not isinstance(stype, str) and surface:
+            # Validation deletes the whole surface object when its type is
+            # absent or unusable — taking a perfectly valid theme with it.
+            blockers.append("surface has no usable type")
+        theme = surface.get("theme")
+        if isinstance(theme, str) and theme not in SURFACE_THEMES:
+            blockers.append(f"surface theme {theme[:40]!r} is not supported")
+    elif surface is not None:
+        blockers.append("surface is not stored as an object")
+
+    hooks = raw.get("futureHooks")
+    if isinstance(hooks, dict):
+        foreign = sorted(k for k in hooks
+                         if isinstance(k, str) and k not in FUTURE_HOOKS)
+        if foreign:
+            blockers.append("futureHooks carries keys the dashboard does not keep: "
+                            + ", ".join(k[:40] for k in foreign[:5]))
+    elif hooks is not None:
+        blockers.append("futureHooks are not stored as an object")
+
+    unknown = sorted(k for k in raw if isinstance(k, str) and k not in DEFINITION_KEYS)
+    if unknown:
+        blockers.append("definition carries keys the dashboard does not keep: "
+                        + ", ".join(k[:40] for k in unknown[:5]))
+    return blockers
 
 
 # --------------------------------------------------------------- projection
