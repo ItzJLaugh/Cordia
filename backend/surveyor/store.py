@@ -350,7 +350,7 @@ def export_profiles() -> list:
              "answers": r[7], "updated": str(r[8])} for r in rows]
 
 
-def record_recommendation(email, definition) -> bool:
+def record_recommendation(email, definition, interface_id=None) -> bool:
     """Log what Cordia recommended into the existing 6S ``outcomes`` table.
 
     That table was built for exactly this — recommendation_given alongside an
@@ -362,7 +362,16 @@ def record_recommendation(email, definition) -> bool:
     so this can only attach to a learner who has an exam submission on record.
     Someone who has only talked to Surveyor has nothing to attach to yet, and we
     return False rather than inventing a submission to satisfy the constraint.
+
+    When ``interface_id`` is given the payload is wrapped as
+    ``{"interface_id": ..., "definition": ...}`` so the row stays addressable
+    once the person owns several interfaces — adversarial review showed a
+    "most recent row" verdict target mislabels the dataset the moment a
+    second interface exists. Nothing reads the bare legacy shape (the table
+    held no rows before this), so the wrapper only adds information.
     """
+    payload = ({"interface_id": interface_id, "definition": definition}
+               if interface_id else definition)
     try:
         with _conn() as c, c.cursor() as cur:
             cur.execute("SELECT id FROM submissions WHERE user_ref=%s "
@@ -371,8 +380,42 @@ def record_recommendation(email, definition) -> bool:
             if not row:
                 return False
             cur.execute("INSERT INTO outcomes(submission_id, recommendation_given) "
-                        "VALUES (%s,%s)", (row[0], _J(definition)))
+                        "VALUES (%s,%s)", (row[0], _J(payload)))
         return True
+    except Exception:
+        return False
+
+
+def record_outcome_worked(email, interface_id, worked, description=None) -> bool:
+    """The "did this help?" answer, landed next to what was recommended.
+
+    Targets the row ``record_recommendation`` wrote for THIS interface —
+    the verdict must attach to what the person actually ran, not to
+    whatever row is newest, or the dataset asserts that recommendations
+    they never ran worked. Repeated answers for the same interface revise
+    the same row (last answer wins), and a missing description keeps any
+    earlier note instead of erasing it.
+
+    The subselect stays scoped to the person's own submissions, so a
+    foreign interface id — anyone else's, or an invented one — matches
+    nothing and simply reports False. Returns False too when there is
+    nothing to attach to (no exam submission, no recommendation row for
+    that interface) or on any error — the caller reports "recorded" or
+    not, never an exception.
+    """
+    try:
+        with _conn() as c, c.cursor() as cur:
+            cur.execute("""
+                UPDATE outcomes
+                   SET outcome_worked=%s,
+                       outcome_description=COALESCE(%s, outcome_description)
+                 WHERE id = (SELECT o.id FROM outcomes o
+                             JOIN submissions s ON s.id = o.submission_id
+                             WHERE s.user_ref=%s
+                               AND o.recommendation_given->>'interface_id' = %s
+                             ORDER BY o.id DESC LIMIT 1)
+            """, (bool(worked), description, email, interface_id))
+            return cur.rowcount > 0
     except Exception:
         return False
 

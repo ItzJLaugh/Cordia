@@ -36,6 +36,17 @@ except BaseException as _surv_err:            # noqa: BLE001 - must never be fat
     print(f'Surveyor unavailable ({type(_surv_err).__name__}: {_surv_err}); '
           f'exam and auth unaffected', file=sys.stderr)
 
+# Agent Dashboard — the visual-canvas surface beside the existing site. Same
+# soft-import contract as surveyor above: a bug here answers 503 on the
+# /dashboard/* routes and must never stop auth or the exam from booting. It
+# has no schema of its own — interfaces live in the surveyor store.
+try:
+    import dashboard
+except BaseException as _dash_err:            # noqa: BLE001 - must never be fatal
+    dashboard = None
+    print(f'Dashboard unavailable ({type(_dash_err).__name__}: {_dash_err}); '
+          f'exam, auth and surveyor unaffected', file=sys.stderr)
+
 PORT = 9995
 
 
@@ -380,6 +391,17 @@ class H(BaseHTTPRequestHandler):
             self._surv_recommendation()
         elif p == '/surveyor/export':
             self._surv_export()
+        # /dashboard/* is shared between this API and the static canvas app
+        # (web/dashboard/ under the docroot). Deliberate: locally they live
+        # on different ports; in production Apache must proxy exactly these
+        # API paths to :9995 BEFORE serving /dashboard/ statically — an
+        # ops-side vhost change, called out in the deploy notes. API paths
+        # never collide with static assets because the app's files live
+        # under /dashboard/ as a directory, not at these exact names.
+        elif p == '/dashboard/framework':
+            self._dash_framework()
+        elif p == '/dashboard/interface':
+            self._dash_get_interface()
         elif p == '/admin/users':
             self._admin_users()
         else:
@@ -519,14 +541,14 @@ class H(BaseHTTPRequestHandler):
         if not existing:
             # Record what we recommended, so it can later be compared against
             # whether it worked. outcomes.outcome_worked stays NULL until then.
-            self._surv_record_outcome(email, definition)
+            self._surv_record_outcome(email, definition, iid)
         self._json({'ok': True, 'id': iid})
 
-    def _surv_record_outcome(self, email, definition):
+    def _surv_record_outcome(self, email, definition, interface_id=None):
         """Best-effort write into the existing 6S outcomes table. Silent no-op
         for a learner with no submission to attach to — see store.record_recommendation."""
         try:
-            surveyor.store.record_recommendation(email, definition)
+            surveyor.store.record_recommendation(email, definition, interface_id)
         except Exception:
             pass
 
@@ -578,6 +600,149 @@ class H(BaseHTTPRequestHandler):
         surveyor.store.log_event(email, 'simple_mode_forced', {'value': forced})
         self._json({'ok': True, 'simple_mode_forced': forced,
                     'personalization': surveyor.adaptation.mode()})
+
+    # --------------------------------------------------------- dashboard
+
+    def _dash_guard(self):
+        """(email, None) or (None, True) having already sent the error —
+        mirrors _surv_guard. Dashboard routes need both packages: dashboard
+        for its own logic, surveyor for the profile and the interface store,
+        so either one failing to import answers 503."""
+        if dashboard is None or surveyor is None:
+            self._json({'ok': False, 'error': 'dashboard unavailable'}, 503)
+            return None, True
+        me = self._surv_me()
+        if not me:
+            self._json({'ok': False, 'error': 'sign in to use the dashboard'}, 401)
+            return None, True
+        return me['email'], None
+
+    def _dash_framework(self):
+        """The profile's dashboard shape, plus model availability for the
+        Limited-mode banner."""
+        email, stop = self._dash_guard()
+        if stop: return
+        profile = surveyor.pipeline.load_profile(email)
+        self._json({'ok': True,
+                    'framework': dashboard.framework.framework_from_profile(profile),
+                    'llm': surveyor.llm.status(nous_key)})
+
+    def _dash_get_interface(self):
+        """?id= fetches one interface; without it, the list. Definitions go
+        out canonicalised — the canvas never defends against old rows."""
+        email, stop = self._dash_guard()
+        if stop: return
+        q = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+        iid = (q.get('id', [''])[0] or '').strip()
+        if iid:
+            iface = surveyor.store.get_interface(email, iid)
+            if not iface:
+                self._json({'ok': False, 'error': 'not found'}, 404); return
+            self._json({'ok': True, 'interface': dashboard.api.public_interface(iface)})
+            return
+        rows = [dashboard.api.public_interface(r)
+                for r in surveyor.store.list_interfaces(email)]
+        self._json({'ok': True, 'interfaces': rows})
+
+    def _dash_save_interface(self, body):
+        """Create or edit an interface. Reuses the surveyor store — same
+        table, same email scoping — but the definition is validated to the
+        canonical contract before it is stored."""
+        email, stop = self._dash_guard()
+        if stop: return
+        err, cleaned = dashboard.api.save_interface_request(body)
+        if err:
+            self._json({'ok': False, 'error': err}, 400); return
+        existing = cleaned['id']
+        if existing:
+            stored = surveyor.store.get_interface(email, existing)
+            if not stored:
+                self._json({'ok': False, 'error': 'not found'}, 404); return
+            # Guard the ROW as well as the request: the read path
+            # canonicalises, so a clean-looking load→save can still overwrite
+            # content the dashboard cannot represent. 409 — the row and this
+            # surface disagree; nothing was written.
+            conflict = dashboard.api.stored_row_conflict(stored.get('definition'))
+            if conflict:
+                self._json({'ok': False, 'error': conflict}, 409); return
+        iid = surveyor.store.save_interface(email, existing, cleaned['name'],
+                                            cleaned['description'],
+                                            cleaned['definition'], cleaned['theme'])
+        surveyor.store.log_event(
+            email,
+            'dashboard_interface_updated' if existing else 'dashboard_interface_created',
+            {'id': iid, 'agents': len(cleaned['definition'].get('agents') or []),
+             'tools': len(cleaned['definition'].get('tools') or [])})
+        if not existing:
+            # Same outcome hook as the surveyor save path: record what was
+            # recommended so "did this help?" has something to land on.
+            self._surv_record_outcome(email, cleaned['definition'], iid)
+        self._json({'ok': True, 'id': iid, 'definition': cleaned['definition']})
+
+    def _dash_skills_search(self, body):
+        """Deterministic skill retrieval. No model, no rate cap — the same
+        request always costs the same and returns the same."""
+        email, stop = self._dash_guard()
+        if stop: return
+        # A JSON body can legally be a list/string/number; do_POST passes it
+        # through raw, and body.get on a non-dict would kill the connection.
+        body = body if isinstance(body, dict) else {}
+        profile_fw = None
+        if not isinstance(body.get('framework'), dict):
+            profile_fw = dashboard.framework.framework_from_profile(
+                surveyor.pipeline.load_profile(email))
+        req = dashboard.api.skills_search_request(body, profile_fw)
+        self._json({'ok': True,
+                    'skills': dashboard.skills.retrieve(req['framework'],
+                                                        req['intent'], req['limit'])})
+
+    def _dash_outcome(self, body):
+        """The "did this help?" capture. Best-effort by design: a learner
+        without an exam submission has no outcomes row to land on, and the
+        honest response is recorded=false, never an error — their answer
+        simply has nowhere to attach yet."""
+        email, stop = self._dash_guard()
+        if stop: return
+        err, req = dashboard.api.outcome_request(body)
+        if err:
+            self._json({'ok': False, 'error': err}, 400); return
+        recorded = surveyor.store.record_outcome_worked(
+            email, req['interface_id'], req['worked'], req['description'])
+        surveyor.store.log_event(email, 'dashboard_outcome',
+                                 {'interface_id': req['interface_id'],
+                                  'worked': req['worked'], 'recorded': recorded})
+        self._json({'ok': True, 'recorded': recorded})
+
+    def _dash_run(self, body):
+        """Run an interface from the dashboard. Same runtime, same LLM rate
+        bucket, and the same mock degradation as /surveyor/run — only the
+        event labels differ, so the two surfaces stay distinguishable in
+        analytics."""
+        email, stop = self._dash_guard()
+        if stop: return
+        if not rate_ok(self._client_ip(), email, llm=True):
+            self._json({'ok': False, 'error': 'run limit reached — wait 10 minutes'}, 429)
+            return
+        err, req = dashboard.api.run_request(body)
+        if err:
+            self._json({'ok': False, 'error': err}, 400); return
+        iface = surveyor.store.get_interface(email, req['id'])
+        if not iface:
+            self._json({'ok': False, 'error': 'not found'}, 404); return
+        profile = surveyor.pipeline.load_profile(email)
+        definition = dashboard.types.validate_definition(iface['definition'])
+        system = surveyor.prompts.runtime_system(
+            definition, surveyor.adaptation.soft_profile(profile))
+        status = surveyor.llm.status(nous_key)
+        try:
+            out = self._surv_llm()(system, req['input'], max_tokens=1200)
+        except Exception as e:
+            self._json({'ok': False, 'error': f'run failed: {e}'}, 502); return
+        surveyor.store.add_run(iface['id'], email, req['input'], out,
+                               {'llm': status['mode'], 'surface': 'dashboard'})
+        surveyor.store.log_event(email, 'dashboard_run',
+                                 {'id': iface['id'], 'llm': status['mode']})
+        self._json({'ok': True, 'output': out, 'llm': status})
 
     def _surv_admin(self):
         """Debug view. Restricted — this exposes hidden criteria and evidence,
@@ -923,6 +1088,14 @@ class H(BaseHTTPRequestHandler):
             self._surv_run(body)
         elif p == '/surveyor/personalization':
             self._surv_personalization(body)
+        elif p == '/dashboard/interface':
+            self._dash_save_interface(body)
+        elif p == '/dashboard/skills/search':
+            self._dash_skills_search(body)
+        elif p == '/dashboard/run':
+            self._dash_run(body)
+        elif p == '/dashboard/outcome':
+            self._dash_outcome(body)
         elif p == '/train/survey':
             self._survey(body)
         elif p == '/train/rate':
