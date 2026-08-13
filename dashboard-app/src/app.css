@@ -1,0 +1,98 @@
+/* Palette and type ARE the vanilla site's cordia-ui.css tokens, copied by
+   value (--c-ink #0B0B0B, --c-ink-2 #3A3A3A, --c-ink-3 #6E6E6E, --c-moss
+   #4A5A42, --c-wash #F6F7F4, --c-hair rgba(11,11,11,.08); --f-ui Inter,
+   --f-label 'Work Sans'). Copied, not imported: this surface is
+   build-isolated, but it must read as the same product — if those tokens
+   change, these values change with them. */
+* { box-sizing: border-box; }
+html, body, #root { height: 100%; margin: 0; }
+body {
+  font-family: 'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  color: #0B0B0B;
+  background: #FFFFFF;
+}
+
+.notice {
+  max-width: 460px;
+  margin: 18vh auto 0;
+  padding: 22px 26px;
+  background: #F6F7F4;
+  border-radius: 14px;
+  font-size: 15px;
+  line-height: 1.6;
+  color: #3A3A3A;
+}
+.notice a { color: #4A5A42; }
+
+.shell { height: 100%; display: flex; flex-direction: column; }
+
+.topbar {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 12px 20px;
+  background: #FFFFFF;
+  border-bottom: 1px solid rgba(11, 11, 11, 0.08);
+}
+.brand {
+  font-family: 'Work Sans', 'Inter', system-ui, sans-serif;
+  font-weight: 600;
+  font-size: 13px;
+  letter-spacing: 0.04em;
+}
+.shaped { font-size: 12.5px; color: #6E6E6E; flex: 1; }
+.limited {
+  font-family: 'Work Sans', 'Inter', system-ui, sans-serif;
+  font-size: 11px;
+  padding: 5px 11px;
+  border-radius: 999px;
+  background: #FBF6EC;
+  color: #7A5B2E;
+}
+
+/* Same amber note treatment as interface.html's .notice / the Surveyor
+   modal's .sv-note — this string is a data-provenance warning and renders
+   as visible text everywhere in the product. */
+.limited-note {
+  padding: 9px 20px;
+  background: #FBF6EC;
+  color: #7A5B2E;
+  font-family: 'Work Sans', 'Inter', system-ui, sans-serif;
+  font-size: 11.5px;
+  line-height: 1.5;
+  border-bottom: 1px solid rgba(11, 11, 11, 0.08);
+}
+
+.split { flex: 1; display: flex; min-height: 0; }
+
+.panel {
+  width: 265px;
+  flex: 0 0 auto;
+  padding: 20px;
+  background: #FFFFFF;
+  border-right: 1px solid rgba(11, 11, 11, 0.08);
+  overflow-y: auto;
+}
+.panel h2 {
+  font-family: 'Work Sans', 'Inter', system-ui, sans-serif;
+  font-size: 11px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: #6E6E6E;
+  font-weight: 500;
+  margin: 18px 0 10px;
+}
+.panel h2:first-child { margin-top: 0; }
+.kv div {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 6px 0;
+  border-bottom: 1px solid rgba(11, 11, 11, 0.08);
+  font-size: 13px;
+}
+.kv dt { color: #6E6E6E; }
+.kv dd { margin: 0; color: #0B0B0B; }
+.count { font-size: 13px; color: #3A3A3A; }
+
+.canvas { flex: 1; min-width: 0; background: #F6F7F4; }
