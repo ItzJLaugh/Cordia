@@ -1,5 +1,7 @@
 # Cordia Vertical Slice TODO
 
+Last updated: 2026-08-14
+
 This checklist is the implementation companion to:
 
 - `docs/CORDIA_BUILD_CONTEXT.md`
@@ -121,6 +123,27 @@ Acceptance criteria:
 
 - [ ] User can see Cordia Agent and workspace simultaneously.
 - [ ] Workspace changes appear immediately after state mutations.
+
+---
+
+# Phase 5A — Alidora Foundation: Agentic System Builder
+
+Alidora is the advanced Cordia module for building and operating company agentic systems. It is not a parallel workspace/runtime.
+
+- [ ] Add an Alidora entry point/tab to the Cordia product information architecture.
+- [ ] Reuse canonical workspace state; do not create graph-only state ownership.
+- [ ] Project canonical agents, skills, connectors, permissions, and provenance into a read-only Workspace Map/System View.
+- [ ] Keep Cordia's conversational cockpit as the default surface.
+- [ ] Route from Alidora actions through the same typed capability gateway and ALLOW / ASK / DENY enforcement.
+- [ ] Surface run status, approval checkpoints, provenance, and safe traces without exposing secrets or local paths.
+- [ ] Reuse/adapt verified graph and workflow components only after contract review.
+- [ ] Do not add a second skill registry, connector catalog, outcome loop, or execution path.
+
+Acceptance criteria:
+
+- [ ] A workspace has one visible, inspectable graph projection derived from canonical state.
+- [ ] An Alidora action cannot bypass Cordia permissions, approvals, audit, or capability confirmation.
+- [ ] A user can return from Alidora to the Cordia workspace without losing shared state.
 
 ---
 
@@ -381,6 +404,20 @@ one local capability becomes available
 ```
 
 Do not expand to ten connectors until this loop works.
+
+The first Alidora demo follows the real vertical slice rather than replacing it:
+
+```text
+saved Cordia workspace
+        ↓
+Alidora Workspace Map projects the same canonical state
+        ↓
+user inspects agents, skills, connectors, and approval checkpoints
+        ↓
+an approved system change routes through Cordia's existing capability and audit path
+        ↓
+both Cordia Workspace and Alidora reflect the same result
+```
 
 ---
 

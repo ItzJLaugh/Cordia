@@ -10,7 +10,8 @@ Before writing code:
 2. Read `docs/CORDIA_BUILD_CONTEXT.md` in full.
 3. Read `docs/WORKSPACE_FDE_PIVOT_CONTEXT.md` in full.
 4. Read `docs/TODO_CORDIA_VERTICAL_SLICE.md` in full.
-5. Identify existing implementations for:
+5. Read `docs/ALIDORA_INTEGRATION_CHARTER.md` in full before touching dashboard, graph, workflow, agent-composition, or advanced-runtime code.
+6. Identify existing implementations for:
    - Surveyor
    - Surveyor assessment/profile
    - markdown artifacts
@@ -26,15 +27,15 @@ Before writing code:
    - desktop install
    - local bridge
    - current frontend design system
-6. Do not create a parallel architecture before understanding what already exists.
-7. Explain how the current code maps to the canonical product model.
-8. Explicitly identify:
+7. Do not create a parallel architecture before understanding what already exists.
+8. Explain how the current code maps to the canonical product model.
+9. Explicitly identify:
    - what is already implemented
    - what is partially implemented
    - what needs refactoring
    - what is missing
-9. Preserve simplicity. Cordia is an agentic Forward Deployed Engineer for the individual, not a generic agent builder.
-10. Do not begin a broad rewrite until this analysis is complete.
+10. Preserve simplicity. Cordia is an agentic Forward Deployed Engineer for the individual. Alidora — Agentic System Builder by Cordia is the explicit advanced module for company agentic systems; it must share Cordia's contracts rather than creating a generic parallel platform.
+11. Do not begin a broad rewrite until this analysis is complete.
 
 ---
 
@@ -117,6 +118,10 @@ The intended workspace experience is conversational:
 - Building and using the workspace are the same mode.
 
 Do not turn the product into a node-graph editor unless a technical/advanced view specifically needs one.
+
+Alidora is that advanced view. Keep it a named Cordia module/tab for users who need agent-system composition, graph inspection, runs, and approvals. The standard Cordia workspace remains chat-first with connector-native and derived task surfaces.
+
+For any parallel implementation or external PR, review each component against current contracts and classify it as adopt, adapt, compose, or reject. Never preserve duplicate ownership of workspace state, registries, permissions, execution, secrets, or outcomes.
 
 ---
 
