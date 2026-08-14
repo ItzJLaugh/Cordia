@@ -3,6 +3,7 @@ import importlib
 import os
 import sys
 import unittest
+from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 
@@ -355,6 +356,56 @@ class TestAlidoraMapEndpoint(unittest.TestCase):
                 200,
             ),
         )
+
+    def test_workspace_and_map_share_authenticated_identity_and_agent_count(self):
+        state = {
+            "id": "w-1",
+            "title": "Launch",
+            "agents": [
+                {"id": "research", "name": "Research"},
+                {"id": "review", "name": "Review"},
+            ],
+        }
+        store = SimpleNamespace(
+            get_workspace=lambda email, workspace_id: state
+            if (email, workspace_id) == ("owner@example.test", "w-1")
+            else None
+        )
+        surveyor = SimpleNamespace(store=store, alidora=alidora)
+        workspace_handler = self.handler(path="/surveyor/workspace?id=w-1")
+        map_handler = self.handler(path="/surveyor/alidora/map?id=w-1")
+
+        with patch.object(self.backend, "surveyor", surveyor):
+            workspace_handler._surv_workspace()
+            map_handler._surv_alidora_map()
+
+        workspace = workspace_handler.response[0]["workspace"]
+        system_map = map_handler.response[0]["map"]
+        self.assertEqual(workspace["id"], system_map["workspace"]["id"])
+        self.assertEqual(len(workspace["agents"]), system_map["summary"]["agents"])
+
+
+class TestCordiaAlidoraNavigation(unittest.TestCase):
+    @staticmethod
+    def page():
+        return Path(__file__).resolve().parents[2] / "web" / "interface.html"
+
+    def test_workspace_keeps_cordia_agent_primary_and_exposes_safe_alidora_navigation(self):
+        page = self.page().read_text(encoding="utf-8")
+
+        self.assertIn('Cordia Agent', page)
+        self.assertIn('Alidora', page)
+        self.assertIn('Agentic System Builder', page)
+        self.assertIn("dashboard/?workspace=", page)
+        self.assertIn("encodeURIComponent(workspace.id)", page)
+
+    def test_navigation_only_uses_workspace_identity_and_never_map_content(self):
+        page = self.page().read_text(encoding="utf-8")
+
+        navigation = page.split("function render(workspace)", 1)[1].split("var byId", 1)[0]
+        self.assertIn("encodeURIComponent(workspace.id)", navigation)
+        for forbidden in ("profile", "credential", "secret", "artifact", "local path"):
+            self.assertNotIn(forbidden, navigation.lower())
 
 
 class TestZAlidoraImportIsolation(unittest.TestCase):

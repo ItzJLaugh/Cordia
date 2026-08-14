@@ -56,6 +56,9 @@
   .window-form{margin:16px 0 0;display:flex;gap:8px}.window-form input{flex:1;min-width:0;border:1px solid var(--c-hair);border-radius:var(--r-pill);padding:9px 12px;font:inherit;font-size:var(--t-xs)}
   .notice{margin:0 0 20px;padding:11px 15px;border-radius:10px;background:#FBF6EC;
     color:#7A5B2E;font-size:var(--t-xs);font-family:var(--f-label);line-height:1.5}
+  .alidora-nav{display:block;margin:18px 0 0;padding:14px 0 0;border-top:1px solid var(--c-hair);color:var(--c-ink);text-decoration:none}
+  .alidora-nav strong,.alidora-nav small{display:block}.alidora-nav strong{font-family:var(--f-label);font-size:var(--t-xs);letter-spacing:var(--tr-caps);text-transform:uppercase}
+  .alidora-nav small{margin-top:4px;color:var(--c-ink-3);font-size:var(--t-xs)}
 </style>
 </head>
 <body>
@@ -71,7 +74,7 @@
 
     <div class="grid">
       <section class="panel">
-        <span class="lbl">Your request</span>
+        <span class="lbl">Cordia Agent</span>
         <textarea id="input" placeholder="What do you want this workspace to do?"
           aria-label="Your request"></textarea>
         <div class="actions">
@@ -99,6 +102,10 @@
         <span class="lbl">Workflow</span>
         <div id="steps"></div>
         <div id="nativeWindows"></div>
+        <a class="alidora-nav" id="alidoraLink" href="dashboard/" aria-label="Open Alidora Agentic System Builder">
+          <strong>Alidora</strong>
+          <small>Agentic System Builder</small>
+        </a>
       </aside>
     </div>
   </div>
@@ -277,6 +284,7 @@
     document.getElementById('title').textContent = workspace.title || 'Workspace';
     document.getElementById('desc').textContent = workspace.description || '';
     document.getElementById('editLink').href = 'builder.html?id=' + encodeURIComponent(workspace.id);
+    document.getElementById('alidoraLink').href = 'dashboard/?workspace=' + encodeURIComponent(workspace.id);
 
     var byId = {};
     (workspace.agents || []).forEach(function (a) { byId[a.id] = a.name; });

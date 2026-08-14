@@ -130,6 +130,8 @@ Acceptance criteria:
 
 Alidora is the advanced Cordia module for building and operating company agentic systems. It is not a parallel workspace/runtime.
 
+**Verified status:** The authenticated, read-only System Map is complete and linked from the non-primary Cordia workspace navigation. Authoring, execution, connector setup, LiveView, and approval decisions remain deferred.
+
 - [ ] Add an Alidora entry point/tab to the Cordia product information architecture.
 - [ ] Reuse canonical workspace state; do not create graph-only state ownership.
 - [ ] Project canonical agents, skills, connectors, permissions, and provenance into a read-only Workspace Map/System View.

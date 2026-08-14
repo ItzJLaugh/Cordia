@@ -6,6 +6,12 @@
 
 Cordia remains the conversational Forward Deployed Engineer and everyday operating environment. Alidora is its advanced system-building module.
 
+## Foundation status (verified)
+
+The authenticated, read-only Alidora System Map is complete. It projects the signed-in user's canonical workspace and is linked from the non-primary Cordia workspace navigation without changing Cordia's chat-first default.
+
+Authoring, execution, connector setup, LiveView, and approval decisions remain deferred. The map has no independent state, execution, connector, or approval path.
+
 ## User-facing role
 
 Cordia's default surface is the FDE Workspace: Surveyor-informed, chat-first, connector-native, and task-oriented.
