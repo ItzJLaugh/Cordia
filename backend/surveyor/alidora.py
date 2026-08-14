@@ -13,10 +13,16 @@ _ENTITY_TYPES = (
 _IDENTIFIER = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$")
 _CREDENTIAL = re.compile(
     r"\b(?:api[ _-]?key|access[ _-]?token|token|secret|password|passwd|credential|authorization)\b\s*(?:[:=]|\bis\b)|"
-    r"\b(?:sk|pk|rk)-[A-Za-z0-9_-]{8,}|\bbearer\s+\S+",
+    r"\b(?:sk|pk|rk)-[A-Za-z0-9_-]{8,}|\bgh[pousr]_[A-Za-z0-9]{20,}|\bxox[baprs]-[A-Za-z0-9-]{10,}|"
+    r"\bAKIA[0-9A-Z]{16}\b|\bAWS_ACCESS_KEY_ID\s*=|\bbearer\s+\S+|"
+    r"\b[a-z][a-z0-9+.-]*://[^\s/:@]+:[^\s@/]+@",
     re.IGNORECASE,
 )
-_PATH = re.compile(r"(?:^[A-Za-z]:[\\/])|(?:^[\\/]{2})|(?:^/(?:[^/\s]+/)+)|(?:^~[\\/])")
+_PATH = re.compile(
+    r"(?<![A-Za-z0-9])(?:[A-Za-z]:[\\/]|[\\/]{2}[^\\/\s]+[\\/])|"
+    r"(?<![A-Za-z0-9:])/(?:home|users|private|var|tmp|etc|opt|srv|mnt)(?:/|$)|(?:^~[\\/])",
+    re.IGNORECASE,
+)
 _MAX_DISPLAY_TEXT = 240
 
 

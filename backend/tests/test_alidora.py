@@ -140,6 +140,34 @@ class TestAlidora(unittest.TestCase):
             [{"id": "skill:valid", "kind": "skill", "label": "", "detail": ""}],
         )
 
+    def test_map_payload_drops_embedded_paths_and_common_credential_shapes(self):
+        result = alidora.map_payload(
+            {
+                "id": "w1",
+                "title": "Build from C:\\private\\repo",
+                "description": "See /home/jacks/private/project for details",
+                "agents": [
+                    {"id": "review", "name": "Review Notes", "description": "Checks product evidence."},
+                    {"id": "path", "name": "Open \\\\server\\share", "description": "xoxb-123456789012-abcdefghijk"},
+                ],
+                "skills": [{"id": "deploy", "name": "ghp_abcdefghijklmnopqrstuvwxyz", "description": "AWS_ACCESS_KEY_ID=AKIAIOSFODNN7EXAMPLE"}],
+                "connectors": [{"id": "database", "name": "Postgres", "description": "postgres://user:password@db.example/internal"}],
+            }
+        )
+
+        self.assertEqual(result["workspace"], {"id": "w1", "title": "", "description": ""})
+        self.assertEqual(
+            result["nodes"],
+            [
+                {"id": "agent:path", "kind": "agent", "label": "", "detail": ""},
+                {"id": "agent:review", "kind": "agent", "label": "Review Notes", "detail": "Checks product evidence."},
+                {"id": "connector:database", "kind": "connector", "label": "Postgres", "detail": ""},
+                {"id": "skill:deploy", "kind": "skill", "label": "", "detail": ""},
+            ],
+        )
+        for forbidden in ("private", "home", "server", "xoxb", "ghp", "AKIA", "password@"):
+            self.assertNotIn(forbidden, repr(result))
+
 
 if __name__ == "__main__":
     unittest.main()
