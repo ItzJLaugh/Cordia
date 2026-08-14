@@ -14,6 +14,7 @@ PBKDF2_ROUNDS = 200_000
 CODE_TTL = 600              # 10 min
 SESSION_TTL = 60*60*24*14   # 14 days
 DEVICE_TTL  = 60*60*24*90   # 90 days a device stays trusted for 2FA
+SIGNUP_NEXT_STEPS_MESSAGE = 'check your email for next steps'
 DEV_2FA = os.environ.get('CORDIA_DEV_2FA') == '1'
 DSN = os.environ.get('CORDIA_PG_DSN', '')
 
@@ -160,7 +161,7 @@ def signup(email, name, password):
             _notify_existing(email)
             # Return the same generic response as a new signup so we never
             # reveal account existence via timing or message differences.
-            return True, 'verification code sent', None
+            return True, SIGNUP_NEXT_STEPS_MESSAGE, None
         salt = secrets.token_hex(16)
         code = f'{secrets.randbelow(900000)+100000}'
         cur.execute('''INSERT INTO pending VALUES(%s,%s,%s,%s,%s,%s)
@@ -168,7 +169,7 @@ def signup(email, name, password):
                        salt=EXCLUDED.salt, code=EXCLUDED.code, expires=EXCLUDED.expires''',
                     (email, name or email.split('@')[0], _hash_pw(password, salt), salt, code, time.time()+CODE_TTL))
     sent = _send_code(email, code)
-    return True, 'verification code sent' if sent else 'dev mode: code on screen', (None if sent else code)
+    return True, SIGNUP_NEXT_STEPS_MESSAGE if sent else 'dev mode: code on screen', (None if sent else code)
 
 
 def _notify_existing(email):
@@ -185,12 +186,13 @@ def _notify_existing(email):
         msg = EmailMessage()
         msg['From'] = user
         msg['To'] = email
-        msg['Subject'] = 'Someone tried to create a Cordia account with your email'
+        msg['Subject'] = 'This email already has a Cordia account'
         msg.set_content(
-            'Someone just tried to sign up for Cordia using this address, which '
-            'already has an account.\n\n'
-            'If that was you, sign in instead — or use "forgot password" if you '
-            'need to reset it.\n\n'
+            'A Cordia account already exists for this email address.\n\n'
+            'No verification code was generated. This was an account-creation '
+            'attempt, not a sign-in attempt.\n\n'
+            'If that was you, return to Cordia and sign in instead — or use '
+            '"forgot password" if you need to reset it.\n\n'
             'If it was not you, no action is needed. Your account was not changed '
             'and no new account was created.\n')
         with smtplib.SMTP('smtp.gmail.com', 587, timeout=15) as s:

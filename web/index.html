@@ -51,6 +51,10 @@
   .demo-note{margin-top:18px;padding-top:15px;border-top:1px solid var(--c-hair);
     font-family:var(--f-label);font-size:11px;color:var(--c-ink-4);
     text-align:center;line-height:1.6}
+  .signup-next-step{padding:14px;background:var(--c-wash);border-radius:var(--r-sm);
+    margin-bottom:14px;text-align:left}
+  .signup-next-step p{font-size:13px;line-height:1.5;color:var(--c-ink-3);margin:0 0 12px}
+  .signup-next-actions{display:grid;gap:8px}
 </style>
 </head>
 <body>
@@ -101,6 +105,13 @@
           <input id="code" type="text" inputmode="numeric" placeholder="6-digit code" maxlength="6">
           <div id="devCodeNote" style="display:none;font-family:var(--f-label);font-size:12px;color:#7A5B2E;margin-top:8px"></div>
         </div>
+        <div class="signup-next-step" id="signupNextStep" style="display:none">
+          <p id="signupInboxNote"></p>
+          <div class="signup-next-actions">
+            <button class="btn btn-primary" type="button" id="signupCodeAction">I received a signup code</button>
+            <button class="btn" type="button" id="signupSignInAction">Sign in instead</button>
+          </div>
+        </div>
         <div class="field" id="newPasswordField" style="display:none">
           <label for="newPassword">New password</label>
           <input id="newPassword" name="new_password" type="password" placeholder="••••••••••" minlength="10">
@@ -120,6 +131,7 @@ Email-verified. Passwords hashed server-side.
   </div>
 </div>
 
+<script src="assets/cordia-auth-flow.js"></script>
 <script>
 /* ================= auth logic — unchanged ================= */
 const API = (location.hostname === 'localhost' || location.hostname === '127.0.0.1'
@@ -146,6 +158,10 @@ const tabSignup = document.getElementById('tabSignup');
 const nameField = document.getElementById('nameField');
 const codeField = document.getElementById('codeField');
 const devCodeNote = document.getElementById('devCodeNote');
+const signupNextStep = document.getElementById('signupNextStep');
+const signupInboxNote = document.getElementById('signupInboxNote');
+const signupCodeAction = document.getElementById('signupCodeAction');
+const signupSignInAction = document.getElementById('signupSignInAction');
 const submitBtn = document.getElementById('submitBtn');
 const footText = document.getElementById('footText');
 const forgotLink = document.getElementById('forgotLink');
@@ -160,6 +176,9 @@ function setMode(m){
   awaitingCode = false;
   forgotStep = 0;
   codeField.style.display = 'none';
+  signupNextStep.style.display = 'none';
+  submitBtn.style.display = 'block';
+  devCodeNote.style.display = 'none';
   tabLogin.classList.toggle('active', m==='login');
   tabSignup.classList.toggle('active', m==='signup');
   nameField.style.display = m==='signup' ? 'block' : 'none';
@@ -174,6 +193,17 @@ tabLogin.onclick = () => setMode('login');
 tabSignup.onclick = () => setMode('signup');
 footText.onclick = e => { if(e.target.id==='footLink'){ e.preventDefault(); setMode(mode==='login'?'signup':'login'); } };
 forgotLink.onclick = e => { e.preventDefault(); forgotStep=1; updateForgotUI(); };
+signupCodeAction.onclick = () => {
+  awaitingCode = true;
+  CordiaAuthFlow.showSignupCode({
+    codeField,
+    codeInput: document.getElementById('code'),
+    nextStep: signupNextStep,
+    submitButton: submitBtn,
+    note: signupInboxNote,
+  });
+};
+signupSignInAction.onclick = () => setMode('login');
 
 async function api(path, body){
   const r = await fetch(API + path, {
@@ -250,7 +280,19 @@ document.getElementById('authForm').onsubmit = async e => {
           ? {email, name, password: pass}
           : {email, password: pass, device: localStorage.getItem('cordia-device') || ''});
       if(!d.ok){ showErr(d.msg || 'Something went wrong.'); return; }
-      if(d.token){ enterSpace(d.token, email); return; }
+      const nextStep = CordiaAuthFlow.nextStepForResponse(mode, d);
+      if(nextStep === 'session'){ enterSpace(d.token, email); return; }
+      if(nextStep === 'signup-inbox'){
+        awaitingCode = false;
+        CordiaAuthFlow.showSignupInbox({
+          codeField,
+          codeInput: document.getElementById('code'),
+          nextStep: signupNextStep,
+          submitButton: submitBtn,
+          note: signupInboxNote,
+        });
+        return;
+      }
       // Device not trusted — clear the stale token so the next attempt
       // doesn't keep sending it, and show the code entry field.
       try { localStorage.removeItem('cordia-device'); } catch(e){}
@@ -260,11 +302,6 @@ document.getElementById('authForm').onsubmit = async e => {
       if(d.dev_code){
         devCodeNote.style.display = 'block';
         devCodeNote.textContent = `Dev mode (email not configured): your code is ${d.dev_code}`;
-      } else if(mode === 'signup'){
-        devCodeNote.style.display = 'block';
-        devCodeNote.textContent = 'Check your email. If this address is already '
-          + 'registered we’ve told you that instead of sending a code — '
-          + 'sign in below rather than signing up.';
       } else {
         devCodeNote.style.display = 'none';
       }
