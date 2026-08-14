@@ -123,6 +123,8 @@ Alidora is that advanced view. Keep it a named Cordia module/tab for users who n
 
 For any parallel implementation or external PR, review each component against current contracts and classify it as adopt, adapt, compose, or reject. Never preserve duplicate ownership of workspace state, registries, permissions, execution, secrets, or outcomes.
 
+When implementing an approved Alidora plan, work task-by-task in an isolated branch/worktree. Each task requires its own focused tests, an independent validation review of the actual diff, and a recorded review result before the next task begins. Do not batch-merge an external dashboard/runtime stack without these gates.
+
 ---
 
 # MCP Role
