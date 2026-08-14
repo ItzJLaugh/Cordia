@@ -1,3 +1,5 @@
+import copy
+import importlib
 import os
 import sys
 import unittest
@@ -6,8 +8,8 @@ from unittest.mock import patch
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-sys.modules["cordia_auth"] = SimpleNamespace()
-import training_backend
+_MISSING = object()
+_ORIGINAL_CORDIA_AUTH = sys.modules.get("cordia_auth", _MISSING)
 from surveyor import alidora
 
 
@@ -46,6 +48,19 @@ class TestAlidora(unittest.TestCase):
 
         self.assertEqual(result["nodes"], [])
         self.assertEqual(result["edges"], [])
+
+    def test_map_payload_does_not_mutate_its_input_state(self):
+        state = {
+            "id": "w-1",
+            "agents": [{"id": "review", "name": "Review"}],
+            "skills": [{"id": "draft", "name": "Draft"}],
+            "workflow": {"steps": [{"agentId": "review", "toolIds": ["draft"]}]},
+        }
+        before = copy.deepcopy(state)
+
+        alidora.map_payload(state)
+
+        self.assertEqual(state, before)
 
     def test_map_payload_projects_canonical_workflow_edges_only(self):
         result = alidora.map_payload(
@@ -199,8 +214,27 @@ class TestAlidora(unittest.TestCase):
 
 
 class TestAlidoraMapEndpoint(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls._prior_training_backend = sys.modules.get("training_backend", _MISSING)
+        cls._auth_patch = patch.dict(sys.modules, {"cordia_auth": SimpleNamespace()})
+        cls._auth_patch.start()
+        sys.modules.pop("training_backend", None)
+        cls._backend = importlib.import_module("training_backend")
+
+    @classmethod
+    def tearDownClass(cls):
+        sys.modules.pop("training_backend", None)
+        cls._auth_patch.stop()
+        if cls._prior_training_backend is not _MISSING:
+            sys.modules["training_backend"] = cls._prior_training_backend
+
+    @property
+    def backend(self):
+        return type(self)._backend
+
     def handler(self, path="/surveyor/alidora/map?id=w-1", email="owner@example.test"):
-        handler = object.__new__(training_backend.H)
+        handler = object.__new__(self.backend.H)
         handler.path = path
         handler._surv_guard = lambda: (email, None) if email else (None, True)
         handler.response = None
@@ -214,7 +248,7 @@ class TestAlidoraMapEndpoint(unittest.TestCase):
             raise AssertionError("map endpoint must not read state without an id")
 
         surveyor = SimpleNamespace(store=SimpleNamespace(get_workspace=forbidden), alidora=alidora)
-        with patch.object(training_backend, "surveyor", surveyor):
+        with patch.object(self.backend, "surveyor", surveyor):
             handler._surv_alidora_map()
 
         self.assertEqual(handler.response, ({"ok": False, "error": "workspace id is required"}, 400))
@@ -229,12 +263,12 @@ class TestAlidoraMapEndpoint(unittest.TestCase):
         )
         surveyor = SimpleNamespace(store=store, alidora=alidora)
 
-        with patch.object(training_backend, "surveyor", surveyor):
+        with patch.object(self.backend, "surveyor", surveyor):
             handler._surv_alidora_map()
 
         self.assertEqual(handler.response, ({"ok": False, "error": "workspace not found"}, 404))
 
-    def test_returns_a_safe_map_for_the_authenticated_owners_workspace(self):
+    def test_get_dispatch_returns_a_safe_map_for_the_authenticated_owners_workspace(self):
         handler = self.handler()
         state = {
             "id": "w-1",
@@ -251,8 +285,8 @@ class TestAlidoraMapEndpoint(unittest.TestCase):
             alidora=alidora,
         )
 
-        with patch.object(training_backend, "surveyor", surveyor):
-            handler._surv_alidora_map()
+        with patch.object(self.backend, "surveyor", surveyor):
+            handler.do_GET()
 
         self.assertEqual(
             handler.response,
@@ -273,6 +307,13 @@ class TestAlidoraMapEndpoint(unittest.TestCase):
             ),
         )
         self.assertNotIn("must-not-leak", repr(handler.response))
+
+    def test_unauthenticated_get_stops_before_reading_workspace_state(self):
+        handler = self.handler(email=None)
+
+        handler.do_GET()
+
+        self.assertIsNone(handler.response)
 
     def test_only_reads_state_and_projects_the_map_without_writing_or_executing(self):
         handler = self.handler()
@@ -296,7 +337,7 @@ class TestAlidoraMapEndpoint(unittest.TestCase):
             connectors=SimpleNamespace(setup=forbidden),
         )
 
-        with patch.object(training_backend, "surveyor", surveyor):
+        with patch.object(self.backend, "surveyor", surveyor):
             handler._surv_alidora_map()
 
         self.assertEqual(
@@ -314,6 +355,11 @@ class TestAlidoraMapEndpoint(unittest.TestCase):
                 200,
             ),
         )
+
+
+class TestZAlidoraImportIsolation(unittest.TestCase):
+    def test_restores_the_prior_cordia_auth_module_entry(self):
+        self.assertIs(sys.modules.get("cordia_auth", _MISSING), _ORIGINAL_CORDIA_AUTH)
 
 
 if __name__ == "__main__":

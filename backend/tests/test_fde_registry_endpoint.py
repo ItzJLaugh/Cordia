@@ -1,17 +1,35 @@
+import importlib
 import os, sys, unittest
 from types import SimpleNamespace
 from unittest.mock import patch
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-sys.modules['cordia_auth'] = SimpleNamespace()
-import training_backend
 from surveyor import fde_routing, skills
 
 
 class TestFdeRegistryEndpoint(unittest.TestCase):
+ @classmethod
+ def setUpClass(cls):
+  cls._missing = object()
+  cls._prior_training_backend = sys.modules.get('training_backend', cls._missing)
+  cls._auth_patch = patch.dict(sys.modules, {'cordia_auth': SimpleNamespace()})
+  cls._auth_patch.start()
+  sys.modules.pop('training_backend', None)
+  cls._backend = importlib.import_module('training_backend')
+
+ @classmethod
+ def tearDownClass(cls):
+  sys.modules.pop('training_backend', None)
+  cls._auth_patch.stop()
+  if cls._prior_training_backend is not cls._missing:
+   sys.modules['training_backend'] = cls._prior_training_backend
+
+ @property
+ def backend(self): return type(self)._backend
+
  def handler(self, email='person@example.test'):
-  handler = object.__new__(training_backend.H)
+  handler = object.__new__(self.backend.H)
   handler.path = '/surveyor/fde-recommendations'
   handler._surv_guard = lambda: (email, None) if email else (None, True)
   handler.response = None
@@ -31,7 +49,7 @@ class TestFdeRegistryEndpoint(unittest.TestCase):
     'github': 'confirmed', 'desktop.local_repository': 'confirmed'}),
    skills=skills, fde_routing=fde_routing,
   )
-  with patch.object(training_backend, 'surveyor', surveyor):
+  with patch.object(self.backend, 'surveyor', surveyor):
    handler._surv_fde_recommendations()
   payload, status = handler.response
   self.assertEqual(status, 200)
@@ -59,7 +77,7 @@ class TestFdeRegistryEndpoint(unittest.TestCase):
    pipeline=SimpleNamespace(load_profile=lambda _email: {'signals': {}, 'evidence': []}),
    store=store, skills=skills, fde_routing=fde_routing, execute=forbidden,
   )
-  with patch.object(training_backend, 'surveyor', surveyor):
+  with patch.object(self.backend, 'surveyor', surveyor):
    handler._surv_fde_recommendations()
   payload, status = handler.response
   self.assertEqual(status, 200)
