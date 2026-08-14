@@ -102,16 +102,14 @@
         <span class="lbl">Workflow</span>
         <div id="steps"></div>
         <div id="nativeWindows"></div>
-        <a class="alidora-nav" id="alidoraLink" href="dashboard/" aria-label="Open Alidora Agentic System Builder">
-          <strong>Alidora</strong>
-          <small>Agentic System Builder</small>
-        </a>
+        <nav id="alidoraNav" aria-label="Workspace modules"></nav>
       </aside>
     </div>
   </div>
 </main>
 
 <script src="assets/cordia-shell.js?v=93dc4041" data-nav="workspace"></script>
+<script src="assets/workspace-navigation.js?v=1"></script>
 <script>
 (function () {
   'use strict';
@@ -284,7 +282,8 @@
     document.getElementById('title').textContent = workspace.title || 'Workspace';
     document.getElementById('desc').textContent = workspace.description || '';
     document.getElementById('editLink').href = 'builder.html?id=' + encodeURIComponent(workspace.id);
-    document.getElementById('alidoraLink').href = 'dashboard/?workspace=' + encodeURIComponent(workspace.id);
+    window.CordiaWorkspaceNavigation.renderAlidoraNavigation(
+      document.getElementById('alidoraNav'), workspace.id, document);
 
     var byId = {};
     (workspace.agents || []).forEach(function (a) { byId[a.id] = a.name; });

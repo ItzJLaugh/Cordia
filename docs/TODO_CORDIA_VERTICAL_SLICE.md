@@ -132,10 +132,10 @@ Alidora is the advanced Cordia module for building and operating company agentic
 
 **Verified status:** The authenticated, read-only System Map is complete and linked from the non-primary Cordia workspace navigation. Authoring, execution, connector setup, LiveView, and approval decisions remain deferred.
 
-- [ ] Add an Alidora entry point/tab to the Cordia product information architecture.
-- [ ] Reuse canonical workspace state; do not create graph-only state ownership.
-- [ ] Project canonical agents, skills, connectors, permissions, and provenance into a read-only Workspace Map/System View.
-- [ ] Keep Cordia's conversational cockpit as the default surface.
+- [x] Add an Alidora entry point/tab to the Cordia product information architecture.
+- [x] Reuse canonical workspace state; do not create graph-only state ownership.
+- [x] Project canonical agents, skills, connectors, permissions, and provenance into a read-only Workspace Map/System View.
+- [x] Keep Cordia's conversational cockpit as the default surface.
 - [ ] Route from Alidora actions through the same typed capability gateway and ALLOW / ASK / DENY enforcement.
 - [ ] Surface run status, approval checkpoints, provenance, and safe traces without exposing secrets or local paths.
 - [ ] Reuse/adapt verified graph and workflow components only after contract review.
@@ -143,7 +143,7 @@ Alidora is the advanced Cordia module for building and operating company agentic
 
 Acceptance criteria:
 
-- [ ] A workspace has one visible, inspectable graph projection derived from canonical state.
+- [x] A workspace has one visible, inspectable graph projection derived from canonical state.
 - [ ] An Alidora action cannot bypass Cordia permissions, approvals, audit, or capability confirmation.
 - [ ] A user can return from Alidora to the Cordia workspace without losing shared state.
 

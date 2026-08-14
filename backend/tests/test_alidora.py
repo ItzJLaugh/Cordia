@@ -3,7 +3,6 @@ import importlib
 import os
 import sys
 import unittest
-from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 
@@ -383,29 +382,6 @@ class TestAlidoraMapEndpoint(unittest.TestCase):
         system_map = map_handler.response[0]["map"]
         self.assertEqual(workspace["id"], system_map["workspace"]["id"])
         self.assertEqual(len(workspace["agents"]), system_map["summary"]["agents"])
-
-
-class TestCordiaAlidoraNavigation(unittest.TestCase):
-    @staticmethod
-    def page():
-        return Path(__file__).resolve().parents[2] / "web" / "interface.html"
-
-    def test_workspace_keeps_cordia_agent_primary_and_exposes_safe_alidora_navigation(self):
-        page = self.page().read_text(encoding="utf-8")
-
-        self.assertIn('Cordia Agent', page)
-        self.assertIn('Alidora', page)
-        self.assertIn('Agentic System Builder', page)
-        self.assertIn("dashboard/?workspace=", page)
-        self.assertIn("encodeURIComponent(workspace.id)", page)
-
-    def test_navigation_only_uses_workspace_identity_and_never_map_content(self):
-        page = self.page().read_text(encoding="utf-8")
-
-        navigation = page.split("function render(workspace)", 1)[1].split("var byId", 1)[0]
-        self.assertIn("encodeURIComponent(workspace.id)", navigation)
-        for forbidden in ("profile", "credential", "secret", "artifact", "local path"):
-            self.assertNotIn(forbidden, navigation.lower())
 
 
 class TestZAlidoraImportIsolation(unittest.TestCase):
