@@ -1,6 +1,6 @@
 # Cordia — Canonical Product & Build Context
 
-Last updated: 2026-08-12
+Last updated: 2026-08-14
 
 > Purpose
 >
@@ -572,6 +572,26 @@ This applies to both the Cordia Web App and Cordia Desktop App.
 
 ---
 
+# 11A. Alidora — Agentic System Builder by Cordia
+
+Alidora is Cordia's advanced system-building surface. It makes the technical structure behind an AI-enabled workspace understandable and operable for users who need to build a company-level agentic system: agent roles, workflows, runs, approvals, dependencies, and system health.
+
+```text
+Cordia
+    Personal FDE, conversational workspace, connectors, permissions, outcomes
+
+Alidora by Cordia
+    Advanced Agentic System Builder: compose, inspect, and operate agent systems
+```
+
+Alidora is a first-class Cordia tab/module, not a separate application and not the default first-run experience. Cordia should route users into it when their work calls for explicit system design, workflow inspection, or advanced operational control.
+
+Both surfaces share Surveyor/profile/evidence, source and compiled FDE artifacts, canonical workspace state, the connector and capability registry, ALLOW / ASK / DENY enforcement, approvals, audit, and outcome memory.
+
+Alidora may provide a graph canvas, workflow/agent composition, run history, traces, approval checkpoints, and reusable company agent systems. It must not introduce a second connector catalog, state store, permission engine, execution gateway, secret path, or outcome-learning loop. Its graph must describe and mutate canonical state through typed Cordia contracts; it must never become hidden competing state.
+
+---
+
 # 12. Workspace UI
 
 Desktop target:
@@ -607,6 +627,27 @@ The bottom strip is for inspection/control, not primary configuration.
 ---
 
 # 13. Visual Workspace Windows
+
+## Windows Are Agent-Built Artifacts
+
+The default workspace window is an artifact Cordia builds to help the user do real work, not an assumed miniature or embedded third-party application.
+
+Each artifact must be inspectable for its purpose, source connectors/skills/artifacts, provenance, view mode, and action permission/approval requirements.
+
+```text
+DashView
+    Default Cordia-native interactive artifact assembled for a task.
+
+LiveView
+    Optional interactive surface. Use only when the connector supports it and
+    the user explicitly enables it; never imply a live third-party session.
+
+DerivedView
+    Cordia-native artifact assembled from multiple connectors, skills, or
+    compiled workspace context.
+```
+
+The agent builds and refines artifacts from user intent, connectors, skills, permissions, and workspace context. DashView is the default; LiveView is a deliberate capability-and-consent choice.
 
 The main workspace should contain real visual surfaces representing the user’s connected systems.
 
@@ -1800,6 +1841,8 @@ optional desktop installation of the saved workspace
 
 The current engineering effort should prioritize making this vertical slice **real**.
 
+After the smallest Cordia vertical slice is reliable, the next expansion is Alidora's read-only Workspace Map/System View over canonical workspace state. Authoring and execution features follow only after their shared state, capability, permission, and audit contracts are proven.
+
 ---
 
 # 42. North-Star User Experience
@@ -1862,6 +1905,8 @@ Before changing implementation:
 6. Call out conflicts explicitly.
 7. Prefer migration/refactoring over replacement where practical.
 8. Build a smallest real vertical slice before expanding connector coverage.
+9. When reviewing parallel implementations, use component-level evidence to choose **adopt**, **adapt**, **compose**, or **reject**. Do not blindly merge a whole feature stack because it is sophisticated.
+10. Preserve one owner for each cross-cutting concern: workspace state, connector/capability registry, permission/approval enforcement, execution gateway, secrets, and outcomes.
 
 Repository:
 

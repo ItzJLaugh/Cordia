@@ -56,6 +56,9 @@
   .window-form{margin:16px 0 0;display:flex;gap:8px}.window-form input{flex:1;min-width:0;border:1px solid var(--c-hair);border-radius:var(--r-pill);padding:9px 12px;font:inherit;font-size:var(--t-xs)}
   .notice{margin:0 0 20px;padding:11px 15px;border-radius:10px;background:#FBF6EC;
     color:#7A5B2E;font-size:var(--t-xs);font-family:var(--f-label);line-height:1.5}
+  .alidora-nav{display:block;margin:18px 0 0;padding:14px 0 0;border-top:1px solid var(--c-hair);color:var(--c-ink);text-decoration:none}
+  .alidora-nav strong,.alidora-nav small{display:block}.alidora-nav strong{font-family:var(--f-label);font-size:var(--t-xs);letter-spacing:var(--tr-caps);text-transform:uppercase}
+  .alidora-nav small{margin-top:4px;color:var(--c-ink-3);font-size:var(--t-xs)}
 </style>
 </head>
 <body>
@@ -70,8 +73,8 @@
     <div class="notice" id="notice" hidden></div>
 
     <div class="grid">
-      <section class="panel">
-        <span class="lbl">Your request</span>
+      <section class="panel" id="cordiaAgentPanel" data-surface="primary" aria-label="Cordia Agent">
+        <span class="lbl" id="cordiaAgentLabel">Cordia Agent</span>
         <textarea id="input" placeholder="What do you want this workspace to do?"
           aria-label="Your request"></textarea>
         <div class="actions">
@@ -99,12 +102,14 @@
         <span class="lbl">Workflow</span>
         <div id="steps"></div>
         <div id="nativeWindows"></div>
+        <nav id="alidoraNav" aria-label="Workspace modules"></nav>
       </aside>
     </div>
   </div>
 </main>
 
 <script src="assets/cordia-shell.js?v=93dc4041" data-nav="workspace"></script>
+<script src="assets/workspace-navigation.js?v=1"></script>
 <script>
 (function () {
   'use strict';
@@ -277,6 +282,8 @@
     document.getElementById('title').textContent = workspace.title || 'Workspace';
     document.getElementById('desc').textContent = workspace.description || '';
     document.getElementById('editLink').href = 'builder.html?id=' + encodeURIComponent(workspace.id);
+    window.CordiaWorkspaceNavigation.renderAlidoraNavigation(
+      document.getElementById('alidoraNav'), workspace.id, document);
 
     var byId = {};
     (workspace.agents || []).forEach(function (a) { byId[a.id] = a.name; });

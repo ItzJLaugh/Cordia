@@ -27,3 +27,4 @@ backups/
 
 # local GGUF weights (~3.5GB) — never commit binaries this size
 models/
+.worktrees/

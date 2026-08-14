@@ -396,6 +396,8 @@ class H(BaseHTTPRequestHandler):
             self._surv_list_interfaces()
         elif p == '/surveyor/workspace':
             self._surv_workspace()
+        elif p == '/surveyor/alidora/map':
+            self._surv_alidora_map()
         elif p == '/surveyor/admin':
             self._surv_admin()
         elif p == '/surveyor/recommendation':
@@ -597,6 +599,21 @@ class H(BaseHTTPRequestHandler):
                 workspace_id, definition, surveyor.store.get_connector_states(email))
             surveyor.store.save_workspace(email, workspace_id, state)
         self._json({'ok': True, 'workspace': state})
+
+    def _surv_alidora_map(self):
+        """Return a safe, read-only Alidora map for the signed-in workspace owner."""
+        email, stop = self._surv_guard()
+        if stop: return
+        query = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+        workspace_id = str(query.get('id', [''])[0])
+        if not workspace_id:
+            self._json({'ok': False, 'error': 'workspace id is required'}, 400)
+            return
+        state = surveyor.store.get_workspace(email, workspace_id)
+        if not state:
+            self._json({'ok': False, 'error': 'workspace not found'}, 404)
+            return
+        self._json({'ok': True, 'map': surveyor.alidora.map_payload(state)})
 
     def _surv_workspace_mutation(self, body):
         """Apply an allow-listed human workspace change to canonical state."""

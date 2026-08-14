@@ -1,5 +1,7 @@
 # Cordia Vertical Slice TODO
 
+Last updated: 2026-08-14
+
 This checklist is the implementation companion to:
 
 - `docs/CORDIA_BUILD_CONTEXT.md`
@@ -121,6 +123,31 @@ Acceptance criteria:
 
 - [ ] User can see Cordia Agent and workspace simultaneously.
 - [ ] Workspace changes appear immediately after state mutations.
+
+---
+
+# Phase 5A — Alidora Foundation: Agentic System Builder
+
+Alidora is the advanced Cordia module for building and operating company agentic systems. It is not a parallel workspace/runtime.
+
+**Current review status:** The packaged, authenticated, read-only System Map is implemented and awaiting independent re-review. It visibly projects safe agent/skill topology and catalog-backed connector consent/implementation/lifecycle/runtime state from the canonical workspace. Permissions, provenance, artifact purpose/source/view-mode/action inspection, authoring, execution, connector setup, LiveView, approval decisions, runs, and traces remain deferred.
+
+- [x] Add an Alidora entry point/tab to the Cordia product information architecture.
+- [x] Reuse canonical workspace state; do not create graph-only state ownership.
+- [x] Project safe canonical agent/skill topology and truthful connector state into a read-only Workspace Map/System View.
+- [ ] Display permissions and provenance in the Workspace Map/System View.
+- [ ] Inspect artifact purpose, sources, view mode, and action requirements.
+- [x] Keep Cordia's conversational cockpit as the default surface.
+- [ ] Route from Alidora actions through the same typed capability gateway and ALLOW / ASK / DENY enforcement.
+- [ ] Surface run status, approval checkpoints, provenance, and safe traces without exposing secrets or local paths.
+- [ ] Reuse/adapt verified graph and workflow components only after contract review.
+- [ ] Do not add a second skill registry, connector catalog, outcome loop, or execution path.
+
+Acceptance criteria:
+
+- [x] A workspace has one visible, read-only topology projection derived from canonical state.
+- [ ] An Alidora action cannot bypass Cordia permissions, approvals, audit, or capability confirmation.
+- [ ] A user can return from Alidora to the Cordia workspace without losing shared state.
 
 ---
 
@@ -381,6 +408,20 @@ one local capability becomes available
 ```
 
 Do not expand to ten connectors until this loop works.
+
+The first Alidora demo follows the real vertical slice rather than replacing it:
+
+```text
+saved Cordia workspace
+        ↓
+Alidora Workspace Map projects the same canonical state
+        ↓
+user inspects agents, skills, connectors, and approval checkpoints
+        ↓
+an approved system change routes through Cordia's existing capability and audit path
+        ↓
+both Cordia Workspace and Alidora reflect the same result
+```
 
 ---
 
