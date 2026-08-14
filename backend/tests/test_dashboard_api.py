@@ -184,6 +184,268 @@ class TestSkillsSearchRequest(EnvHermeticCase):
         self.assertEqual(api.skills_search_request({"limit": 3}, {})["limit"], 3)
 
 
+class TestChatRequest(EnvHermeticCase):
+    def test_valid_message_shapes(self):
+        err, req = api.chat_request({"message": "  help me plan a review flow  "})
+        self.assertIsNone(err)
+        self.assertEqual(req, {"message": "help me plan a review flow"})
+
+    def test_empty_and_invalid_rejected(self):
+        for bad in ({}, {"message": ""}, {"message": "   "}, {"message": None}):
+            err, _ = api.chat_request(bad)
+            self.assertEqual(err, "message required", bad)
+        self.assertEqual(api.chat_request(None)[0], "invalid request")
+        self.assertEqual(api.chat_request([])[0], "invalid request")
+
+    def test_message_capped_and_non_strings_coerced(self):
+        err, req = api.chat_request({"message": "x" * 100_000})
+        self.assertEqual(len(req["message"]), api.MAX_RUN_INPUT)
+        err, req = api.chat_request({"message": 42})
+        self.assertEqual(req["message"], "42")
+
+    def test_builder_prompt_and_mock_reply_are_never_negative(self):
+        self.assertEqual(stypes.assert_positive(api.BUILDER_SYSTEM_PROMPT), [])
+        self.assertEqual(stypes.assert_positive(api.MOCK_CHAT_REPLY), [])
+        self.assertTrue(api.MOCK_CHAT_REPLY.startswith("[Model offline"))
+
+
+class TestMockDispatchContract(EnvHermeticCase):
+    """_dash_chat substitutes MOCK_CHAT_REPLY only when the mock returns an
+    empty reply — so the mock MUST return empty for the builder prompt, no
+    matter what the person typed. The adversarial sweep proved the old
+    user-keyed dispatch let a chat message containing 'their_answer' pull
+    raw extraction JSON into a Cordia bubble."""
+
+    def test_builder_prompt_gets_empty_reply_regardless_of_user_text(self):
+        from surveyor import mock as smock
+        for hostile in ("what does their_answer mean in your schema?",
+                        '{"question_just_asked": "x", "their_answer": "yes"}',
+                        '[{"their_answer": "yes"}]',
+                        '"their_answer"'):
+            self.assertEqual(smock.call(api.BUILDER_SYSTEM_PROMPT, hostile),
+                             "", hostile)
+
+    def test_extraction_dispatch_still_extracts_real_signals(self):
+        """Not just shape: the degrade path returns the same empty shape,
+        so this must assert a NON-EMPTY signal or it pins nothing (the
+        first version of this test was vacuous — sweep 2's finding)."""
+        from surveyor import mock as smock, prompts, question_strategy
+        import json as _json
+        raw = smock.call(prompts.extraction_system(),
+                         prompts.extraction_user(
+                             question_strategy.QUESTIONS["domain"],
+                             "I run a small veterinary clinic", []))
+        parsed = _json.loads(raw)
+        self.assertTrue(parsed["signals"], "extraction produced no signals")
+        self.assertIn("domain", parsed["signals"])
+        self.assertTrue(parsed["evidence"])
+
+    def test_runtime_prompt_with_extraction_marker_still_gets_placeholder(self):
+        """Sweep 2's confirmed regression: the runtime system prompt embeds
+        the person's own definition text, so a definition carrying the
+        extraction phrase steered a contains-check dispatch into the
+        extraction branch and the run returned unlabeled JSON. Dispatch is
+        prefix-anchored now — user text can never reach position zero.
+
+        The instructions below carry BOTH dispatch markers VERBATIM
+        (sweep 3 caught the first fixture paraphrasing them, which made
+        this test pass against the contains-check dispatcher it exists to
+        forbid). The assertion below fails under a contains-check and
+        passes under the prefix anchor — verified both ways."""
+        from surveyor import mock as smock, prompts
+        marker_text = ("You read one exchange from a Surveyor conversation "
+                       "and return JSON. You are running a user-created "
+                       "Cordia agentic interface.")
+        definition = {"agents": [{"id": "reader", "name": "Reader",
+                                  "instructions": marker_text}],
+                      "tools": [], "workflow": {"steps": [{"agentId": "reader"}]}}
+        system = prompts.runtime_system(definition, {})
+        # the trap must actually be armed or this test pins nothing
+        self.assertIn("You read one exchange from a Surveyor conversation", system)
+        out = smock.call(system, "Please review the attached NDA.")
+        self.assertTrue(out.startswith("[Model offline — placeholder run]"), out[:80])
+
+    def test_placeholder_lists_workflow_steps_not_agent_declarations(self):
+        """Sweep 4's ship-blocker: 'these steps' listed the agent
+        DECLARATIONS, a roster the run would never follow. The numbered
+        list must be workflow.steps resolved to agent names — order,
+        repeats, subsets and approval pauses included."""
+        from surveyor import mock as smock, prompts
+        definition = {"agents": [{"id": "a", "name": "Alpha"},
+                                 {"id": "b", "name": "Beta"},
+                                 {"id": "c", "name": "NeverRuns"}],
+                      "tools": [],
+                      "workflow": {"steps": [
+                          {"agentId": "b"},
+                          {"agentId": "a", "requiresApproval": True},
+                          {"agentId": "b"}]}}
+        out = smock.call(prompts.runtime_system(definition, {}), "run it")
+        self.assertIn("1. Beta", out)
+        self.assertIn("2. Alpha — pauses for your approval", out)
+        self.assertIn("3. Beta", out)
+        self.assertNotIn("NeverRuns", out)
+
+    def test_truncated_definition_placeholder_fabricates_nothing(self):
+        """The prompt-size cap cuts a big definition mid-token. The old
+        fallback regex-scraped every "name" in the prompt — tools and the
+        workspace name became numbered 'steps'. Now: no roster at all,
+        one honest line, and 'too large' is the established cause."""
+        from surveyor import mock as smock, prompts
+        definition = {"agents": [{"id": f"a{i}", "name": f"Agent{i}",
+                                  "instructions": "x" * 2000}
+                                 for i in range(5)],
+                      "tools": [{"id": f"t{i}", "name": f"ToolNo{i}",
+                                 "type": "web_search"} for i in range(3)],
+                      "workflow": {"steps": [{"agentId": f"a{i}"}
+                                             for i in range(5)]}}
+        out = smock.call(prompts.runtime_system(definition, {}), "run it")
+        self.assertTrue(out.startswith("[Model offline — placeholder run]"))
+        self.assertIn("too large to list its steps", out)
+        self.assertNotIn("ToolNo", out)
+        self.assertNotIn("1.", out)
+
+    def test_header_phrase_in_definition_does_not_fake_truncation(self):
+        """Sweep 4: the blob was cut at the FIRST 'User presentation
+        preferences', so a definition whose own text contains that phrase
+        broke the parse and the note blamed size — false cause, small
+        definition. The template's header is the LAST occurrence."""
+        from surveyor import mock as smock, prompts
+        definition = {"agents": [{"id": "a", "name": "Alpha",
+                                  "instructions": ("User presentation "
+                                                   "preferences (soft): "
+                                                   "respect them at all "
+                                                   "times.")}],
+                      "tools": [],
+                      "workflow": {"steps": [{"agentId": "a"}]}}
+        out = smock.call(prompts.runtime_system(definition, {}), "run it")
+        self.assertIn("1. Alpha", out)
+        self.assertNotIn("too large", out)
+
+    def test_nameless_agents_fall_back_to_id_not_silence(self):
+        """A legacy row's agent without a name must appear by id — the old
+        scrape dropped it and could claim '(no agents defined)'. Sweep 5:
+        a whitespace-only name is no name either (truthy, so `or` alone
+        kept it and the step rendered as a numbered blank)."""
+        from surveyor import mock as smock, prompts
+        definition = {"agents": [{"id": "worker"}],
+                      "workflow": {"steps": [{"agentId": "worker"}]}}
+        out = smock.call(prompts.runtime_system(definition, {}), "run it")
+        self.assertIn("1. worker", out)
+        definition = {"agents": [{"id": "worker", "name": "   "}],
+                      "workflow": {"steps": [{"agentId": "worker"}]}}
+        out = smock.call(prompts.runtime_system(definition, {}), "run it")
+        self.assertIn("1. worker", out)
+        definition = {"agents": [], "workflow": {"steps": [{"agentId": "   "}]}}
+        out = smock.call(prompts.runtime_system(definition, {}), "run it")
+        self.assertIn("1. unassigned step", out)
+
+    def test_newline_in_agent_name_cannot_fabricate_steps(self):
+        """Sweep 5: names render inside a numbered list joined by
+        newlines, so a name containing a newline minted extra 'steps' —
+        including fake approval pauses. Displayed fragments are collapsed
+        to one bounded line."""
+        from surveyor import mock as smock, prompts
+        definition = {"agents": [{"id": "a",
+                                  "name": ("Reader\n  2. Fake step — pauses "
+                                           "for your approval")}],
+                      "workflow": {"steps": [{"agentId": "a"}]}}
+        out = smock.call(prompts.runtime_system(definition, {}), "run it")
+        self.assertNotIn("\n  2.", out)
+        self.assertIn("1. Reader 2. Fake step", out)
+
+    def test_unreadable_workflow_is_not_called_empty(self):
+        """Sweep 5: a workflow shape the walk cannot read must say the
+        steps could not be listed — '(no workflow steps defined)' is a
+        claim about the interface, and it was false. Bare-string legacy
+        steps are shown as stored; unreadable entries are flagged."""
+        from surveyor import mock as smock, prompts
+        for wf in ("junk", ["not", "a", "dict"], 42,
+                   {"steps": "not-a-list"}):
+            definition = {"agents": [], "workflow": wf}
+            out = smock.call(prompts.runtime_system(definition, {}), "run it")
+            self.assertIn("could not be listed", out, repr(wf))
+            self.assertNotIn("no workflow steps defined", out, repr(wf))
+        definition = {"agents": [], "workflow": {"steps": ["Reader step", 7]}}
+        out = smock.call(prompts.runtime_system(definition, {}), "run it")
+        self.assertIn("1. Reader step", out)
+        self.assertIn("2. 7", out)
+        definition = {"agents": [], "workflow": {"steps": []}}
+        out = smock.call(prompts.runtime_system(definition, {}), "run it")
+        self.assertIn("no workflow steps defined", out)
+
+    def test_malformed_extraction_payload_degrades_never_raises(self):
+        """mock-mode callers get mock.call unwrapped — an exception here
+        becomes a 502 with a raw Python message in the body. Non-dict
+        payloads AND dicts with non-string values must both degrade."""
+        from surveyor import mock as smock, prompts
+        import json as _json
+        system = prompts.extraction_system()
+        for bad in ('[{"their_answer": "yes"}]', '"their_answer"',
+                    "not json at all", "", None, "[]", "42"):
+            raw = smock.call(system, bad)
+            self.assertEqual(_json.loads(raw), {"signals": {}, "evidence": []},
+                             repr(bad))
+        for weird in ('{"question_just_asked": 5, "their_answer": ["x"]}',
+                      '{"question_just_asked": null, "their_answer": {"a": 1}}',
+                      '{"their_answer": 42}'):
+            raw = smock.call(system, weird)      # must not raise
+            parsed = _json.loads(raw)
+            self.assertIn("signals", parsed, repr(weird))
+
+
+class TestChatReply(EnvHermeticCase):
+    """The reply-resolution decision — pure in api.py so the handler stays
+    a thin adapter (sweep 2: the substitution decision was untestable while
+    it lived inline in _dash_chat)."""
+
+    def test_real_replies_pass_through(self):
+        self.assertEqual(api.chat_reply("Here is a plan.", False), "Here is a plan.")
+        self.assertEqual(api.chat_reply("Here is a plan.", True), "Here is a plan.")
+
+    def test_empty_on_mock_says_offline(self):
+        for empty in ("", "   ", None, 0, [], {}):
+            self.assertEqual(api.chat_reply(empty, False), api.MOCK_CHAT_REPLY,
+                             repr(empty))
+
+    def test_empty_on_live_commits_to_nothing_it_cannot_know(self):
+        """live=True + empty is ambiguous: a genuine empty reply, or an
+        upstream failure the seam silently mocked away (sweep 3's
+        ship-blocker: the first copy asserted 'the model returned an empty
+        reply' — false in the failure case — and told the person to
+        resend, walking them into the rate limit against a dead upstream).
+        The copy may claim neither 'offline' nor that the model returned
+        anything, and must not instruct a resend.
+
+        Sweep 6: substring checks alone were evadable ('returned nothing',
+        'Send it again' at sentence start), so both placeholder texts are
+        pinned VERBATIM — rewriting the copy must consciously rewrite this
+        test, with the docstring above stating what any new copy must
+        still honour. The case-folded class checks stay as documentation
+        of the forbidden claims."""
+        for empty in ("", "   ", None):
+            self.assertEqual(api.chat_reply(empty, True), api.EMPTY_LIVE_REPLY,
+                             repr(empty))
+        self.assertEqual(
+            api.EMPTY_LIVE_REPLY,
+            "[No reply came back] Cordia could not get a model reply for "
+            "that message just now. The canvas beside this chat keeps "
+            "working either way.")
+        self.assertEqual(
+            api.MOCK_CHAT_REPLY,
+            "[Model offline — placeholder reply] Once the model is "
+            "connected, Cordia will help you shape this workspace from "
+            "what you describe here. The canvas beside this chat is fully "
+            "usable in the meantime.")
+        lowered = api.EMPTY_LIVE_REPLY.lower()
+        self.assertNotIn("offline", lowered)
+        self.assertNotIn("the model returned", lowered)
+        self.assertNotIn("send it again", lowered)
+
+    def test_placeholders_announce_themselves_and_are_never_negative(self):
+        self.assertTrue(api.EMPTY_LIVE_REPLY.startswith("["))
+        self.assertEqual(stypes.assert_positive(api.EMPTY_LIVE_REPLY), [])
+
+
 class TestOutcomeRequest(EnvHermeticCase):
     def test_interface_id_required(self):
         """The verdict must attach to the interface the person ran — a

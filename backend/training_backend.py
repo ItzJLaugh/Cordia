@@ -144,7 +144,7 @@ IP_CAP = 10           # auth attempts per IP per window
 EMAIL_CAP = 5         # auth attempts per target email per window
 LLM_CAP = 30          # llm calls per user per window (paid upstream)
 ADMIN_CAP = 20        # admin/agent-control attempts per IP per window
-_rl = {'ip': {}, 'email': {}, 'llm': {}, 'admin': {}}
+_rl = {'ip': {}, 'email': {}, 'llm': {}, 'chat': {}, 'admin': {}}
 
 def _hit(bucket, key, cap):
     now = time.time()
@@ -156,9 +156,13 @@ def _hit(bucket, key, cap):
     dq.append(now)
     return True
 
-def rate_ok(ip, email=None, llm=False, admin=False):
+def rate_ok(ip, email=None, llm=False, chat=False, admin=False):
     if admin:
         return _hit(_rl['admin'], ip, ADMIN_CAP)
+    if chat:
+        # Same per-user cap as llm but its own bucket: a person talking to
+        # the builder must not burn the budget that runs their workspace.
+        return _hit(_rl['chat'], (email or '').strip().lower() or ip, LLM_CAP)
     if llm:
         return _hit(_rl['llm'], (email or '').strip().lower() or ip, LLM_CAP)
     if not _hit(_rl['ip'], ip, IP_CAP):
@@ -696,6 +700,31 @@ class H(BaseHTTPRequestHandler):
                     'skills': dashboard.skills.retrieve(req['framework'],
                                                         req['intent'], req['limit'])})
 
+    def _dash_chat(self, body):
+        """The builder chat — the left panel beside the canvas. Runs on the
+        same LLM seam as every other model call but its own rate bucket,
+        so chatting never locks the person out of running their workspace;
+        on mock it returns deterministic placeholder replies and the client
+        shows the Limited-mode note. Stateless server-side in v1; Step 11
+        swaps tool-calling reasoning in behind this same contract."""
+        email, stop = self._dash_guard()
+        if stop: return
+        if not rate_ok(self._client_ip(), email, chat=True):
+            self._json({'ok': False, 'error': 'message limit reached — wait 10 minutes'}, 429)
+            return
+        err, req = dashboard.api.chat_request(body)
+        if err:
+            self._json({'ok': False, 'error': err}, 400); return
+        status = surveyor.llm.status(nous_key)
+        try:
+            reply = self._surv_llm()(dashboard.api.BUILDER_SYSTEM_PROMPT,
+                                     req['message'], max_tokens=700)
+        except Exception as e:
+            self._json({'ok': False, 'error': f'chat failed: {e}'}, 502); return
+        reply = dashboard.api.chat_reply(reply, bool(status.get('live')))
+        surveyor.store.log_event(email, 'dashboard_chat', {'llm': status['mode']})
+        self._json({'ok': True, 'reply': reply, 'llm': status})
+
     def _dash_outcome(self, body):
         """The "did this help?" capture. Best-effort by design: a learner
         without an exam submission has no outcomes row to land on, and the
@@ -1096,6 +1125,8 @@ class H(BaseHTTPRequestHandler):
             self._dash_run(body)
         elif p == '/dashboard/outcome':
             self._dash_outcome(body)
+        elif p == '/dashboard/chat':
+            self._dash_chat(body)
         elif p == '/train/survey':
             self._survey(body)
         elif p == '/train/rate':

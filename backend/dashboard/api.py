@@ -103,6 +103,27 @@ def skills_search_request(body, profile_framework):
             "limit": b.get("limit", 8)}
 
 
+def chat_request(body):
+    """Shape a builder-chat turn: ``(error, None)`` or ``(None, {message})``.
+
+    The chat is stateless server-side in v1 — the client holds its own
+    transcript, and Step 11's tool-calling model gets its context there.
+    The message cap matches the run-input cap; hostile text is the
+    model's (or the mock's) problem, never the parser's.
+    """
+    if not isinstance(body, dict):
+        return "invalid request", None
+    raw = body.get("message")
+    if raw is None:
+        # str(None) is the truthy string 'None' — the same trap the save
+        # path documents. A JSON null message is an absent message.
+        return "message required", None
+    message = str(raw)[:MAX_RUN_INPUT].strip()
+    if not message:
+        return "message required", None
+    return None, {"message": message}
+
+
 def outcome_request(body):
     """Shape a "did this help?" answer: ``(error, None)`` or
     ``(None, {interface_id, worked, description})``.
@@ -130,6 +151,53 @@ def outcome_request(body):
         description = None
     return None, {"interface_id": interface_id[:80], "worked": worked,
                   "description": description}
+
+
+# What the chat says when the model seam returns nothing (the surveyor
+# mock answers only the prompts it knows). Same announce-itself discipline
+# as mock.py: a placeholder that says it is one, never fake output.
+MOCK_CHAT_REPLY = (
+    "[Model offline — placeholder reply] Once the model is connected, "
+    "Cordia will help you shape this workspace from what you describe "
+    "here. The canvas beside this chat is fully usable in the meantime."
+)
+
+# When the credential probe says live but the reply is empty, we cannot
+# know which of two things happened: the model genuinely replied with
+# nothing, or the call failed and the seam's silent mock fallback answered
+# "" (llm.caller swallows upstream exceptions). The copy must be true in
+# BOTH cases — no "offline" claim, no "the model returned an empty reply"
+# claim, and no resend instruction that walks the person into burning
+# their rate budget against a dead upstream.
+EMPTY_LIVE_REPLY = (
+    "[No reply came back] Cordia could not get a model reply for that "
+    "message just now. The canvas beside this chat keeps working "
+    "either way."
+)
+
+
+def chat_reply(raw, live):
+    """The reply the person sees, given what the LLM seam returned.
+
+    Pure so it is testable: the handler stays a thin adapter. Any
+    non-string or blank reply becomes a placeholder that announces
+    itself. ``live`` is the credential probe, which proves mock mode when
+    False but proves nothing when True (the seam falls back to the mock
+    per-call on failure) — so the live-side copy commits to nothing
+    beyond "no reply arrived".
+    """
+    if isinstance(raw, str) and raw.strip():
+        return raw
+    return EMPTY_LIVE_REPLY if live else MOCK_CHAT_REPLY
+
+BUILDER_SYSTEM_PROMPT = (
+    "You are Cordia's workspace builder. The person is assembling an "
+    "agentic workspace on a visual canvas beside this chat: agents as "
+    "cards, ordered steps as connections, human approval points on the "
+    "steps that need them. Help them decide what to build — which agents, "
+    "which order, where a human should stay in the loop — in plain, "
+    "encouraging language. Keep answers short and concrete."
+)
 
 
 def public_interface(row):
