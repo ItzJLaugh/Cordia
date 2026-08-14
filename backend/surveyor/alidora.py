@@ -1,12 +1,23 @@
 """Safe, deterministic projection of a canonical workspace for Alidora."""
 from __future__ import annotations
 
+from collections import Counter
+import re
+
 
 _ENTITY_TYPES = (
     ("agents", "agent"),
     ("skills", "skill"),
     ("connectors", "connector"),
 )
+_IDENTIFIER = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$")
+_CREDENTIAL = re.compile(
+    r"\b(?:api[ _-]?key|access[ _-]?token|token|secret|password|passwd|credential|authorization)\b\s*(?:[:=]|\bis\b)|"
+    r"\b(?:sk|pk|rk)-[A-Za-z0-9_-]{8,}|\bbearer\s+\S+",
+    re.IGNORECASE,
+)
+_PATH = re.compile(r"(?:^[A-Za-z]:[\\/])|(?:^[\\/]{2})|(?:^/(?:[^/\s]+/)+)|(?:^~[\\/])")
+_MAX_DISPLAY_TEXT = 240
 
 
 def map_payload(workspace):
@@ -16,9 +27,9 @@ def map_payload(workspace):
     node_ids = {node["id"] for node in nodes}
     return {
         "workspace": {
-            "id": _text(workspace.get("id")),
-            "title": _text(workspace.get("title")),
-            "description": _text(workspace.get("description")),
+            "id": _identifier(workspace.get("id")),
+            "title": _display_text(workspace.get("title")),
+            "description": _display_text(workspace.get("description")),
         },
         "nodes": nodes,
         "edges": _edges(workspace.get("workflow"), node_ids),
@@ -33,25 +44,34 @@ def map_payload(workspace):
 
 def _nodes(workspace):
     nodes = []
-    emitted = set()
     for source_name, kind in _ENTITY_TYPES:
         items = workspace.get(source_name)
         if not isinstance(items, list):
             continue
+        identifiers = [
+            _identifier(item.get("id"))
+            for item in items
+            if isinstance(item, dict)
+        ]
+        duplicates = {identifier for identifier, count in Counter(identifiers).items()
+                      if identifier and count > 1}
         for item in items:
             if not isinstance(item, dict):
                 continue
             entity_id = _identifier(item.get("id"))
-            node_id = f"{kind}:{entity_id}" if entity_id else ""
-            if not node_id or node_id in emitted:
+            if not entity_id or entity_id in duplicates:
                 continue
-            emitted.add(node_id)
+            node_id = f"{kind}:{entity_id}"
+            raw_label = item.get("name")
+            label = _display_text(raw_label)
+            if not label and not isinstance(raw_label, str):
+                label = entity_id
             nodes.append(
                 {
                     "id": node_id,
                     "kind": kind,
-                    "label": _text(item.get("name")) or entity_id,
-                    "detail": _text(item.get("description")),
+                    "label": label,
+                    "detail": _display_text(item.get("description")),
                 }
             )
     return sorted(nodes, key=lambda node: node["id"])
@@ -61,22 +81,37 @@ def _edges(workflow, node_ids):
     if not isinstance(workflow, dict) or not isinstance(workflow.get("steps"), list):
         return []
     edges = set()
+    previous_agent = ""
     for step in workflow["steps"]:
         if not isinstance(step, dict):
+            previous_agent = ""
             continue
-        endpoints = _step_endpoints(step, node_ids)
-        for source, target in zip(endpoints, endpoints[1:]):
-            if source != target:
-                edges.add((source, target))
+        agent = _agent_endpoint(step, node_ids)
+        if not agent:
+            previous_agent = ""
+            continue
+        if previous_agent and previous_agent != agent:
+            edges.add((previous_agent, agent))
+        for tool in _tool_endpoints(step, node_ids):
+            edges.add((agent, tool))
+        previous_agent = agent
     return [{"from": source, "to": target} for source, target in sorted(edges)]
 
 
-def _step_endpoints(step, node_ids):
+def _agent_endpoint(step, node_ids):
+    entity_id = _identifier(step.get("agentId"))
+    node_id = f"agent:{entity_id}" if entity_id else ""
+    return node_id if node_id in node_ids else ""
+
+
+def _tool_endpoints(step, node_ids):
+    tool_ids = step.get("toolIds")
+    if not isinstance(tool_ids, list):
+        return []
     endpoints = []
-    for kind in ("agent", "skill", "connector"):
-        value = step.get(f"{kind}_id", step.get(f"{kind}Id"))
+    for value in tool_ids:
         entity_id = _identifier(value)
-        node_id = f"{kind}:{entity_id}" if entity_id else ""
+        node_id = f"skill:{entity_id}" if entity_id else ""
         if node_id in node_ids:
             endpoints.append(node_id)
     return endpoints
@@ -87,12 +122,20 @@ def _count(nodes, kind):
 
 
 def _approval_mode(permissions):
-    return _text(permissions.get("mode")) if isinstance(permissions, dict) else ""
+    mode = permissions.get("mode") if isinstance(permissions, dict) else ""
+    return mode if mode == "compiled" else ""
 
 
 def _identifier(value):
-    return value.strip() if isinstance(value, str) else ""
+    value = value.strip() if isinstance(value, str) else ""
+    return value if _IDENTIFIER.fullmatch(value) else ""
 
 
-def _text(value):
-    return value if isinstance(value, str) else ""
+def _display_text(value):
+    if not isinstance(value, str) or len(value) > _MAX_DISPLAY_TEXT:
+        return ""
+    if any(ord(character) < 32 or ord(character) == 127 for character in value):
+        return ""
+    if _PATH.search(value) or _CREDENTIAL.search(value):
+        return ""
+    return value

@@ -43,7 +43,7 @@ class TestAlidora(unittest.TestCase):
         self.assertEqual(result["nodes"], [])
         self.assertEqual(result["edges"], [])
 
-    def test_map_payload_sorts_nodes_and_only_emits_resolved_edges(self):
+    def test_map_payload_projects_canonical_workflow_edges_only(self):
         result = alidora.map_payload(
             {
                 "agents": [
@@ -51,13 +51,16 @@ class TestAlidora(unittest.TestCase):
                     {"id": "review", "name": "Review"},
                     {"name": "Malformed"},
                 ],
-                "skills": [{"id": "draft", "name": "Draft"}],
+                "skills": [
+                    {"id": "draft", "name": "Draft"},
+                    {"id": "check", "name": "Check"},
+                ],
                 "connectors": [{"id": "github", "name": "GitHub"}],
                 "workflow": {
                     "steps": [
-                        {"id": "write", "agent_id": "writer", "skill_id": "draft"},
-                        {"id": "review", "agent_id": "review", "connector_id": "github"},
-                        {"agent_id": "missing", "skill_id": "draft"},
+                        {"id": "write", "agentId": "writer", "toolIds": ["draft", None, "missing"]},
+                        {"id": "review", "agentId": "review", "toolIds": ["check", "missing"]},
+                        {"agentId": "missing", "toolIds": ["draft"]},
                     ]
                 },
             }
@@ -65,14 +68,76 @@ class TestAlidora(unittest.TestCase):
 
         self.assertEqual(
             [node["id"] for node in result["nodes"]],
-            ["agent:review", "agent:writer", "connector:github", "skill:draft"],
+            ["agent:review", "agent:writer", "connector:github", "skill:check", "skill:draft"],
         )
         self.assertEqual(
             result["edges"],
             [
-                {"from": "agent:review", "to": "connector:github"},
+                {"from": "agent:review", "to": "skill:check"},
+                {"from": "agent:writer", "to": "agent:review"},
                 {"from": "agent:writer", "to": "skill:draft"},
             ],
+        )
+
+    def test_map_payload_drops_unsafe_strings_from_every_emitted_position(self):
+        result = alidora.map_payload(
+            {
+                "id": "C:\\private\\workspace",
+                "title": "/private/project",
+                "description": "token=must-not-leak",
+                "agents": [
+                    {"id": "C:\\private\\agent", "name": "password=hunter2"},
+                    {"id": "safe-agent", "name": "Review", "description": "sk-secret-value"},
+                ],
+                "skills": [{"id": "safe-skill", "name": "Bearer private-token", "description": "Useful"}],
+                "connectors": [{"id": "safe-connector", "name": "Connector", "description": "\\\\server\\share"}],
+                "permissions": {"mode": "authorization=private"},
+            }
+        )
+
+        self.assertEqual(result["workspace"], {"id": "", "title": "", "description": ""})
+        self.assertEqual(
+            result["nodes"],
+            [
+                {"id": "agent:safe-agent", "kind": "agent", "label": "Review", "detail": ""},
+                {"id": "connector:safe-connector", "kind": "connector", "label": "Connector", "detail": ""},
+                {"id": "skill:safe-skill", "kind": "skill", "label": "", "detail": "Useful"},
+            ],
+        )
+        self.assertEqual(result["summary"]["approval_mode"], "")
+        for forbidden in ("private", "must-not-leak", "hunter2", "secret-value", "Bearer", "server"):
+            self.assertNotIn(forbidden, repr(result))
+
+    def test_map_payload_rejects_duplicate_ids_independently_of_input_order(self):
+        first = {
+            "agents": [
+                {"id": "same", "name": "First"},
+                {"id": "same", "name": "Second"},
+                {"id": "other", "name": "Other"},
+            ]
+        }
+        second = {"agents": list(reversed(first["agents"]))}
+
+        self.assertEqual(alidora.map_payload(first), alidora.map_payload(second))
+        self.assertEqual(
+            alidora.map_payload(first)["nodes"],
+            [{"id": "agent:other", "kind": "agent", "label": "Other", "detail": ""}],
+        )
+
+    def test_map_payload_rejects_control_characters_and_overlong_identifiers(self):
+        result = alidora.map_payload(
+            {
+                "id": "workspace\x00id",
+                "title": "Normal\nTitle",
+                "agents": [{"id": "a" * 81, "name": "Too long"}],
+                "skills": [{"id": "valid", "name": "Useful\x1f detail"}],
+            }
+        )
+
+        self.assertEqual(result["workspace"], {"id": "", "title": "", "description": ""})
+        self.assertEqual(
+            result["nodes"],
+            [{"id": "skill:valid", "kind": "skill", "label": "", "detail": ""}],
         )
 
 
