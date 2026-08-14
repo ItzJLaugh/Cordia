@@ -103,6 +103,8 @@ fde-tasks.md
 
 # Workspace UX
 
+Workspace windows are agent-built artifacts. Default to a Cordia-native interactive DashView assembled from connectors, skills, artifacts, permissions, and context. A LiveView is allowed only when the connector supports it and the user explicitly enables it. A DerivedView combines multiple sources. Preserve each artifact's purpose, sources, provenance, view mode, and action permission requirements.
+
 The intended workspace experience is conversational:
 
 - Cordia agent occupies the left side of the workspace from top to bottom.

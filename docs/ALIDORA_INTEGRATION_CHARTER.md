@@ -19,6 +19,8 @@ Alidora is a named tab/module for users who need to:
 
 The product must not force a new user into a graph editor before Cordia has understood their work.
 
+Alidora explains the system behind agent-built workspace artifacts: why a DashView exists, the connectors/skills/artifacts it depends on, provenance, exposed actions, and whether an optional LiveView has been explicitly enabled.
+
 ## Shared foundation and non-negotiable boundaries
 
 Alidora consumes and acts through Cordia-owned contracts:

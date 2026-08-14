@@ -628,6 +628,27 @@ The bottom strip is for inspection/control, not primary configuration.
 
 # 13. Visual Workspace Windows
 
+## Windows Are Agent-Built Artifacts
+
+The default workspace window is an artifact Cordia builds to help the user do real work, not an assumed miniature or embedded third-party application.
+
+Each artifact must be inspectable for its purpose, source connectors/skills/artifacts, provenance, view mode, and action permission/approval requirements.
+
+```text
+DashView
+    Default Cordia-native interactive artifact assembled for a task.
+
+LiveView
+    Optional interactive surface. Use only when the connector supports it and
+    the user explicitly enables it; never imply a live third-party session.
+
+DerivedView
+    Cordia-native artifact assembled from multiple connectors, skills, or
+    compiled workspace context.
+```
+
+The agent builds and refines artifacts from user intent, connectors, skills, permissions, and workspace context. DashView is the default; LiveView is a deliberate capability-and-consent choice.
+
 The main workspace should contain real visual surfaces representing the user’s connected systems.
 
 Examples:

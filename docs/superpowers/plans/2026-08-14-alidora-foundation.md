@@ -16,6 +16,7 @@
 - Its only new API is authenticated and read-only: `GET /surveyor/alidora/map?id=<workspace_id>`.
 - Payloads exclude raw profile/artifact text, context-source values, mutations, provenance payloads, secrets, credentials, and local paths.
 - Cordia Workspace remains chat-first; Alidora is an advanced tab.
+- Workspace windows are agent-built artifacts. DashView is the default; LiveView requires connector support and explicit user enablement; DerivedView combines multiple sources.
 - Use TDD, `npm.cmd`, and `C:\Users\jacks\AppData\Local\Programs\Python\Python312\python.exe` when `python`/`py` is unavailable.
 
 ## Files
@@ -190,6 +191,8 @@ export async function getApi(path) {
 **Consumes:** Tasks 1–3 and the current workspace id.
 
 **Produces:** a non-primary Alidora entry point and evidence that Cordia and Alidora see the same saved workspace.
+
+The entry point and later renderer work must treat windows as artifacts with purpose, source connectors/skills/artifacts, provenance, view mode, and action permissions. This foundation does not create a LiveView; any future LiveView must prove both connector support and explicit user enablement.
 
 - [ ] **Step 1: Write a failing discovery assertion.**
 
