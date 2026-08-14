@@ -39,6 +39,14 @@
   .ai{margin-top:28px;padding-top:22px;border-top:1px solid var(--c-hair)}
   .ai-empty{background:var(--c-wash);border-radius:var(--r-lg);padding:28px;max-width:720px;color:var(--c-ink-2);font-size:var(--t-base);line-height:var(--lh-body)}
   .ai-empty button{margin-top:14px}
+  .ai-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;max-width:720px}
+  .ai-grid .panel{max-width:none;padding:20px;gap:10px}
+  .ai-list{margin:0;padding-left:18px;color:var(--c-ink-2);font-size:var(--t-sm);line-height:1.65}
+  .ai-list li+li{margin-top:6px}
+  .evidence{border-left:2px solid var(--c-moss);padding-left:11px;margin:0;color:var(--c-ink-2);font-size:var(--t-sm);line-height:1.55}
+  .evidence small{display:block;margin-top:4px;color:var(--c-ink-3);font-family:var(--f-label);font-size:var(--t-xs);letter-spacing:var(--tr-caps);text-transform:uppercase}
+  .mission{white-space:pre-wrap;font:var(--t-sm)/1.6 var(--f-ui);color:var(--c-ink-2);background:var(--c-wash);border-radius:var(--r-md);padding:14px;margin:0}
+  @media(max-width:640px){.ai-grid{grid-template-columns:1fr}}
 </style>
 </head>
 <body>
@@ -176,19 +184,49 @@
   els.resetBtn.addEventListener('click', function () { loadAccount(); setStatus(''); });
 
   async function loadAI() {
-    var r = await fetch(API + '/surveyor/profile', { credentials: 'same-origin' });
+    var results = await Promise.all([
+      fetch(API + '/surveyor/profile', { credentials: 'same-origin' }),
+      fetch(API + '/surveyor/artifacts', { credentials: 'same-origin' })
+    ]);
+    var r = results[0], artifactsResponse = results[1];
     if (r.status === 401) { els.ai.innerHTML = '<p class="ai-empty">Sign in to see your AI profile.</p>'; return; }
     var d = await r.json();
     if (!d.ok) { els.ai.innerHTML = '<p class="ai-empty">Surveyor is unavailable right now.</p>'; return; }
+    var ad = artifactsResponse.ok ? await artifactsResponse.json() : {};
+    var assessment = ad.assessment || {};
+    var artifacts = ad.artifacts || {};
     var ids = d.identifiers || [];
-    if (!ids.length) {
+    if (!ids.length && !(assessment.understanding || []).length && !(assessment.evidence || []).length) {
       els.ai.innerHTML = '<div class="ai-empty"><p>Surveyor hasn’t met you yet. A few questions is all it takes.</p><button class="btn" type="button" data-surveyor>Talk to Surveyor</button></div>';
       return;
     }
     var cards = ids.map(function (i, n) {
       return '<div class="panel" style="margin-top:14px"><span class="eyebrow">Identifier ' + (n + 1) + '</span><h2>' + esc(i.name) + '</h2><p class="sub">' + esc(i.meaning) + '</p><p class="sub"><b>Use AI this way</b> ' + esc(i.use_ai_this_way) + '</p></div>';
     }).join('');
-    els.ai.innerHTML = cards;
+    var understanding = (assessment.understanding || []).map(function (item) {
+      return '<li><b>' + esc(item.label) + '</b><br>' + esc(item.value) + '</li>';
+    }).join('') || '<li>Surveyor is still learning your work context.</li>';
+    var evidence = (assessment.evidence || []).map(function (item) {
+      return '<p class="evidence">&ldquo;' + esc(item.summary) + '&rdquo;<small>' + esc(item.confidence) + ' confidence</small></p>';
+    }).join('') || '<p class="sub">Keep talking with Surveyor to add evidence in your own words.</p>';
+    var connectors = (assessment.connectors || []).map(function (item) {
+      var name = item.id === 'github'
+        ? '<a href="github.html">GitHub</a>' : '<b>' + esc(item.name) + '</b>';
+      var availability = item.implementation_status === 'live' ? 'Available now' : 'Setup support planned';
+      return '<li>' + name + ' &mdash; ' + esc(item.status) + '<br><small>' + esc(availability) + '</small></li>';
+    }).join('') || '<li>No systems are confirmed yet.</li>';
+    var mission = String(artifacts['runtime/fde-tasks.md'] || '')
+      .replace(/^# FDE Mission Brief\s*/m, '').trim();
+    els.ai.innerHTML = cards +
+      '<div class="panel" style="margin-top:14px"><span class="eyebrow">Surveyor assessment</span><h2>' +
+      esc(assessment.title || 'What Cordia currently understands') + '</h2><p class="sub">An inspectable working hypothesis, not a score or test result.</p></div>' +
+      '<div class="ai-grid" style="margin-top:14px">' +
+        '<div class="panel"><h2>What we know</h2><ul class="ai-list">' + understanding + '</ul></div>' +
+        '<div class="panel"><h2>Connected systems</h2><ul class="ai-list">' + connectors + '</ul></div>' +
+        '<div class="panel"><h2>Evidence</h2>' + evidence + '</div>' +
+        '<div class="panel"><h2>FDE mission preview</h2><pre class="mission">' + esc(mission) + '</pre>' +
+          '<a class="btn" href="builder.html?from=surveyor">Build this workspace</a></div>' +
+      '</div>';
   }
 
   loadAccount().catch(function () {});

@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>GitHub &mdash; Cordia</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Newsreader:opsz,wght@6..72,400;6..72,500;6..72,600&family=Work+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="assets/cordia-ui.css">
+<style>
+  .page{padding:44px 0 96px}.lede{max-width:680px;margin-bottom:26px}.eyebrow{font-family:var(--f-label);font-size:var(--t-xs);letter-spacing:var(--tr-caps);text-transform:uppercase;color:var(--c-ink-3);margin:0 0 10px}h1,h2{font-family:var(--f-title);font-weight:500;color:var(--c-ink);margin:0}h1{font-size:var(--t-2xl);margin-bottom:10px}h2{font-size:var(--t-lg)}.sub{font-size:var(--t-base);line-height:var(--lh-body);color:var(--c-ink-2);margin:0}.panel{max-width:900px;background:var(--c-surface);border-radius:var(--r-lg);padding:24px;box-shadow:var(--e-1)}.status{font-size:var(--t-sm);color:var(--c-ink-2);margin:0}.repo{display:flex;justify-content:space-between;gap:18px;padding:16px 0;border-top:1px solid var(--c-hair)}.repo:first-child{border-top:0}.repo a{font-family:var(--f-title);font-size:var(--t-md);color:var(--c-moss);text-decoration:none}.repo p{font-size:var(--t-sm);line-height:1.5;color:var(--c-ink-2);margin:5px 0 0}.meta{font-family:var(--f-label);font-size:var(--t-xs);letter-spacing:var(--tr-caps);text-transform:uppercase;color:var(--c-ink-3);white-space:nowrap}.btn{display:inline-flex;align-items:center;border:0;cursor:pointer;background:var(--c-moss);color:#fff;border-radius:var(--r-pill);padding:11px 18px;font-family:var(--f-label);font-size:var(--t-xs);letter-spacing:var(--tr-caps);text-transform:uppercase;margin-top:14px}.btn[hidden]{display:none}@media(max-width:640px){.repo{display:block}.meta{margin-top:9px}}
+</style>
+</head>
+<body>
+<header id="shellHeader"></header>
+<main class="page"><div class="shell">
+  <div class="lede"><p class="eyebrow">Connector-native window</p><h1>GitHub</h1><p class="sub">Your repository context, rendered in Cordia. This first connector is read-only.</p></div>
+  <section class="panel"><p id="status" class="status">Checking GitHub connection…</p><div id="setup" hidden><p class="sub" style="margin-top:14px">Paste a fine-grained GitHub token with repository Metadata read access. Cordia encrypts it immediately and returns only a secret reference.</p><input id="token" type="password" autocomplete="off" placeholder="github_pat_…" aria-label="GitHub token" style="width:100%;box-sizing:border-box;margin-top:12px;padding:11px;border:1px solid var(--c-hair);border-radius:var(--r-md);font:var(--t-sm) var(--f-ui)"><button id="connect" class="btn" type="button">Connect GitHub</button></div><div id="repos" hidden></div></section>
+</div></main>
+<script src="assets/cordia-shell.js?v=93dc4041" data-nav="workspace"></script>
+<script>
+(function(){
+  'use strict';
+  var API=location.hostname==='localhost'?'http://127.0.0.1:9995':'';
+  var status=document.getElementById('status'),confirm=document.getElementById('confirm'),repos=document.getElementById('repos'),setup=document.getElementById('setup'),token=document.getElementById('token'),connect=document.getElementById('connect');
+  function esc(s){return String(s==null?'':s).replace(/[&<>\"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','\"':'&quot;'}[c];});}
+  function showRows(rows,limit){repos.hidden=false;var note=limit?'<p class="status">Showing up to '+esc(limit)+' recently updated repositories.</p>':'';repos.innerHTML=note+((rows||[]).map(function(repo){return '<article class="repo"><div><a href="'+esc(repo.url)+'" target="_blank" rel="noopener">'+esc(repo.name)+'</a><p>'+esc(repo.description||'No description provided.')+'</p></div><div class="meta">'+(repo.private?'Private':'Public')+(repo.default_branch?' · '+esc(repo.default_branch):'')+'</div></article>';}).join('')||'<p class="status">No repositories were returned for this connection.</p>');}
+  async function load(){var r=await fetch(API+'/surveyor/github/repositories',{credentials:'same-origin'});var d=await r.json().catch(function(){return {};});if(r.ok&&d.ok){status.textContent='GitHub is connected. Cordia can read these repositories.';showRows(d.repositories,d.repository_limit);return;}status.textContent=d.error||'GitHub is unavailable right now.';setup.hidden=!(r.status===409||r.status===422||r.status===503);}
+  connect.addEventListener('click',async function(){var value=(token.value||'').trim();if(!value){status.textContent='Enter a GitHub token to connect.';return;}connect.disabled=true;var r=await fetch(API+'/surveyor/github/token',{method:'POST',headers:{'Content-Type':'application/json'},credentials:'same-origin',body:JSON.stringify({token:value})});var d=await r.json().catch(function(){return {};});token.value='';connect.disabled=false;if(!r.ok||!d.ok){status.textContent=d.error||'GitHub could not validate that token.';return;}setup.hidden=true;status.textContent='GitHub token validated and encrypted. Reading repositories…';load();});
+  load().catch(function(){status.textContent='GitHub is unavailable right now.';});
+})();
+</script>
+</body>
+</html>
