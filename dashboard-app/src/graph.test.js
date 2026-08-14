@@ -29,3 +29,30 @@ test('alidoraMapToFlow sorts safe nodes and emits a non-editable graph', () => {
     { source: 'agent:review', target: 'skill:deploy' },
   ])
 })
+
+test('getApi bounds secret-bearing transport failures', async () => {
+  const originals = new Map()
+  function replaceGlobal(name, value) {
+    originals.set(name, Object.getOwnPropertyDescriptor(globalThis, name))
+    Object.defineProperty(globalThis, name, { configurable: true, writable: true, value })
+  }
+
+  replaceGlobal('location', { hostname: 'alidora.example.test' })
+  replaceGlobal('localStorage', { getItem: () => null })
+  replaceGlobal('fetch', async () => {
+    throw new Error('connection failed at C:\\private\\workspace with token=secret-value')
+  })
+
+  try {
+    const { getApi } = await import('./api.js?transport-regression')
+    await assert.rejects(
+      getApi('/surveyor/alidora/map?id=w-1'),
+      (error) => error.message === 'Request failed',
+    )
+  } finally {
+    for (const [name, descriptor] of originals) {
+      if (descriptor) Object.defineProperty(globalThis, name, descriptor)
+      else delete globalThis[name]
+    }
+  }
+})

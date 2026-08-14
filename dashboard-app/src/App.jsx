@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import '@xyflow/react/dist/style.css'
 
-import { getApi } from './api.js'
+import { getApi, safeErrorMessage } from './api.js'
 import DefinitionGraph from './DefinitionGraph.jsx'
 
 function workspaceIdFromQuery() {
@@ -25,7 +25,7 @@ export default function App() {
         setState(map && typeof map === 'object' ? { phase: 'ready', map } : { phase: 'empty' })
       })
       .catch((error) => {
-        if (active) setState({ phase: 'error', error: error.message || 'Request failed' })
+        if (active) setState({ phase: 'error', error: safeErrorMessage(error) })
       })
     return () => { active = false }
   }, [workspaceId])
