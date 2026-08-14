@@ -168,6 +168,18 @@
     return (String(s || '').toLowerCase().replace(/[^a-z0-9]+/g, '-')
       .replace(/^-|-$/g, '') || fallback);
   }
+  function uniqueSlug(s, fallback, used) {
+    // Capped and unique: two agents named "Checker" must not collapse into
+    // one id, or every step reference to the second silently means the first.
+    var base = slug(s, fallback).slice(0, 80).replace(/-$/, '');
+    var id = base, n = 2;
+    while (used[id]) {
+      id = base.slice(0, 80 - String('-' + n).length) + '-' + n;
+      n++;
+    }
+    used[id] = true;
+    return id;
+  }
 
   // ---- editors -------------------------------------------------------
   function drawAgents() {
@@ -337,8 +349,29 @@
   document.getElementById('saveBtn').addEventListener('click', function () {
     var name = document.getElementById('fName').value.trim();
     if (!name) { say('Give the interface a name first.', true); return; }
-    state.agents.forEach(function (a, i) { a.id = slug(a.name, 'agent' + (i + 1)); });
-    state.tools.forEach(function (t, i) { t.id = slug(t.name, 'tool' + (i + 1)); });
+    // Re-minting ids from display names must carry the steps along: every
+    // step captured its agentId/toolIds at add/seed time, and a re-slug
+    // without a remap leaves them pointing at ids that no longer exist
+    // (the profile-seeded catalogue ids all slug differently from their
+    // display names — 'reporter' vs 'Report Drafter').
+    var agentMap = {}, toolMap = {}, used = {};
+    state.agents.forEach(function (a, i) {
+      var next = uniqueSlug(a.name, 'agent' + (i + 1), used);
+      agentMap[a.id] = next;
+      a.id = next;
+    });
+    used = {};
+    state.tools.forEach(function (t, i) {
+      var next = uniqueSlug(t.name, 'tool' + (i + 1), used);
+      toolMap[t.id] = next;
+      t.id = next;
+    });
+    state.steps.forEach(function (s) {
+      if (Object.prototype.hasOwnProperty.call(agentMap, s.agentId)) s.agentId = agentMap[s.agentId];
+      s.toolIds = (s.toolIds || []).map(function (id) {
+        return Object.prototype.hasOwnProperty.call(toolMap, id) ? toolMap[id] : id;
+      });
+    });
 
     var definition = {
       name: name,
