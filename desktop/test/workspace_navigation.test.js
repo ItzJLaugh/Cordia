@@ -25,12 +25,9 @@ test('renders a non-primary Alidora link for one safe authenticated workspace id
   const model = renderAlidoraNavigation(host, 'w-1_A.2', document);
 
   assert.deepEqual(model, {
-    primarySurface: 'Cordia Agent',
-    navigation: {
-      label: 'Alidora',
-      subtitle: 'Agentic System Builder',
-      href: 'dashboard/?workspace=w-1_A.2',
-    },
+    label: 'Alidora',
+    subtitle: 'Agentic System Builder',
+    href: 'dashboard/?workspace=w-1_A.2',
   });
   assert.equal(host.children.length, 1);
   assert.equal(host.children[0].tagName, 'a');

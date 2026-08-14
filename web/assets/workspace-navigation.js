@@ -14,12 +14,9 @@
     if (typeof workspaceId !== 'string' || !SAFE_WORKSPACE_ID.test(workspaceId) ||
         CREDENTIAL_SHAPED_ID.test(workspaceId)) return null;
     return {
-      primarySurface: 'Cordia Agent',
-      navigation: {
-        label: 'Alidora',
-        subtitle: 'Agentic System Builder',
-        href: 'dashboard/?workspace=' + encodeURIComponent(workspaceId),
-      },
+      label: 'Alidora',
+      subtitle: 'Agentic System Builder',
+      href: 'dashboard/?workspace=' + encodeURIComponent(workspaceId),
     };
   }
 
@@ -30,13 +27,13 @@
 
     var link = document.createElement('a');
     link.className = 'alidora-nav';
-    link.setAttribute('href', model.navigation.href);
+    link.setAttribute('href', model.href);
     link.setAttribute('data-surface', 'non-primary');
     link.setAttribute('aria-label', 'Open Alidora Agentic System Builder');
     var label = document.createElement('strong');
-    label.textContent = model.navigation.label;
+    label.textContent = model.label;
     var subtitle = document.createElement('small');
-    subtitle.textContent = model.navigation.subtitle;
+    subtitle.textContent = model.subtitle;
     link.append(label, subtitle);
     host.append(link);
     return model;
