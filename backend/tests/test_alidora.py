@@ -1,9 +1,13 @@
 import os
 import sys
 import unittest
+from types import SimpleNamespace
+from unittest.mock import patch
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+sys.modules["cordia_auth"] = SimpleNamespace()
+import training_backend
 from surveyor import alidora
 
 
@@ -192,6 +196,124 @@ class TestAlidora(unittest.TestCase):
         )
         for forbidden in (posix_usr, posix_root, aws_secret, github_pat):
             self.assertNotIn(forbidden, repr(result))
+
+
+class TestAlidoraMapEndpoint(unittest.TestCase):
+    def handler(self, path="/surveyor/alidora/map?id=w-1", email="owner@example.test"):
+        handler = object.__new__(training_backend.H)
+        handler.path = path
+        handler._surv_guard = lambda: (email, None) if email else (None, True)
+        handler.response = None
+        handler._json = lambda payload, status=200: setattr(handler, "response", (payload, status))
+        return handler
+
+    def test_requires_workspace_id_without_reading_state(self):
+        handler = self.handler(path="/surveyor/alidora/map")
+
+        def forbidden(*_args, **_kwargs):
+            raise AssertionError("map endpoint must not read state without an id")
+
+        surveyor = SimpleNamespace(store=SimpleNamespace(get_workspace=forbidden), alidora=alidora)
+        with patch.object(training_backend, "surveyor", surveyor):
+            handler._surv_alidora_map()
+
+        self.assertEqual(handler.response, ({"ok": False, "error": "workspace id is required"}, 400))
+
+    def test_hides_another_users_workspace(self):
+        handler = self.handler(email="other@example.test")
+        state = {"id": "w-1", "title": "Owner workspace"}
+        store = SimpleNamespace(
+            get_workspace=lambda email, workspace_id: state
+            if (email, workspace_id) == ("owner@example.test", "w-1")
+            else None
+        )
+        surveyor = SimpleNamespace(store=store, alidora=alidora)
+
+        with patch.object(training_backend, "surveyor", surveyor):
+            handler._surv_alidora_map()
+
+        self.assertEqual(handler.response, ({"ok": False, "error": "workspace not found"}, 404))
+
+    def test_returns_a_safe_map_for_the_authenticated_owners_workspace(self):
+        handler = self.handler()
+        state = {
+            "id": "w-1",
+            "title": "Launch",
+            "description": "Ready",
+            "agents": [{"id": "review", "name": "Review"}],
+            "skills": [{"id": "draft", "name": "Draft"}],
+            "workflow": {"steps": [{"agentId": "review", "toolIds": ["draft"]}]},
+            "permissions": {"mode": "compiled"},
+            "provenance": [{"secret": "must-not-leak"}],
+        }
+        surveyor = SimpleNamespace(
+            store=SimpleNamespace(get_workspace=lambda email, workspace_id: state),
+            alidora=alidora,
+        )
+
+        with patch.object(training_backend, "surveyor", surveyor):
+            handler._surv_alidora_map()
+
+        self.assertEqual(
+            handler.response,
+            (
+                {
+                    "ok": True,
+                    "map": {
+                        "workspace": {"id": "w-1", "title": "Launch", "description": "Ready"},
+                        "nodes": [
+                            {"id": "agent:review", "kind": "agent", "label": "Review", "detail": ""},
+                            {"id": "skill:draft", "kind": "skill", "label": "Draft", "detail": ""},
+                        ],
+                        "edges": [{"from": "agent:review", "to": "skill:draft"}],
+                        "summary": {"agents": 1, "skills": 1, "connectors": 0, "approval_mode": "compiled"},
+                    },
+                },
+                200,
+            ),
+        )
+        self.assertNotIn("must-not-leak", repr(handler.response))
+
+    def test_only_reads_state_and_projects_the_map_without_writing_or_executing(self):
+        handler = self.handler()
+
+        def forbidden(*_args, **_kwargs):
+            raise AssertionError("map endpoint must not write, execute, or set up connectors")
+
+        store = SimpleNamespace(
+            get_workspace=lambda _email, _workspace_id: {"id": "w-1"},
+            save_workspace=forbidden,
+            log_event=forbidden,
+            get_interface=forbidden,
+            get_connector_states=forbidden,
+        )
+        surveyor = SimpleNamespace(
+            store=store,
+            alidora=alidora,
+            vault=SimpleNamespace(get=forbidden),
+            skills=SimpleNamespace(execute=forbidden),
+            capability_gateway=SimpleNamespace(execute=forbidden),
+            connectors=SimpleNamespace(setup=forbidden),
+        )
+
+        with patch.object(training_backend, "surveyor", surveyor):
+            handler._surv_alidora_map()
+
+        self.assertEqual(
+            handler.response,
+            (
+                {
+                    "ok": True,
+                    "map": {
+                        "workspace": {"id": "w-1", "title": "", "description": ""},
+                        "nodes": [],
+                        "edges": [],
+                        "summary": {"agents": 0, "skills": 0, "connectors": 0, "approval_mode": ""},
+                    },
+                },
+                200,
+            ),
+        )
 
 
 if __name__ == "__main__":
