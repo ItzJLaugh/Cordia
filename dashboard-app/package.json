@@ -1,0 +1,20 @@
+{
+  "name": "cordia-dashboard",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Cordia Agent Dashboard — the visual canvas surface. Isolated build; the vanilla site never touches this toolchain.",
+  "type": "module",
+  "scripts": {
+    "build": "vite build",
+    "watch": "vite build --watch"
+  },
+  "dependencies": {
+    "@xyflow/react": "^12.8.6",
+    "react": "^19.2.1",
+    "react-dom": "^19.2.1"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "^5.1.2",
+    "vite": "^7.3.4"
+  }
+}
