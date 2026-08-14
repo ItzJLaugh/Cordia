@@ -37,7 +37,7 @@ body {
 
 .node-agent {
   width: 210px;
-  max-height: 132px;
+  max-height: 180px;
   overflow: hidden;
   padding: 12px 14px;
   border: 1px solid rgba(11, 11, 11, 0.12);
@@ -75,3 +75,13 @@ body {
   -webkit-line-clamp: 3;
   -webkit-box-orient: vertical;
 }
+.node-status {
+  display: grid;
+  gap: 3px;
+  margin: 9px 0 0;
+  color: #3A3A3A;
+  font-size: 10.5px;
+}
+.node-status div { display: flex; justify-content: space-between; gap: 8px; }
+.node-status dt { color: #6E6E6E; }
+.node-status dd { margin: 0; text-align: right; }

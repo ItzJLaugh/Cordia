@@ -1,8 +1,10 @@
 import copy
 import importlib
+import json
 import os
 import sys
 import unittest
+from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 
@@ -10,10 +12,67 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 _MISSING = object()
 _ORIGINAL_CORDIA_AUTH = sys.modules.get("cordia_auth", _MISSING)
-from surveyor import alidora
+from surveyor import alidora, workspace_state
 
 
 class TestAlidora(unittest.TestCase):
+    def test_fixtures_do_not_embed_live_provider_key_literals(self):
+        repository_root = Path(__file__).parents[2]
+        forbidden_prefix = "sk_" + "live_"
+        paths = (
+            Path(__file__),
+            Path(__file__).parent / "fixtures" / "alidora_connector_display.json",
+            repository_root / "dashboard-app" / "src" / "graph.test.js",
+        )
+
+        for path in paths:
+            self.assertNotIn(forbidden_prefix, path.read_text(encoding="utf-8"), str(path))
+
+    def test_map_payload_matches_the_backend_connector_display_fixture(self):
+        fixture_path = Path(__file__).parent / "fixtures" / "alidora_connector_display.json"
+        fixture = json.loads(fixture_path.read_text(encoding="utf-8"))
+        state = workspace_state.from_interface(
+            fixture["workspace_id"],
+            fixture["source_definition"],
+            fixture["connector_states"],
+        )
+        for connector_id, runtime_status in fixture["runtime_observations"].items():
+            state = workspace_state.record_connector_runtime(state, connector_id, runtime_status)
+
+        result = alidora.map_payload(state)
+
+        self.assertEqual(result, fixture["expected_map"])
+        serialized = repr(result)
+        for value in (
+            "credential=synthetic-stripe-example",
+            "AIzaSyExampleGoogleCredentialMaterial",
+            "glpat-exampleGitLabCredentialMaterial",
+            "opaque-material-7ff434068d6547c1906d2dcf4ad3c531",
+            "Draft confidential launch",
+            "Customer-provided instructions",
+        ):
+            self.assertNotIn(value, serialized)
+
+    def test_map_payload_omits_connectors_with_non_contract_enum_values(self):
+        fields = {
+            "status": "confirmed",
+            "implementation_status": "live",
+            "lifecycle": "live",
+            "runtime_status": "live",
+        }
+        invalid_values = {
+            "status": "authorized",
+            "implementation_status": "ready",
+            "lifecycle": "healthy",
+            "runtime_status": "reachable",
+        }
+
+        for field, invalid_value in invalid_values.items():
+            with self.subTest(field=field):
+                connector = {"id": "github", **fields, field: invalid_value}
+                result = alidora.map_payload({"connectors": [connector]})
+                self.assertEqual(result["nodes"], [])
+
     def test_map_payload_is_safe_and_deterministic(self):
         state = {
             "id": "w-1",
@@ -30,11 +89,11 @@ class TestAlidora(unittest.TestCase):
 
         self.assertEqual(
             result["workspace"],
-            {"id": "w-1", "title": "Launch", "description": ""},
+            {"id": "w-1", "title": "", "description": ""},
         )
         self.assertEqual(
             result["nodes"],
-            [{"id": "agent:review", "kind": "agent", "label": "Review", "detail": ""}],
+            [{"id": "agent:1", "kind": "agent", "label": "Agent 1", "detail": ""}],
         )
         self.assertEqual(
             result["summary"],
@@ -87,14 +146,14 @@ class TestAlidora(unittest.TestCase):
 
         self.assertEqual(
             [node["id"] for node in result["nodes"]],
-            ["agent:review", "agent:writer", "connector:github", "skill:check", "skill:draft"],
+            ["agent:1", "agent:2", "skill:1", "skill:2"],
         )
         self.assertEqual(
             result["edges"],
             [
-                {"from": "agent:review", "to": "skill:check"},
-                {"from": "agent:writer", "to": "agent:review"},
-                {"from": "agent:writer", "to": "skill:draft"},
+                {"from": "agent:1", "to": "skill:1"},
+                {"from": "agent:2", "to": "agent:1"},
+                {"from": "agent:2", "to": "skill:2"},
             ],
         )
 
@@ -118,9 +177,8 @@ class TestAlidora(unittest.TestCase):
         self.assertEqual(
             result["nodes"],
             [
-                {"id": "agent:safe-agent", "kind": "agent", "label": "Review", "detail": ""},
-                {"id": "connector:safe-connector", "kind": "connector", "label": "Connector", "detail": ""},
-                {"id": "skill:safe-skill", "kind": "skill", "label": "", "detail": "Useful"},
+                {"id": "agent:1", "kind": "agent", "label": "Agent 1", "detail": ""},
+                {"id": "skill:1", "kind": "skill", "label": "Skill 1", "detail": ""},
             ],
         )
         self.assertEqual(result["summary"]["approval_mode"], "")
@@ -140,7 +198,7 @@ class TestAlidora(unittest.TestCase):
         self.assertEqual(alidora.map_payload(first), alidora.map_payload(second))
         self.assertEqual(
             alidora.map_payload(first)["nodes"],
-            [{"id": "agent:other", "kind": "agent", "label": "Other", "detail": ""}],
+            [{"id": "agent:1", "kind": "agent", "label": "Agent 1", "detail": ""}],
         )
 
     def test_map_payload_rejects_control_characters_and_overlong_identifiers(self):
@@ -156,7 +214,7 @@ class TestAlidora(unittest.TestCase):
         self.assertEqual(result["workspace"], {"id": "", "title": "", "description": ""})
         self.assertEqual(
             result["nodes"],
-            [{"id": "skill:valid", "kind": "skill", "label": "", "detail": ""}],
+            [{"id": "skill:1", "kind": "skill", "label": "Skill 1", "detail": ""}],
         )
 
     def test_map_payload_drops_embedded_paths_and_common_credential_shapes(self):
@@ -178,10 +236,9 @@ class TestAlidora(unittest.TestCase):
         self.assertEqual(
             result["nodes"],
             [
-                {"id": "agent:path", "kind": "agent", "label": "", "detail": ""},
-                {"id": "agent:review", "kind": "agent", "label": "Review Notes", "detail": "Checks product evidence."},
-                {"id": "connector:database", "kind": "connector", "label": "Postgres", "detail": ""},
-                {"id": "skill:deploy", "kind": "skill", "label": "", "detail": ""},
+                {"id": "agent:1", "kind": "agent", "label": "Agent 1", "detail": ""},
+                {"id": "agent:2", "kind": "agent", "label": "Agent 2", "detail": ""},
+                {"id": "skill:1", "kind": "skill", "label": "Skill 1", "detail": ""},
             ],
         )
         for forbidden in ("private", "home", "server", "xoxb", "ghp", "AKIA", "password@"):
@@ -205,8 +262,8 @@ class TestAlidora(unittest.TestCase):
         self.assertEqual(
             result["nodes"],
             [
-                {"id": "agent:safe", "kind": "agent", "label": "Review Notes", "detail": ""},
-                {"id": "skill:safe-skill", "kind": "skill", "label": "", "detail": "Useful summary"},
+                {"id": "agent:1", "kind": "agent", "label": "Agent 1", "detail": ""},
+                {"id": "skill:1", "kind": "skill", "label": "Skill 1", "detail": ""},
             ],
         )
         for forbidden in (posix_usr, posix_root, aws_secret, github_pat):
@@ -294,12 +351,12 @@ class TestAlidoraMapEndpoint(unittest.TestCase):
                 {
                     "ok": True,
                     "map": {
-                        "workspace": {"id": "w-1", "title": "Launch", "description": "Ready"},
+                        "workspace": {"id": "w-1", "title": "", "description": ""},
                         "nodes": [
-                            {"id": "agent:review", "kind": "agent", "label": "Review", "detail": ""},
-                            {"id": "skill:draft", "kind": "skill", "label": "Draft", "detail": ""},
+                            {"id": "agent:1", "kind": "agent", "label": "Agent 1", "detail": ""},
+                            {"id": "skill:1", "kind": "skill", "label": "Skill 1", "detail": ""},
                         ],
-                        "edges": [{"from": "agent:review", "to": "skill:draft"}],
+                        "edges": [{"from": "agent:1", "to": "skill:1"}],
                         "summary": {"agents": 1, "skills": 1, "connectors": 0, "approval_mode": "compiled"},
                     },
                 },

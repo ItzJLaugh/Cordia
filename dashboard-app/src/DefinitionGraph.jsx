@@ -9,7 +9,14 @@ function AlidoraNode({ data }) {
       <div className="node-name">{data.label || data.kind || 'System artifact'}</div>
       {data.kind && <div className="node-role">{data.kind}</div>}
       {data.detail && <div className="node-instructions">{data.detail}</div>}
-      {data.status && <div className="node-role">{data.status}</div>}
+      {data.connectorStatus && (
+        <dl className="node-status" aria-label="Connector status">
+          <div><dt>Consent</dt><dd>{data.connectorStatus.consent}</dd></div>
+          <div><dt>Adapter</dt><dd>{data.connectorStatus.implementation}</dd></div>
+          <div><dt>Lifecycle</dt><dd>{data.connectorStatus.lifecycle.replaceAll('_', ' ')}</dd></div>
+          <div><dt>Runtime</dt><dd>{data.connectorStatus.runtime.replaceAll('_', ' ')}</dd></div>
+        </dl>
+      )}
       <Handle type="target" position={Position.Left} isConnectable={false} />
       <Handle type="source" position={Position.Right} isConnectable={false} />
     </div>

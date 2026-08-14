@@ -4,42 +4,33 @@ from __future__ import annotations
 from collections import Counter
 import re
 
+from .artifacts import connector_catalog
+
 
 _ENTITY_TYPES = (
     ("agents", "agent"),
     ("skills", "skill"),
-    ("connectors", "connector"),
 )
 _IDENTIFIER = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$")
-_CREDENTIAL = re.compile(
-    r"\b(?:api[ _-]?key|access[ _-]?token|token|secret|password|passwd|credential|authorization)\b\s*(?:[:=]|\bis\b)|"
-    r"\b(?:sk|pk|rk)-[A-Za-z0-9_-]{8,}|\bgh[pousr]_[A-Za-z0-9]{20,}|\bxox[baprs]-[A-Za-z0-9-]{10,}|"
-    r"\bAKIA[0-9A-Z]{16}\b|\bAWS_(?:ACCESS_KEY_ID|SECRET_ACCESS_KEY)\s*=|"
-    r"\bgithub_pat_[A-Za-z0-9_]{20,}|\bbearer\s+\S+|"
-    r"\b[a-z][a-z0-9+.-]*://[^\s/:@]+:[^\s@/]+@",
-    re.IGNORECASE,
-)
-_PATH = re.compile(
-    r"(?<![A-Za-z0-9])(?:[A-Za-z]:[\\/]|[\\/]{2}[^\\/\s]+[\\/])|"
-    r"(?<![A-Za-z0-9:/])/(?:[^/\s]+/)+[^/\s]+|(?:^~[\\/])",
-    re.IGNORECASE,
-)
-_MAX_DISPLAY_TEXT = 240
+_CONSENT = {"confirmed", "suggested"}
+_IMPLEMENTATION = {"live", "planned"}
+_LIFECYCLE = {"proposed", "needs_handoff", "live", "failed"}
+_RUNTIME = {"live", "needs_attention"}
+_CONNECTORS = connector_catalog()
 
 
 def map_payload(workspace):
     """Return an allow-listed map payload without workspace-private data."""
     workspace = workspace if isinstance(workspace, dict) else {}
-    nodes = _nodes(workspace)
-    node_ids = {node["id"] for node in nodes}
+    nodes, endpoints = _node_projection(workspace)
     return {
         "workspace": {
             "id": _identifier(workspace.get("id")),
-            "title": _display_text(workspace.get("title")),
-            "description": _display_text(workspace.get("description")),
+            "title": "",
+            "description": "",
         },
         "nodes": nodes,
-        "edges": _edges(workspace.get("workflow"), node_ids),
+        "edges": _edges(workspace.get("workflow"), endpoints),
         "summary": {
             "agents": _count(nodes, "agent"),
             "skills": _count(nodes, "skill"),
@@ -49,42 +40,74 @@ def map_payload(workspace):
     }
 
 
-def _nodes(workspace):
+def _node_projection(workspace):
     nodes = []
+    endpoints = {}
     for source_name, kind in _ENTITY_TYPES:
-        items = workspace.get(source_name)
-        if not isinstance(items, list):
-            continue
-        identifiers = [
-            _identifier(item.get("id"))
-            for item in items
-            if isinstance(item, dict)
-        ]
-        duplicates = {identifier for identifier, count in Counter(identifiers).items()
-                      if identifier and count > 1}
-        for item in items:
-            if not isinstance(item, dict):
-                continue
-            entity_id = _identifier(item.get("id"))
-            if not entity_id or entity_id in duplicates:
-                continue
-            node_id = f"{kind}:{entity_id}"
-            raw_label = item.get("name")
-            label = _display_text(raw_label)
-            if not label and not isinstance(raw_label, str):
-                label = entity_id
+        for index, (entity_id, _item) in enumerate(_unique_entities(workspace.get(source_name)), 1):
+            node_id = f"{kind}:{index}"
+            endpoints[(kind, entity_id)] = node_id
             nodes.append(
                 {
                     "id": node_id,
                     "kind": kind,
-                    "label": label,
-                    "detail": _display_text(item.get("description")),
+                    "label": f"{kind.title()} {index}",
+                    "detail": "",
                 }
             )
-    return sorted(nodes, key=lambda node: node["id"])
+
+    for entity_id, item in _unique_entities(workspace.get("connectors")):
+        status = _connector_status(item)
+        manifest = _CONNECTORS.get(entity_id)
+        if not status or not manifest:
+            continue
+        node_id = f"connector:{entity_id}"
+        endpoints[("connector", entity_id)] = node_id
+        nodes.append(
+            {
+                "id": node_id,
+                "kind": "connector",
+                "label": manifest["name"],
+                "detail": "",
+                "connector_status": status,
+            }
+        )
+    return sorted(nodes, key=lambda node: node["id"]), endpoints
 
 
-def _edges(workflow, node_ids):
+def _unique_entities(items):
+    if not isinstance(items, list):
+        return []
+    entries = [
+        (_identifier(item.get("id")), item)
+        for item in items
+        if isinstance(item, dict)
+    ]
+    counts = Counter(entity_id for entity_id, _item in entries if entity_id)
+    return sorted(
+        ((entity_id, item) for entity_id, item in entries if counts[entity_id] == 1),
+        key=lambda entry: entry[0],
+    )
+
+
+def _connector_status(item):
+    consent = item.get("status")
+    implementation = item.get("implementation_status")
+    lifecycle = item.get("lifecycle")
+    runtime = item.get("runtime_status")
+    if consent not in _CONSENT or implementation not in _IMPLEMENTATION or lifecycle not in _LIFECYCLE:
+        return None
+    if runtime is not None and runtime not in _RUNTIME:
+        return None
+    return {
+        "consent": consent,
+        "implementation": implementation,
+        "lifecycle": lifecycle,
+        "runtime": runtime or "not_observed",
+    }
+
+
+def _edges(workflow, endpoints):
     if not isinstance(workflow, dict) or not isinstance(workflow.get("steps"), list):
         return []
     edges = set()
@@ -93,35 +116,34 @@ def _edges(workflow, node_ids):
         if not isinstance(step, dict):
             previous_agent = ""
             continue
-        agent = _agent_endpoint(step, node_ids)
+        agent = _agent_endpoint(step, endpoints)
         if not agent:
             previous_agent = ""
             continue
         if previous_agent and previous_agent != agent:
             edges.add((previous_agent, agent))
-        for tool in _tool_endpoints(step, node_ids):
+        for tool in _tool_endpoints(step, endpoints):
             edges.add((agent, tool))
         previous_agent = agent
     return [{"from": source, "to": target} for source, target in sorted(edges)]
 
 
-def _agent_endpoint(step, node_ids):
+def _agent_endpoint(step, endpoints):
     entity_id = _identifier(step.get("agentId"))
-    node_id = f"agent:{entity_id}" if entity_id else ""
-    return node_id if node_id in node_ids else ""
+    return endpoints.get(("agent", entity_id), "")
 
 
-def _tool_endpoints(step, node_ids):
+def _tool_endpoints(step, endpoints):
     tool_ids = step.get("toolIds")
     if not isinstance(tool_ids, list):
         return []
-    endpoints = []
+    tools = []
     for value in tool_ids:
         entity_id = _identifier(value)
-        node_id = f"skill:{entity_id}" if entity_id else ""
-        if node_id in node_ids:
-            endpoints.append(node_id)
-    return endpoints
+        node_id = endpoints.get(("skill", entity_id), "")
+        if node_id:
+            tools.append(node_id)
+    return tools
 
 
 def _count(nodes, kind):
@@ -136,13 +158,3 @@ def _approval_mode(permissions):
 def _identifier(value):
     value = value.strip() if isinstance(value, str) else ""
     return value if _IDENTIFIER.fullmatch(value) else ""
-
-
-def _display_text(value):
-    if not isinstance(value, str) or len(value) > _MAX_DISPLAY_TEXT:
-        return ""
-    if any(ord(character) < 32 or ord(character) == 127 for character in value):
-        return ""
-    if _PATH.search(value) or _CREDENTIAL.search(value):
-        return ""
-    return value

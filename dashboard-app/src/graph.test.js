@@ -1,16 +1,61 @@
 import assert from 'node:assert/strict'
+import fs from 'node:fs'
 import test from 'node:test'
 
 import { alidoraMapToFlow } from './graph.js'
+
+const connectorFixture = JSON.parse(fs.readFileSync(
+  new URL('../../backend/tests/fixtures/alidora_connector_display.json', import.meta.url),
+  'utf8',
+))
+
+test('alidoraMapToFlow consumes the backend connector display contract', () => {
+  const flow = alidoraMapToFlow(connectorFixture.expected_map)
+  const byId = new Map(flow.nodes.map((node) => [node.id, node]))
+
+  assert.deepEqual(byId.get('connector:github').data.connectorStatus, {
+    consent: 'confirmed',
+    implementation: 'live',
+    lifecycle: 'live',
+    runtime: 'live',
+  })
+  assert.deepEqual(byId.get('connector:notion').data.connectorStatus, {
+    consent: 'suggested',
+    implementation: 'planned',
+    lifecycle: 'proposed',
+    runtime: 'not_observed',
+  })
+  assert.equal(JSON.stringify(flow).includes('credential=synthetic-stripe-example'), false)
+})
+
+test('alidoraMapToFlow drops connector nodes with invalid display enums', () => {
+  const flow = alidoraMapToFlow({
+    nodes: [{
+      id: 'connector:github',
+      kind: 'connector',
+      label: 'GitHub',
+      detail: '',
+      connector_status: {
+        consent: 'authorized',
+        implementation: 'live',
+        lifecycle: 'live',
+        runtime: 'live',
+      },
+    }],
+    edges: [],
+  })
+
+  assert.deepEqual(flow.nodes, [])
+})
 
 test('alidoraMapToFlow sorts safe nodes and emits a non-editable graph', () => {
   const flow = alidoraMapToFlow({
     nodes: [
       {
         id: 'skill:deploy', kind: 'skill', label: 'Deploy', detail: 'Release',
-        status: 'ready', secret: 'must-not-cross-the-renderer-boundary',
+        status: 'invented-outside-the-contract', secret: 'must-not-cross-the-renderer-boundary',
       },
-      { id: 'agent:review', kind: 'agent', label: 'Review', detail: '', status: 'ready' },
+      { id: 'agent:review', kind: 'agent', label: 'Review', detail: '' },
     ],
     edges: [
       { from: 'agent:review', to: 'skill:deploy', hidden: 'must-not-be-copied' },
@@ -20,7 +65,7 @@ test('alidoraMapToFlow sorts safe nodes and emits a non-editable graph', () => {
 
   assert.deepEqual(flow.nodes.map((node) => node.id), ['agent:review', 'skill:deploy'])
   assert.deepEqual(flow.nodes[1].data, {
-    kind: 'skill', label: 'Deploy', detail: 'Release', status: 'ready',
+    kind: 'skill', label: 'Deploy', detail: 'Release',
   })
   assert.equal(flow.nodes[0].draggable, false)
   assert.equal(flow.nodes[0].connectable, false)

@@ -6,11 +6,11 @@
 
 Cordia remains the conversational Forward Deployed Engineer and everyday operating environment. Alidora is its advanced system-building module.
 
-## Foundation status (verified)
+## Foundation status (in review)
 
-The authenticated, read-only Alidora System Map is complete. It projects the signed-in user's canonical workspace and is linked from the non-primary Cordia workspace navigation without changing Cordia's chat-first default.
+The current branch packages an authenticated, read-only Alidora System Map and links it from the non-primary Cordia workspace navigation without changing Cordia's chat-first default. The visible foundation is limited to safe agent/skill topology plus catalog-backed connectors with explicit consent, implementation, lifecycle, and runtime status. It remains in review until an independent re-review passes.
 
-Authoring, execution, connector setup, LiveView, and approval decisions remain deferred. The map has no independent state, execution, connector, or approval path.
+Permissions, provenance, artifact purpose/source/view-mode/action inspection, authoring, execution, connector setup, LiveView, approval decisions, runs, and traces remain deferred. The map has no independent state, execution, connector, or approval path.
 
 ## User-facing role
 
@@ -25,7 +25,7 @@ Alidora is a named tab/module for users who need to:
 
 The product must not force a new user into a graph editor before Cordia has understood their work.
 
-Alidora explains the system behind agent-built workspace artifacts: why a DashView exists, the connectors/skills/artifacts it depends on, provenance, exposed actions, and whether an optional LiveView has been explicitly enabled.
+The complete Alidora product is intended to explain the system behind agent-built workspace artifacts: why a DashView exists, the connectors/skills/artifacts it depends on, provenance, exposed actions, and whether an optional LiveView has been explicitly enabled. This foundation does not render those artifact or view-mode details.
 
 ## Shared foundation and non-negotiable boundaries
 
@@ -37,7 +37,7 @@ Alidora consumes and acts through Cordia-owned contracts:
 | Workspace state and provenance | Canonical workspace state | Project and mutate through typed state operations |
 | Connectors, tools, scripts, and skills | Cordia capability registry/gateway | Select/configure; never duplicate catalogs |
 | Permissions, approvals, audit | Cordia ALLOW / ASK / DENY runtime | Display and request; never bypass |
-| Secrets | Cordia vault/secret references | Never read or expose |
+| Secrets | Cordia vault/secret references | Consume neither vault values nor raw-secret fields |
 | Outcomes and intent misses | Cordia bounded feedback pipeline | Link to, never replace |
 
 No Alidora feature may create an alternate execution gateway, hidden graph state, independent connector truth, independent permission decision, raw-secret path, or competing self-learning loop.
@@ -58,9 +58,21 @@ Before accepting any Alidora component, verify:
 - state/provenance ownership is singular and explicit;
 - capabilities have confirmed connector/runtime prerequisites;
 - ASK and DENY cannot be bypassed by UI or direct handler calls;
-- renderer/API output excludes secrets, raw credentials, and local paths;
+- the foundation map structurally omits arbitrary workspace titles/descriptions and entity names/descriptions, context values, mutations, provenance, and artifact text;
+- the only canonical locator returned is a grammar-bounded workspace id; agent/skill display identities are synthetic, while connector labels and all connector status values come from catalog constants and validated enums. This boundary does not claim to classify every arbitrary secret-shaped identifier;
 - source tests and relevant frontend build pass in the correct runtime directory;
 - the Cordia Workspace and Alidora show the same post-mutation canonical state.
+
+Reproduce the dashboard dependency tree and production bundle on Node `^20.19.0 || >=22.12.0` from the repository root:
+
+```powershell
+Set-Location dashboard-app
+npm.cmd ci
+npm.cmd test
+npm.cmd run build
+```
+
+The build must leave `web/dashboard/index.html` and every referenced hashed asset staged or committed together.
 
 ## Merge policy
 

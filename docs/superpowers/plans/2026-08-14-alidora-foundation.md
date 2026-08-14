@@ -10,11 +10,13 @@
 
 **Spec:** `docs/ALIDORA_INTEGRATION_CHARTER.md`
 
+**Current status:** The packaged read-only topology slice is implemented and awaiting independent whole-branch re-review. The task checkboxes below preserve the original execution instructions; current review state is recorded in the SDD ledger, not inferred from these historical checkboxes. Permissions, provenance, artifact inspection, view modes, actions, runs, traces, approvals, setup, execution, authoring, and LiveView are not delivered by this plan.
+
 ## Global Constraints
 
 - Alidora adds no graph-owned state, registry, gateway, permission engine, execution route, secret path, or outcome loop.
 - Its only new API is authenticated and read-only: `GET /surveyor/alidora/map?id=<workspace_id>`.
-- Payloads exclude raw profile/artifact text, context-source values, mutations, provenance payloads, secrets, credentials, and local paths.
+- Payloads structurally omit arbitrary workspace titles/descriptions and entity names/descriptions, raw profile/artifact text, context-source values, mutations, and provenance. They return only a grammar-bounded workspace locator, synthetic agent/skill display identities, catalog connector labels, and validated enum status; they do not claim arbitrary-secret classification for identifiers.
 - Cordia Workspace remains chat-first; Alidora is an advanced tab.
 - Workspace windows are agent-built artifacts. DashView is the default; LiveView requires connector support and explicit user enablement; DerivedView combines multiple sources.
 - Use TDD, `npm.cmd`, and `C:\Users\jacks\AppData\Local\Programs\Python\Python312\python.exe` when `python`/`py` is unavailable.
@@ -37,10 +39,15 @@ def map_payload(workspace: dict) -> dict:
 
 # Returned shape
 {
-  "workspace": {"id": "w-1", "title": "Launch", "description": ""},
-  "nodes": [{"id": "agent:review", "kind": "agent", "label": "Review", "detail": ""}],
+  "workspace": {"id": "w-1", "title": "", "description": ""},
+  "nodes": [
+    {"id": "agent:1", "kind": "agent", "label": "Agent 1", "detail": ""},
+    {"id": "connector:github", "kind": "connector", "label": "GitHub", "detail": "",
+     "connector_status": {"consent": "confirmed", "implementation": "live",
+                          "lifecycle": "live", "runtime": "live"}}
+  ],
   "edges": [],
-  "summary": {"agents": 1, "skills": 0, "connectors": 0, "approval_mode": "compiled"}
+  "summary": {"agents": 1, "skills": 0, "connectors": 1, "approval_mode": "compiled"}
 }
 ```
 
@@ -50,7 +57,7 @@ def map_payload(workspace: dict) -> dict:
 
 **Files:** Create `backend/surveyor/alidora.py`; modify `backend/surveyor/__init__.py`; create `backend/tests/test_alidora.py`.
 
-**Consumes:** canonical `id`, `title`, `description`, `agents`, `skills`, `connectors`, `workflow`, `permissions`.
+**Consumes:** canonical `id`, agent/skill identifiers, connector id/status/implementation/lifecycle/runtime enums, `workflow`, and `permissions`. Arbitrary title/name/description prose is deliberately not consumed by the renderer-facing projection.
 
 **Produces:** `alidora.map_payload(workspace)`.
 
@@ -60,10 +67,10 @@ def map_payload(workspace: dict) -> dict:
 from surveyor import alidora
 
 def test_map_payload_is_safe_and_deterministic():
-    state = {"id": "w-1", "title": "Launch", "agents": [{"id": "review", "name": "Review"}], "skills": [], "connectors": [], "permissions": {"mode": "compiled"}, "context_sources": [{"id": "C:\\private\\repo"}], "provenance": [{"secret": "must-not-leak"}]}
+    state = {"id": "w-1", "title": "opaque user text", "agents": [{"id": "review", "name": "private display text"}], "skills": [], "connectors": [], "permissions": {"mode": "compiled"}, "context_sources": [{"id": "C:\\private\\repo"}], "provenance": [{"secret": "must-not-leak"}]}
     result = alidora.map_payload(state)
-    assert result["workspace"] == {"id": "w-1", "title": "Launch", "description": ""}
-    assert result["nodes"] == [{"id": "agent:review", "kind": "agent", "label": "Review", "detail": ""}]
+    assert result["workspace"] == {"id": "w-1", "title": "", "description": ""}
+    assert result["nodes"] == [{"id": "agent:1", "kind": "agent", "label": "Agent 1", "detail": ""}]
     assert result["summary"] == {"agents": 1, "skills": 0, "connectors": 0, "approval_mode": "compiled"}
     assert "private" not in repr(result)
     assert "must-not-leak" not in repr(result)
@@ -80,8 +87,8 @@ Expected: import failure because `surveyor.alidora` does not exist.
 ```python
 def map_payload(workspace):
     state = workspace if isinstance(workspace, dict) else {}
-    nodes = _nodes(state)
-    return {"workspace": {key: str(state.get(key) or "") for key in ("id", "title", "description")}, "nodes": nodes, "edges": _edges(state, {node["id"] for node in nodes}), "summary": _summary(nodes, state.get("permissions"))}
+    nodes, endpoints = _node_projection(state)
+    return {"workspace": {"id": _identifier(state.get("id")), "title": "", "description": ""}, "nodes": nodes, "edges": _edges(state.get("workflow"), endpoints), "summary": _summary(nodes, state.get("permissions"))}
 ```
 
 - [ ] **Step 4: Add malformed/unresolved-reference coverage, then run green.**
@@ -192,7 +199,7 @@ export async function getApi(path) {
 
 **Produces:** a non-primary Alidora entry point and evidence that Cordia and Alidora see the same saved workspace.
 
-The entry point and later renderer work must treat windows as artifacts with purpose, source connectors/skills/artifacts, provenance, view mode, and action permissions. This foundation does not create a LiveView; any future LiveView must prove both connector support and explicit user enablement.
+Artifact purpose, source connectors/skills/artifacts, provenance, view mode, and action permissions are deferred from this foundation. This foundation does not create a LiveView; any future LiveView must prove both connector support and explicit user enablement.
 
 - [ ] **Step 1: Write a failing discovery assertion.**
 
@@ -221,7 +228,7 @@ def test_workspace_and_alidora_map_share_identity_and_agent_count(authenticated_
 
 Run: `& 'C:\Users\jacks\AppData\Local\Programs\Python\Python312\python.exe' -m unittest discover -s backend/tests -v; Set-Location desktop; npm.cmd test; Set-Location ..\dashboard-app; npm.cmd run build; git diff --check origin/main...HEAD`
 
-- [ ] **Step 5: Record only verified scope and commit.** Mark the read-only map complete. Explicitly defer authoring, execution, connector setup, and approval actions. Run: `git add web/interface.html docs/ALIDORA_INTEGRATION_CHARTER.md docs/TODO_CORDIA_VERTICAL_SLICE.md backend/tests/test_alidora.py; git commit -m "feat: link Cordia workspace to Alidora"`
+- [ ] **Step 5: Record only verified scope and commit.** Keep the read-only topology slice in review until whole-branch re-review passes. Explicitly defer permissions/provenance/artifact inspection, authoring, execution, connector setup, LiveView, runs/traces, and approval actions. Run: `git add web/interface.html docs/ALIDORA_INTEGRATION_CHARTER.md docs/TODO_CORDIA_VERTICAL_SLICE.md backend/tests/test_alidora.py; git commit -m "feat: link Cordia workspace to Alidora"`
 
 - [ ] **Step 6: Open a draft PR.** Title: `feat: add Alidora read-only system map`. State that it does not merge an alternate execution runtime or make Alidora the default workspace surface.
 
@@ -231,6 +238,7 @@ Run: `& 'C:\Users\jacks\AppData\Local\Programs\Python\Python312\python.exe' -m u
 2. Operations: safe run history, traces, checkpoints, and unified audit projection.
 3. Company systems: reusable templates/playbooks, validation, and controlled installation.
 4. Product routing and hosting: preview deployment, production deployment, and setup manual.
+5. Map inspection depth: permissions, provenance, artifact purpose/sources/view mode/action requirements, runs, and traces.
 
 ## Plan Self-Review
 

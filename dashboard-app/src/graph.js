@@ -4,11 +4,30 @@
 
 export const COL_LEFT = 60
 export const CARD_W = 210
-export const MAX_CARD_H = 132
+export const MAX_CARD_H = 180
 const ROW_GAP = 80
+const CONNECTOR_ENUMS = {
+  consent: new Set(['confirmed', 'suggested']),
+  implementation: new Set(['live', 'planned']),
+  lifecycle: new Set(['proposed', 'needs_handoff', 'live', 'failed']),
+  runtime: new Set(['not_observed', 'live', 'needs_attention']),
+}
 
 function stringField(value) {
   return typeof value === 'string' ? value : ''
+}
+
+function connectorStatus(value) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null
+  const status = {
+    consent: stringField(value.consent),
+    implementation: stringField(value.implementation),
+    lifecycle: stringField(value.lifecycle),
+    runtime: stringField(value.runtime),
+  }
+  return Object.entries(CONNECTOR_ENUMS).every(([field, allowed]) => allowed.has(status[field]))
+    ? status
+    : null
 }
 
 function safeNodes(map) {
@@ -22,8 +41,9 @@ function safeNodes(map) {
       kind: stringField(node.kind),
       label: stringField(node.label),
       detail: stringField(node.detail),
-      status: stringField(node.status),
+      connectorStatus: connectorStatus(node.connector_status),
     }))
+    .filter((node) => node.kind !== 'connector' || node.connectorStatus)
     .filter((node) => node.id && !seen.has(node.id) && (seen.add(node.id), true))
     .sort((left, right) => left.id.localeCompare(right.id))
 }
@@ -41,7 +61,7 @@ export function alidoraMapToFlow(map) {
       kind: node.kind,
       label: node.label,
       detail: node.detail,
-      status: node.status,
+      ...(node.connectorStatus ? { connectorStatus: node.connectorStatus } : {}),
     },
     draggable: false,
     connectable: false,

@@ -130,11 +130,13 @@ Acceptance criteria:
 
 Alidora is the advanced Cordia module for building and operating company agentic systems. It is not a parallel workspace/runtime.
 
-**Verified status:** The authenticated, read-only System Map is complete and linked from the non-primary Cordia workspace navigation. Authoring, execution, connector setup, LiveView, and approval decisions remain deferred.
+**Current review status:** The packaged, authenticated, read-only System Map is implemented and awaiting independent re-review. It visibly projects safe agent/skill topology and catalog-backed connector consent/implementation/lifecycle/runtime state from the canonical workspace. Permissions, provenance, artifact purpose/source/view-mode/action inspection, authoring, execution, connector setup, LiveView, approval decisions, runs, and traces remain deferred.
 
 - [x] Add an Alidora entry point/tab to the Cordia product information architecture.
 - [x] Reuse canonical workspace state; do not create graph-only state ownership.
-- [x] Project canonical agents, skills, connectors, permissions, and provenance into a read-only Workspace Map/System View.
+- [x] Project safe canonical agent/skill topology and truthful connector state into a read-only Workspace Map/System View.
+- [ ] Display permissions and provenance in the Workspace Map/System View.
+- [ ] Inspect artifact purpose, sources, view mode, and action requirements.
 - [x] Keep Cordia's conversational cockpit as the default surface.
 - [ ] Route from Alidora actions through the same typed capability gateway and ALLOW / ASK / DENY enforcement.
 - [ ] Surface run status, approval checkpoints, provenance, and safe traces without exposing secrets or local paths.
@@ -143,7 +145,7 @@ Alidora is the advanced Cordia module for building and operating company agentic
 
 Acceptance criteria:
 
-- [x] A workspace has one visible, inspectable graph projection derived from canonical state.
+- [x] A workspace has one visible, read-only topology projection derived from canonical state.
 - [ ] An Alidora action cannot bypass Cordia permissions, approvals, audit, or capability confirmation.
 - [ ] A user can return from Alidora to the Cordia workspace without losing shared state.
 
