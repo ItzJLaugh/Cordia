@@ -1,0 +1,14 @@
+{
+  "name": "cordia-desktop",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Secure Cordia desktop workspace shell.",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "test": "node --test test/*.test.js"
+  },
+  "devDependencies": {
+    "electron": "^37.0.0"
+  }
+}
