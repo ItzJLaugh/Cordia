@@ -1,0 +1,12 @@
+# Include inside the existing SSL virtual host that already serves Cordia's web
+# document root. This is a template, not a complete Apache virtual host.
+#
+# Prerequisite: a2enmod proxy proxy_http headers
+# Keep the backend loopback-only; Apache is the public boundary.
+ProxyPreserveHost On
+ProxyPass        /surveyor/ http://127.0.0.1:9995/surveyor/
+ProxyPassReverse /surveyor/ http://127.0.0.1:9995/surveyor/
+
+# Public-safe service readiness. It reveals only {"ok": true|false}.
+ProxyPass        /healthz http://127.0.0.1:9995/healthz
+ProxyPassReverse /healthz http://127.0.0.1:9995/healthz

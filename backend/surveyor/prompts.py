@@ -96,11 +96,23 @@ Interface definition:
 %(definition)s
 
 User presentation preferences (soft):
-%(profile)s"""
+%(profile)s
+
+Compiled FDE runtime context:
+%(runtime)s
+
+Workspace context references:
+%(workspace)s"""
 
 
-def runtime_system(definition, soft_profile) -> str:
+def runtime_system(definition, soft_profile, artifacts=None, workspace=None) -> str:
+    artifacts = artifacts or {}
+    runtime = {name: text for name, text in artifacts.items()
+               if str(name).startswith('runtime/')}
+    workspace_context = {'context_sources': (workspace or {}).get('context_sources') or []}
     return RUNTIME_SYSTEM % {
         "definition": json.dumps(definition, ensure_ascii=False, indent=2)[:6000],
         "profile": json.dumps(soft_profile, ensure_ascii=False)[:1200],
+        "runtime": json.dumps(runtime, ensure_ascii=False, indent=2)[:6000],
+        "workspace": json.dumps(workspace_context, ensure_ascii=False, indent=2)[:1600],
     }

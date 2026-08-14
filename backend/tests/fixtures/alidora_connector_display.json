@@ -1,0 +1,94 @@
+{
+  "producer": "surveyor.alidora.map_payload(surveyor.workspace_state.from_interface(...))",
+  "workspace_id": "w-1",
+  "source_definition": {
+    "name": "credential=synthetic-stripe-example",
+    "description": "AIzaSyExampleGoogleCredentialMaterial",
+    "agents": [
+      {
+        "id": "review",
+        "name": "glpat-exampleGitLabCredentialMaterial",
+        "description": "opaque-material-7ff434068d6547c1906d2dcf4ad3c531"
+      }
+    ],
+    "tools": [
+      {
+        "id": "draft",
+        "name": "Draft confidential launch",
+        "description": "Customer-provided instructions"
+      }
+    ],
+    "workflow": {
+      "steps": [
+        {
+          "agentId": "review",
+          "toolIds": ["draft"]
+        }
+      ]
+    }
+  },
+  "connector_states": {
+    "github": "confirmed",
+    "notion": "suggested"
+  },
+  "runtime_observations": {
+    "github": "live"
+  },
+  "expected_map": {
+    "workspace": {
+      "id": "w-1",
+      "title": "",
+      "description": ""
+    },
+    "nodes": [
+      {
+        "id": "agent:1",
+        "kind": "agent",
+        "label": "Agent 1",
+        "detail": ""
+      },
+      {
+        "id": "connector:github",
+        "kind": "connector",
+        "label": "GitHub",
+        "detail": "",
+        "connector_status": {
+          "consent": "confirmed",
+          "implementation": "live",
+          "lifecycle": "live",
+          "runtime": "live"
+        }
+      },
+      {
+        "id": "connector:notion",
+        "kind": "connector",
+        "label": "Notion",
+        "detail": "",
+        "connector_status": {
+          "consent": "suggested",
+          "implementation": "planned",
+          "lifecycle": "proposed",
+          "runtime": "not_observed"
+        }
+      },
+      {
+        "id": "skill:1",
+        "kind": "skill",
+        "label": "Skill 1",
+        "detail": ""
+      }
+    ],
+    "edges": [
+      {
+        "from": "agent:1",
+        "to": "skill:1"
+      }
+    ],
+    "summary": {
+      "agents": 1,
+      "skills": 1,
+      "connectors": 2,
+      "approval_mode": "compiled"
+    }
+  }
+}

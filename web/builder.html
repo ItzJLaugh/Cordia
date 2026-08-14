@@ -129,6 +129,7 @@
       <aside class="panel wash">
         <span class="lbl">Suggested for you</span>
         <div id="suggest"></div>
+        <div id="fdeMission" hidden style="margin-top:22px"></div>
         <span class="lbl" style="margin-top:22px">Starting points</span>
         <div id="templates"></div>
       </aside>
@@ -396,6 +397,22 @@
         o.hidden = false; o.textContent = l.note;
       }
     });
+
+    // The builder remains the existing editor. Surveyor's compiled mission is
+    // shown as inspectable context, never silently written into a definition.
+    if (new URLSearchParams(location.search).get('from') === 'surveyor') {
+      api('/surveyor/artifacts').then(function (r) {
+        if (r.code !== 200 || !r.data.ok) return;
+        var mission = String((r.data.artifacts || {})['runtime/fde-tasks.md'] || '')
+          .replace(/^# FDE Mission Brief\s*/m, '').trim();
+        if (!mission) return;
+        var host = document.getElementById('fdeMission');
+        host.hidden = false;
+        host.innerHTML = '<span class="lbl" style="margin:0 0 6px">FDE mission</span>' +
+          '<div style="white-space:pre-wrap;font-size:var(--t-xs);line-height:1.55;color:var(--c-ink-2);background:var(--c-wash);border-radius:var(--r-md);padding:12px">' +
+          esc(mission) + '</div>';
+      });
+    }
   }
 
   load();

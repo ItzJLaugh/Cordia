@@ -1,5 +1,9 @@
 # secrets & env
 .env
+.env.local
+.env.production
+# Local Surveyor deployment copy. The committed .example file is safe.
+backend/.env.surveyor
 .venv/
 venv/
 # python
@@ -23,3 +27,4 @@ backups/
 
 # local GGUF weights (~3.5GB) — never commit binaries this size
 models/
+.worktrees/

@@ -1,0 +1,28 @@
+# Example systemd unit for the existing Cordia backend.
+#
+# Review the paths and service account before installing. This file is a
+# versioned template; it does not alter the current production service.
+[Unit]
+Description=Cordia backend
+After=network-online.target postgresql.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=cordia
+Group=cordia
+WorkingDirectory=/opt/cordia/backend
+EnvironmentFile=/etc/cordia/cordia.env
+Environment=PYTHONUNBUFFERED=1
+ExecStart=/opt/cordia/venv/bin/python /opt/cordia/backend/training_backend.py
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=20
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=true
+ReadWritePaths=/var/lib/cordia
+
+[Install]
+WantedBy=multi-user.target

@@ -19,10 +19,50 @@ already told us because a model returned bad JSON.
 
 from __future__ import annotations
 
-from . import (adaptation, extractor, freeform, identifiers, prompts,
+from . import (adaptation, artifacts, extractor, freeform, identifiers, intent_misses, prompts,
                question_strategy as qs, scenarios, scorer, store, types)
 
 MAX_ANSWER = 4000
+
+
+def compile_artifact_bundle(profile: dict, connector_states: dict | None = None) -> dict:
+    """Compile the existing Surveyor profile contract into canonical FDE files."""
+    return artifacts.compile_artifacts(profile, connector_states)
+
+
+def artifact_bundle(email: str) -> dict:
+    """Compile and persist the latest personal-FDE context for an account."""
+    bundle = compile_artifact_bundle(load_profile(email), store.get_connector_states(email))
+    store.save_artifacts(email, bundle)
+    return bundle
+
+
+def artifact_assessment(email: str) -> dict:
+    """The safe, inspectable profile view derived from current Surveyor evidence."""
+    profile = load_profile(email)
+    return artifacts.assessment_view(profile, store.get_connector_states(email))
+
+
+def record_intent_miss(email, category, correction, effect):
+    """Persist one user correction and immediately refresh FDE runtime context."""
+    miss = intent_misses.build(category, correction, effect)
+    if not miss:
+        return {'ok': False, 'error': 'A category, correction, and future effect are required.'}
+    profile = load_profile(email)
+    profile['intent_misses'] = (list(profile.get('intent_misses') or []) + [miss])[-40:]
+    store.save_profile(email, profile)
+    store.log_event(email, 'intent_miss_recorded', {'category': miss['category']})
+    return {'ok': True, 'miss': miss, 'artifacts': artifact_bundle(email)}
+
+
+def record_fde_outcome(email, record_id, outcome):
+    """Record human FDE feedback; it deliberately does not re-rank routing."""
+    event = intent_misses.build_outcome(record_id, outcome)
+    if not event:
+        return {'ok': False, 'error': 'A known record ID and useful or not_useful outcome are required.'}
+    if not store.record_registry_outcome(email, event):
+        return {'ok': False, 'error': 'Unable to record the registry outcome.'}
+    return {'ok': True, 'outcome': event}
 
 # Which hidden criterion a directly-chosen signal counts as evidence for.
 # Mirrors scorer._FROM_SIGNALS / _FROM_CATEGORY; kept here so a tapped answer

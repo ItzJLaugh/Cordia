@@ -23,7 +23,7 @@ A working vertical slice:
 - Not a form. Profiling happens only through conversation.
 - Not multi-agent orchestration. A run is one prompted call built from the definition.
 - Not machine learning. See "No ML" below — this is deliberate and load-bearing.
-- Not the Cordia compiler, durable state, agent memory, or enterprise billing.
+- Not enterprise billing or a general-purpose multi-agent orchestrator.
 - Not a grading system. Surveyor scores never touch the certification result.
 
 ---
@@ -42,7 +42,7 @@ web/surveyor.html …        pages
 Restart after a backend change:
 
 ```bash
-systemctl restart cordia-backend.service     # ~8s: it loads an embedding model at import
+systemctl restart cordia-backend.service     # optional embedding shadow runtime loads softly
 ```
 
 Schema is created at startup by `store.init_schema()`. Safe to run repeatedly.
@@ -51,7 +51,10 @@ Schema is created at startup by `store.init_schema()`. Safe to run repeatedly.
 
 | Variable | Purpose | Default |
 |---|---|---|
-| `CORDIA_PG_DSN` | Postgres, shared with accounts | required |
+| `CORDIA_PG_DSN` | Reachable Postgres, shared with accounts | required |
+| `CORDIA_VAULT_KEY` | Fernet key for encrypted connector secrets | required |
+| `GMAIL_USER` / `GMAIL_APP_PASSWORD` | Production email-2FA SMTP credentials | required in production |
+| `CORDIA_DEV_2FA` | Explicit development-only replacement for SMTP 2FA | unset |
 | `PERSONALIZATION_MODE` | `off` / `simple` / `adaptive` | `simple` |
 | `CORDIA_ADMINS` | comma-separated emails allowed to see `/admin.html` | empty |
 | `SURVEYOR_LLM` | set to `mock` to force deterministic responses | unset |
@@ -199,6 +202,35 @@ starts returning true and nothing else changes.
 
 ---
 
+## Cordia workspace vertical slice
+
+Surveyor now compiles its evidence into inspectable source artifacts
+(`operator.md`, `connectors.md`, and `intent-misses.md`) and concise runtime
+artifacts (`fde-tasks.md`, `permissions.md`, and `workspace-plan.md`). The
+workspace persists one canonical state shared by the human and Cordia.
+
+The first durable connector capability is intentionally narrow:
+
+- `github.read_repositories` reads at most 30 recently updated repository
+  metadata records after the user stores a GitHub token in the encrypted vault.
+- It runs only through the typed capability gateway after the shared permission
+  check allows it; raw credentials never enter prompts or normal UI responses.
+- GitHub writes remain approval-required and are not implemented. Other common
+  services are listed as planned connector manifests, not live adapters.
+- The workspace renders canonical connector lifecycle (`proposed`, `needs
+  handoff`, `live`, or `failed`) beside adapter availability, so confirmation
+  never masquerades as a successful connection.
+
+See `../SURVEYOR_RUNTIME_SETUP.md` for required deployment configuration and
+the live verification sequence.
+
+### FDE registry feedback
+
+Human feedback can record a known FDE registry record as `useful` or
+`not_useful`. These inspectable events retain the registry record ID, but do
+not automatically change routing weights or permission decisions. Any future
+adjustment requires a reviewed, attributable policy.
+
 ## Extension points
 
 Stubs only — each raises `NotImplementedError` and says so.
@@ -206,8 +238,8 @@ Stubs only — each raises `NotImplementedError` and says so.
 | File | For |
 |---|---|
 | `langgraph_adapter.py` | interface definition → LangGraph graph |
-| `hitl_policy.py` | durable human-in-the-loop approval records |
-| `cordia_compiler_adapter.py` | Cordia language/compiler integration |
+| `hitl_policy.py` | durable human-in-the-loop approval checkpoints |
+| `cordia_compiler_adapter.py` | legacy Cordia language/compiler integration |
 | `coding_model_provider.py` | custom hosted coding model |
 
 The definition is already graph-shaped on purpose: agents are nodes, ordered
@@ -257,9 +289,12 @@ because that table's foreign key requires one.
 
 ## Known limitations
 
-- Approval steps are shown and honoured in the runtime prompt, but there is no
-  durable pause, approval record, or resume.
-- Tools are mocked. Nothing executes.
+- Approval steps create a durable pending approval record and can be
+  approved or declined in the workspace. Runtime resume/external execution is
+  intentionally not implemented yet, so an approval record cannot trigger a
+  connector write by itself.
+- GitHub repository metadata is the sole live, read-only connector capability.
+  All other connector manifests and write capabilities remain planned.
 - A run is one call, not an orchestrated graph.
 - The model is offline; see above.
 - `adaptive` mode is a passthrough to `simple`.
