@@ -168,6 +168,31 @@ class TestAlidora(unittest.TestCase):
         for forbidden in ("private", "home", "server", "xoxb", "ghp", "AKIA", "password@"):
             self.assertNotIn(forbidden, repr(result))
 
+    def test_map_payload_drops_remaining_posix_and_key_shapes(self):
+        posix_usr = "Run /usr/local/bin/tool"
+        posix_root = "Read /root/private/key"
+        aws_secret = "AWS_SECRET_ACCESS_KEY=wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"
+        github_pat = "github_pat_abcdefghijklmnopqrstuvwxyz0123456789"
+        result = alidora.map_payload(
+            {
+                "title": posix_usr,
+                "description": posix_root,
+                "agents": [{"id": "safe", "name": "Review Notes", "description": aws_secret}],
+                "skills": [{"id": "safe-skill", "name": github_pat, "description": "Useful summary"}],
+            }
+        )
+
+        self.assertEqual(result["workspace"], {"id": "", "title": "", "description": ""})
+        self.assertEqual(
+            result["nodes"],
+            [
+                {"id": "agent:safe", "kind": "agent", "label": "Review Notes", "detail": ""},
+                {"id": "skill:safe-skill", "kind": "skill", "label": "", "detail": "Useful summary"},
+            ],
+        )
+        for forbidden in (posix_usr, posix_root, aws_secret, github_pat):
+            self.assertNotIn(forbidden, repr(result))
+
 
 if __name__ == "__main__":
     unittest.main()
