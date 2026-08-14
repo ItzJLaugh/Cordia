@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import '@xyflow/react/dist/style.css'
 import { api } from './api.js'
+import ChatPanel from './ChatPanel.jsx'
 import DefinitionGraph from './DefinitionGraph.jsx'
 
 // The dashboard shell: authenticate with the same session as the rest of
@@ -13,11 +14,13 @@ export default function App() {
   const [state, setState] = useState({ phase: 'loading' })
   const [selected, setSelected] = useState(null)   // { id, name, definition } | null
   const [opening, setOpening] = useState(null)     // id being fetched, for the pressed state
+  const [openNote, setOpenNote] = useState(null)   // a failed open says so, briefly
   const openSeq = useRef(0)                        // last click wins, not last response
 
   function openInterface(id) {
     const seq = ++openSeq.current
     setOpening(id)
+    setOpenNote(null)
     api('/dashboard/interface?id=' + encodeURIComponent(id)).then((r) => {
       // A response from a superseded click must not overwrite the newer
       // selection — without this, a slow fetch for A lands after a fast
@@ -26,11 +29,17 @@ export default function App() {
       setOpening(null)
       if (r.code === 200 && r.data && r.data.interface) {
         setSelected(r.data.interface)
+      } else {
+        // A 404 (deleted elsewhere) or a bad response keeps the previous
+        // selection — the canvas never blanks over a stale click — but
+        // the select reverting with no explanation read as the click
+        // being silently swallowed.
+        setOpenNote('That workspace could not be opened just now.')
       }
-      // A 404 (deleted elsewhere) or transport hiccup keeps the previous
-      // selection — the canvas never blanks over a stale click.
     }).catch(() => {
-      if (seq === openSeq.current) setOpening(null)
+      if (seq !== openSeq.current) return
+      setOpening(null)
+      setOpenNote('That workspace could not be opened just now.')
     })
   }
 
@@ -111,39 +120,40 @@ export default function App() {
         <div className="limited-note">{llm.note}</div>
       )}
       <main className="split">
-        <aside className="panel">
-          <h2>Your setup</h2>
-          <dl className="kv">
-            <div><dt>Leading surface</dt><dd>{framework.lead_surface}</dd></div>
-            <div><dt>Diagram style</dt><dd>{framework.diagram_forward.replace(/_/g, ' ')}</dd></div>
-            <div><dt>Approvals</dt><dd>{framework.approval_density.replace(/_/g, ' ')}</dd></div>
-            <div><dt>Detail level</dt><dd>{framework.node_density}</dd></div>
-          </dl>
-          <h2>Workspaces</h2>
-          {interfaces.length === 0 ? (
-            <p className="count">
-              None yet — the canvas will help you build your first.
-            </p>
-          ) : (
-            <ul className="iface-list">
+        <aside className="panel chat-panel">
+          <div className="workspace-row">
+            <label className="ws-label" htmlFor="ws-select">Workspace</label>
+            <select
+              id="ws-select"
+              // While a fetch is in flight the visible choice is the one
+              // the person just made — snapping back to the old value
+              // mid-flight read as the click being discarded. On failure
+              // `opening` clears and the select reverts to what the
+              // canvas still shows, with the note below saying why.
+              // Never disabled mid-flight: disabling blurred the select
+              // to <body> and broke arrowing through the list; openSeq
+              // already makes overlapping opens safe (last click wins).
+              value={opening || (selected ? selected.id : '')}
+              onChange={(e) => e.target.value && openInterface(e.target.value)}
+            >
+              <option value="">
+                {interfaces.length === 0
+                  ? 'None yet — chat to start one'
+                  : 'Pick a workspace…'}
+              </option>
               {interfaces.map((iface) => (
-                <li key={iface.id}>
-                  <button
-                    type="button"
-                    className={
-                      selected && selected.id === iface.id
-                        ? 'iface-btn current'
-                        : 'iface-btn'
-                    }
-                    disabled={opening === iface.id}
-                    onClick={() => openInterface(iface.id)}
-                  >
-                    {iface.name}
-                  </button>
-                </li>
+                <option key={iface.id} value={iface.id}>{iface.name}</option>
               ))}
-            </ul>
-          )}
+            </select>
+          </div>
+          {/* Permanently rendered so the live region exists before its
+              content arrives — a region mounted together with its text is
+              announced unreliably. Empty, it takes no space (CSS
+              :not(:empty)); filled, it reads as the amber note. Without
+              this, the failed-open explanation was visible but never
+              spoken — the exact silent-swallow the note exists to fix. */}
+          <div className="ws-status" role="status" aria-live="polite">{openNote}</div>
+          <ChatPanel />
         </aside>
         <section className="canvas">
           {selected ? (

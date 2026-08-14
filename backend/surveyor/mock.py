@@ -24,7 +24,6 @@ make llm.real_available() true. The seam handles the rest.
 from __future__ import annotations
 
 import json
-import re
 
 from . import question_strategy as qs
 
@@ -149,14 +148,25 @@ _CRITERION_FOR = {
 
 def call(system, user, max_tokens=900):
     """Stand in for call_llm(system, user, max_tokens)."""
-    # extraction pass — the user payload is the JSON built by prompts.extraction_user
-    if "their_answer" in (user or ""):
+    system = system or ""
+    # Both branches key on the FIXED PREAMBLE of their caller's system
+    # prompt — a prefix match, not a contains-check. The runtime prompt
+    # interpolates the person's own definition text into its body, so a
+    # substring anywhere in the prompt is user-steerable (a saved agent
+    # instruction mentioning the extraction phrase hijacked runs into this
+    # branch). Position zero is the one place user text can never reach.
+    # extraction pass — prompts.EXTRACTION_SYSTEM
+    if system.startswith("You read one exchange from a Surveyor conversation"):
         try:
-            payload = json.loads(user)
+            payload = json.loads(user or "")
         except Exception:
+            payload = None
+        if not isinstance(payload, dict):
+            # a malformed extraction payload must degrade, never raise —
+            # the mock-mode caller has no wrapper to absorb an exception
             return json.dumps({"signals": {}, "evidence": []})
-        q = payload.get("question_just_asked") or ""
-        a = payload.get("their_answer") or ""
+        q = str(payload.get("question_just_asked") or "")
+        a = str(payload.get("their_answer") or "")
         signals = _extract(q, a)
         evidence = []
         for sig in signals:
@@ -168,16 +178,74 @@ def call(system, user, max_tokens=900):
         return json.dumps({"signals": signals, "evidence": evidence})
 
     # runtime pass — a readable placeholder rather than a fake result
-    if "running a user-created Cordia agentic interface" in (system or ""):
-        names = []
+    if system.startswith("You are running a user-created Cordia agentic interface"):
+        # "These steps" must be the WORKFLOW steps, resolved to agent
+        # names — listing the agent declarations here presented a roster
+        # the run would never follow. And every claim below is limited to
+        # what this code actually established: the old regex fallback
+        # scraped tool and workspace names into the step list, and the old
+        # note blamed prompt size for parse failures it never measured.
         try:
-            blob = (system or "").split("Interface definition:", 1)[1]
-            blob = blob.split("User presentation preferences", 1)[0].strip()
-            definition = json.loads(blob)
-            names = [a.get("name") for a in (definition.get("agents") or []) if a.get("name")]
+            blob = system.split("Interface definition:", 1)[1]
+            # the template's profile header comes AFTER the definition, so
+            # cut at the LAST occurrence — a definition whose own text
+            # contains the header phrase must not break the parse
+            blob = blob.rsplit("User presentation preferences (soft):", 1)[0].strip()
+            parsed = json.loads(blob)
         except Exception:
-            names = re.findall(r'"name":\s*"([^"]+)"', system or "")[:6]
-        steps = "\n".join(f"  {i+1}. {n}" for i, n in enumerate(names)) or "  (no agents defined)"
+            # json.dumps output only fails to parse when the prompt-size
+            # cap cut it mid-token — the one cause this note may name
+            parsed = None
+        if parsed is None:
+            steps = "  (the definition was too large to list its steps here)"
+        else:
+            # every displayed fragment is collapsed to one bounded line —
+            # a name containing a newline must not fabricate extra
+            # numbered steps, and a whitespace-only name is no name
+            def _one_line(v):
+                return " ".join(str(v).split())[:80] if v is not None else ""
+
+            definition = parsed if isinstance(parsed, dict) else {}
+            agents = {}
+            raw_agents = definition.get("agents")
+            for a in (raw_agents if isinstance(raw_agents, list) else []):
+                if isinstance(a, dict) and isinstance(a.get("id"), str):
+                    agents[a["id"]] = (_one_line(a.get("name"))
+                                       or _one_line(a["id"]) or "unnamed agent")
+            wf = definition.get("workflow")
+            raw_steps = wf.get("steps") if isinstance(wf, dict) else None
+            unreadable = ((wf is not None and not isinstance(wf, dict))
+                          or (isinstance(wf, dict) and "steps" in wf
+                              and not isinstance(wf.get("steps"), list)))
+            lines = []
+            skipped = False
+            for s in (raw_steps if isinstance(raw_steps, list) else []):
+                if isinstance(s, dict):
+                    aid = s.get("agentId")
+                    who = agents.get(aid) if isinstance(aid, str) else None
+                    who = who or _one_line(aid) or "unassigned step"
+                    if s.get("requiresApproval"):
+                        who += " — pauses for your approval"
+                    lines.append(who)
+                elif _one_line(s):
+                    # legacy rows store bare-string steps; show what is
+                    # stored rather than pretending there are no steps
+                    lines.append(_one_line(s))
+                else:
+                    skipped = True
+            if unreadable:
+                steps = "  (the steps could not be listed here)"
+            elif lines:
+                steps = "\n".join(f"  {i+1}. {n}" for i, n in enumerate(lines))
+                if skipped:
+                    steps += "\n  (some steps could not be listed here)"
+            elif skipped:
+                steps = "  (the steps could not be listed here)"
+            else:
+                # only claimable when the steps list is genuinely absent
+                # or empty — an unreadable shape must not be described as
+                # an interface with nothing in it
+                steps = "  (no workflow steps defined)"
         return ("[Model offline — placeholder run]\n\n"
                 "This interface would run these steps against your input:\n"
                 f"{steps}\n\n"
