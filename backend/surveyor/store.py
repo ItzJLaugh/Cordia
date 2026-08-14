@@ -96,6 +96,20 @@ CREATE TABLE IF NOT EXISTS surveyor_runs(
 );
 CREATE INDEX IF NOT EXISTS surveyor_runs_iface_idx ON surveyor_runs(interface_id);
 
+CREATE TABLE IF NOT EXISTS surveyor_approvals(
+    id           TEXT PRIMARY KEY,
+    run_id       TEXT NOT NULL,
+    email        TEXT NOT NULL,
+    step_id      TEXT NOT NULL,
+    summary      TEXT NOT NULL,
+    status       TEXT NOT NULL DEFAULT 'pending',
+    approver     TEXT,
+    note         TEXT,
+    created      TIMESTAMPTZ NOT NULL DEFAULT (now() AT TIME ZONE 'utc'),
+    decided      TIMESTAMPTZ
+);
+CREATE INDEX IF NOT EXISTS surveyor_approvals_email_status_idx ON surveyor_approvals(email, status);
+
 CREATE TABLE IF NOT EXISTS surveyor_events(
     id         BIGSERIAL PRIMARY KEY,
     email      TEXT        NOT NULL,
@@ -105,9 +119,42 @@ CREATE TABLE IF NOT EXISTS surveyor_events(
 );
 CREATE INDEX IF NOT EXISTS surveyor_events_email_idx ON surveyor_events(email, created);
 
+CREATE TABLE IF NOT EXISTS surveyor_connector_preferences(
+    email            TEXT PRIMARY KEY,
+    connector_states JSONB NOT NULL DEFAULT '{}'::jsonb,
+    updated          TIMESTAMPTZ NOT NULL DEFAULT (now() AT TIME ZONE 'utc')
+);
+
+CREATE TABLE IF NOT EXISTS surveyor_artifacts(
+    email    TEXT PRIMARY KEY,
+    source   JSONB NOT NULL DEFAULT '{}'::jsonb,
+    runtime  JSONB NOT NULL DEFAULT '{}'::jsonb,
+    updated  TIMESTAMPTZ NOT NULL DEFAULT (now() AT TIME ZONE 'utc')
+);
+
+CREATE TABLE IF NOT EXISTS surveyor_secrets(
+    secret_ref TEXT PRIMARY KEY,
+    email      TEXT NOT NULL,
+    connector  TEXT NOT NULL,
+    ciphertext BYTEA NOT NULL,
+    created    TIMESTAMPTZ NOT NULL DEFAULT (now() AT TIME ZONE 'utc'),
+    updated    TIMESTAMPTZ NOT NULL DEFAULT (now() AT TIME ZONE 'utc')
+);
+CREATE INDEX IF NOT EXISTS surveyor_secrets_email_connector_idx ON surveyor_secrets(email, connector);
+
+CREATE TABLE IF NOT EXISTS surveyor_workspaces(
+    id       TEXT PRIMARY KEY,
+    email    TEXT NOT NULL,
+    state    JSONB NOT NULL,
+    created  TIMESTAMPTZ NOT NULL DEFAULT (now() AT TIME ZONE 'utc'),
+    updated  TIMESTAMPTZ NOT NULL DEFAULT (now() AT TIME ZONE 'utc')
+);
+CREATE INDEX IF NOT EXISTS surveyor_workspaces_email_idx ON surveyor_workspaces(email, updated);
+
 -- Stage 2 and 3, added after the table already existed in production.
 ALTER TABLE surveyor_profiles ADD COLUMN IF NOT EXISTS scenarios   JSONB NOT NULL DEFAULT '{}'::jsonb;
 ALTER TABLE surveyor_profiles ADD COLUMN IF NOT EXISTS freeform    JSONB NOT NULL DEFAULT '{}'::jsonb;
+ALTER TABLE surveyor_profiles ADD COLUMN IF NOT EXISTS intent_misses JSONB NOT NULL DEFAULT '[]'::jsonb;
 ALTER TABLE surveyor_profiles ADD COLUMN IF NOT EXISTS tensions    JSONB NOT NULL DEFAULT '[]'::jsonb;
 ALTER TABLE surveyor_profiles ADD COLUMN IF NOT EXISTS reliability JSONB NOT NULL DEFAULT '{}'::jsonb;
 """
@@ -132,6 +179,22 @@ def log_event(email, event_type, payload=None) -> None:
         pass
 
 
+def record_registry_outcome(email, outcome) -> bool:
+    """Persist bounded feedback without changing recommendation state."""
+    if not isinstance(outcome, dict):
+        return False
+    record_id = outcome.get('record_id')
+    result = outcome.get('outcome')
+    from . import fde_registry
+    if (not isinstance(record_id, str) or not fde_registry.describe(record_id)
+            or result not in {'useful', 'not_useful'}):
+        return False
+    log_event(email, 'fde_registry_outcome_recorded', {
+        'record_id': record_id, 'outcome': result,
+    })
+    return True
+
+
 def events(email, limit=100) -> list:
     with _conn() as c, c.cursor() as cur:
         cur.execute("SELECT event_type, payload, created FROM surveyor_events "
@@ -144,6 +207,7 @@ def events(email, limit=100) -> list:
 
 _PROFILE_COLS = ("signals", "scores", "evidence", "identifiers", "adaptation",
                  "scenarios", "freeform", "tensions", "reliability",
+                 "intent_misses",
                  "confidence", "questions_answered", "simple_mode_forced")
 
 
@@ -163,8 +227,8 @@ def save_profile(email, profile) -> None:
             INSERT INTO surveyor_profiles
                 (email, signals, scores, evidence, identifiers, adaptation,
                  scenarios, freeform, tensions, reliability,
-                 confidence, questions_answered, simple_mode_forced)
-            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                 intent_misses, confidence, questions_answered, simple_mode_forced)
+            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
             ON CONFLICT (email) DO UPDATE SET
                 signals=EXCLUDED.signals,
                 scores=EXCLUDED.scores,
@@ -175,6 +239,7 @@ def save_profile(email, profile) -> None:
                 freeform=EXCLUDED.freeform,
                 tensions=EXCLUDED.tensions,
                 reliability=EXCLUDED.reliability,
+                intent_misses=EXCLUDED.intent_misses,
                 confidence=EXCLUDED.confidence,
                 questions_answered=EXCLUDED.questions_answered,
                 simple_mode_forced=EXCLUDED.simple_mode_forced,
@@ -189,6 +254,7 @@ def save_profile(email, profile) -> None:
               _J(profile.get("freeform") or {}),
               _J(profile.get("tensions") or []),
               _J(profile.get("reliability") or {}),
+              _J(profile.get("intent_misses") or []),
               float(profile.get("confidence") or 0.0),
               int(profile.get("questions_answered") or 0),
               bool(profile.get("simple_mode_forced"))))
@@ -204,6 +270,92 @@ def set_simple_mode(email, forced: bool) -> None:
                 simple_mode_forced=EXCLUDED.simple_mode_forced,
                 updated=(now() AT TIME ZONE 'utc')
         """, (email, bool(forced)))
+
+
+# --------------------------------------------------------- FDE artifacts
+
+def get_connector_states(email: str) -> dict:
+    with _conn() as c, c.cursor() as cur:
+        cur.execute("SELECT connector_states FROM surveyor_connector_preferences WHERE email=%s",
+                    (email,))
+        row = cur.fetchone()
+    return (row[0] or {}) if row else {}
+
+
+def save_connector_states(email: str, states: dict) -> None:
+    with _conn() as c, c.cursor() as cur:
+        cur.execute("""
+            INSERT INTO surveyor_connector_preferences(email, connector_states)
+            VALUES (%s,%s)
+            ON CONFLICT (email) DO UPDATE SET
+                connector_states=EXCLUDED.connector_states,
+                updated=(now() AT TIME ZONE 'utc')
+        """, (email, _J(states)))
+
+
+def save_artifacts(email: str, bundle: dict) -> None:
+    source = {k: v for k, v in (bundle or {}).items() if k.startswith("source/")}
+    runtime = {k: v for k, v in (bundle or {}).items() if k.startswith("runtime/")}
+    with _conn() as c, c.cursor() as cur:
+        cur.execute("""
+            INSERT INTO surveyor_artifacts(email, source, runtime)
+            VALUES (%s,%s,%s)
+            ON CONFLICT (email) DO UPDATE SET
+                source=EXCLUDED.source,
+                runtime=EXCLUDED.runtime,
+                updated=(now() AT TIME ZONE 'utc')
+        """, (email, _J(source), _J(runtime)))
+
+
+def get_artifacts(email: str) -> dict | None:
+    with _conn() as c, c.cursor() as cur:
+        cur.execute("SELECT source, runtime FROM surveyor_artifacts WHERE email=%s", (email,))
+        row = cur.fetchone()
+    if not row:
+        return None
+    return {**(row[0] or {}), **(row[1] or {})}
+
+
+def save_secret(secret_ref: str, email: str, connector: str, ciphertext: bytes) -> None:
+    with _conn() as c, c.cursor() as cur:
+        cur.execute("""
+            INSERT INTO surveyor_secrets(secret_ref, email, connector, ciphertext)
+            VALUES (%s,%s,%s,%s)
+        """, (secret_ref, email, connector, bytes(ciphertext)))
+
+
+def get_secret(email: str, connector: str) -> tuple[str, bytes] | None:
+    with _conn() as c, c.cursor() as cur:
+        cur.execute("""
+            SELECT secret_ref, ciphertext FROM surveyor_secrets
+            WHERE email=%s AND connector=%s ORDER BY created DESC LIMIT 1
+        """, (email, connector))
+        row = cur.fetchone()
+    return (row[0], bytes(row[1])) if row else None
+
+
+def save_workspace(email: str, workspace_id: str, state: dict) -> None:
+    with _conn() as c, c.cursor() as cur:
+        cur.execute("""
+            INSERT INTO surveyor_workspaces(id, email, state) VALUES (%s,%s,%s)
+            ON CONFLICT (id) DO UPDATE SET state=EXCLUDED.state,
+                updated=(now() AT TIME ZONE 'utc')
+            WHERE surveyor_workspaces.email=EXCLUDED.email
+        """, (workspace_id, email, _J(state)))
+
+
+def get_workspace(email: str, workspace_id: str) -> dict | None:
+    with _conn() as c, c.cursor() as cur:
+        cur.execute("SELECT state FROM surveyor_workspaces WHERE id=%s AND email=%s",
+                    (workspace_id, email))
+        row = cur.fetchone()
+    return row[0] if row else None
+
+
+def workspaces(email: str) -> list[tuple[str, dict]]:
+    with _conn() as c, c.cursor() as cur:
+        cur.execute("SELECT id, state FROM surveyor_workspaces WHERE email=%s", (email,))
+        return cur.fetchall()
 
 
 # ------------------------------------------------------------ conversation
@@ -380,8 +532,44 @@ def record_recommendation(email, definition) -> bool:
 def add_run(interface_id, email, inp, out, meta=None) -> None:
     with _conn() as c, c.cursor() as cur:
         cur.execute("INSERT INTO surveyor_runs(interface_id, email, input, output, meta) "
-                    "VALUES (%s,%s,%s,%s,%s)",
+                    "VALUES (%s,%s,%s,%s,%s) RETURNING id",
                     (interface_id, email, inp, out, _J(meta or {})))
+        return str(cur.fetchone()[0])
+
+
+# --------------------------------------------------------------- approvals
+
+def save_approval(email, checkpoint: dict) -> None:
+    with _conn() as c, c.cursor() as cur:
+        cur.execute("""INSERT INTO surveyor_approvals(id, run_id, email, step_id, summary, status)
+                       VALUES (%s,%s,%s,%s,%s,%s)""",
+                    (checkpoint['id'], checkpoint['run_id'], email, checkpoint['step_id'],
+                     checkpoint['summary'], checkpoint['status']))
+
+
+def decide_approval(email, decision: dict) -> bool:
+    with _conn() as c, c.cursor() as cur:
+        cur.execute("""UPDATE surveyor_approvals SET status=%s, approver=%s, note=%s,
+                       decided=(now() AT TIME ZONE 'utc') WHERE id=%s AND email=%s AND status='pending'""",
+                    (decision['status'], decision['approver'], decision['note'], decision['id'], email))
+        return cur.rowcount == 1
+
+
+def pending_approvals(email) -> list:
+    with _conn() as c, c.cursor() as cur:
+        cur.execute("SELECT id, run_id, step_id, summary, created FROM surveyor_approvals "
+                    "WHERE email=%s AND status='pending' ORDER BY created DESC", (email,))
+        return [{'id': r[0], 'run_id': r[1], 'step_id': r[2], 'summary': r[3],
+                 'status': 'pending', 'created': str(r[4])} for r in cur.fetchall()]
+
+
+def get_pending_approval(email, approval_id: str) -> dict | None:
+    with _conn() as c, c.cursor() as cur:
+        cur.execute("""SELECT id, run_id, step_id, summary, created FROM surveyor_approvals
+                       WHERE id=%s AND email=%s AND status='pending'""", (approval_id, email))
+        row = cur.fetchone()
+    return ({'id': row[0], 'run_id': row[1], 'step_id': row[2], 'summary': row[3],
+             'status': 'pending', 'created': str(row[4])} if row else None)
 
 
 def runs(email, limit=50) -> list:

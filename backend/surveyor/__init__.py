@@ -17,10 +17,10 @@ allow-lists; scoring is a lookup table. If any of it starts to need a model to
 work, the right move is to delete the feature, not to grow one.
 """
 
-from . import (adaptation, extractor, freeform, identifiers, llm, mock, pipeline,
-               prompts, question_strategy, recommendation, scenarios, scorer, store,
-               types)
+from . import (adaptation, artifacts, capability_gateway, extractor, fde_registry, fde_routing, freeform, github_connector, hitl_policy, identifiers, intent_misses, llm, mock, permissions, pipeline, skills,
+               prompts, question_strategy, recommendation, runtime_config, scenarios, scorer, store,
+               types, vault, workspace_state)
 
-__all__ = ["adaptation", "extractor", "freeform", "identifiers", "llm", "mock",
-           "pipeline", "prompts", "question_strategy", "recommendation", "scenarios",
-           "scorer", "store", "types"]
+__all__ = ["adaptation", "artifacts", "capability_gateway", "extractor", "fde_registry", "fde_routing", "freeform", "github_connector", "hitl_policy", "identifiers", "intent_misses", "llm", "mock", "permissions", "skills",
+           "pipeline", "prompts", "question_strategy", "recommendation", "runtime_config", "scenarios",
+           "scorer", "store", "types", "vault", "workspace_state"]

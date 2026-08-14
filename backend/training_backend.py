@@ -11,7 +11,16 @@ sys.path.insert(0, '/opt/cordia/backend')
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))   # dev/local runs
 import cordia_auth as auth
 import cordaie_scoring as scoring
-import embedding_scoring as embedding_scoring
+
+# Embedding scoring is a research-only shadow signal. It must never keep the
+# authenticated product, Surveyor, or live workspace from starting when its
+# optional heavyweight runtime is unavailable.
+try:
+    import embedding_scoring
+except BaseException as _embedding_err:       # noqa: BLE001 - intentionally non-fatal
+    embedding_scoring = None
+    print(f'embedding shadow scoring unavailable ({type(_embedding_err).__name__}: {_embedding_err}); '
+          f'certification remains rubric-scored', file=sys.stderr)
 
 # 6S shadow scoring — passive observer, never authoritative.
 # cordaie_scoring above stays the only source of learner-visible numbers. If
@@ -30,6 +39,7 @@ except BaseException as _sixs_err:            # noqa: BLE001 - must never be fat
 # /surveyor/* routes then answer 503 rather than the process failing to boot.
 try:
     import surveyor
+    from surveyor import preflight as surveyor_preflight
     surveyor.store.init_schema()
 except BaseException as _surv_err:            # noqa: BLE001 - must never be fatal
     surveyor = None
@@ -50,6 +60,10 @@ PORT = 9995
 # 127.0.0.1 (see cordia-engineer.service). Override only with a specific private
 # address; never 0.0.0.0.
 BIND = os.environ.get('CORDIA_BIND', '127.0.0.1')
+
+# Production cookies must stay HTTPS-only. Localhost preview uses plain HTTP,
+# so it can explicitly opt out through CORDIA_COOKIE_SECURE=0 without changing
+# the safe production default.
 
 # How many corpus rows an unauthenticated caller may read. Enough to inspect the
 # shape of the data, far short of a bulk export of everyone's answers.
@@ -288,11 +302,15 @@ class H(BaseHTTPRequestHandler):
     def _set_session_cookie(self, token):
         if not token:
             return
-        self._pending_cookie = (f'cordia_session={token}; HttpOnly; Secure; SameSite=Strict; '
+        secure = (surveyor.runtime_config.cookie_secure(os.environ)
+                  if surveyor is not None else 'Secure; ')
+        self._pending_cookie = (f'cordia_session={token}; HttpOnly; {secure}SameSite=Strict; '
                                 f'Max-Age={int(os.environ.get("SESSION_TTL", 86400))}; Path=/;')
 
     def _clear_session_cookie(self):
-        self._pending_cookie = 'cordia_session=; HttpOnly; Secure; SameSite=Strict; Max-Age=0; Path=/;'
+        secure = (surveyor.runtime_config.cookie_secure(os.environ)
+                  if surveyor is not None else 'Secure; ')
+        self._pending_cookie = f'cordia_session=; HttpOnly; {secure}SameSite=Strict; Max-Age=0; Path=/'
 
     def _token(self):
         """Session token for this request. Cookie first, Authorization header
@@ -319,7 +337,9 @@ class H(BaseHTTPRequestHandler):
 
     def do_GET(self):
         p = self.path.split('?')[0]
-        if p == '/train/status':
+        if p == '/healthz':
+            self._healthz()
+        elif p == '/train/status':
             self._json({'ok': True, 'service': 'cordia-training', 'responses': len(read_all(CORPUS)),
                         'ratings': len(read_all(RATINGS)), 'ts': time.time()})
         elif p == '/train/responses':
@@ -374,10 +394,28 @@ class H(BaseHTTPRequestHandler):
             self._surv_conversation()
         elif p == '/surveyor/interfaces':
             self._surv_list_interfaces()
+        elif p == '/surveyor/workspace':
+            self._surv_workspace()
         elif p == '/surveyor/admin':
             self._surv_admin()
         elif p == '/surveyor/recommendation':
             self._surv_recommendation()
+        elif p == '/surveyor/fde-recommendations':
+            self._surv_fde_recommendations()
+        elif p == '/surveyor/artifacts':
+            self._surv_artifacts()
+        elif p == '/surveyor/approvals':
+            self._surv_approvals()
+        elif p == '/surveyor/capabilities':
+            self._surv_capabilities()
+        elif p == '/surveyor/skills':
+            self._surv_skills()
+        elif p == '/surveyor/activity':
+            self._surv_activity()
+        elif p == '/surveyor/preflight':
+            self._surv_preflight()
+        elif p == '/surveyor/github/repositories':
+            self._surv_github_repositories()
         elif p == '/surveyor/export':
             self._surv_export()
         elif p == '/admin/users':
@@ -386,6 +424,12 @@ class H(BaseHTTPRequestHandler):
             self._json({'error': 'not found'}, 404)
 
     # ---------------------------------------------------------- surveyor
+
+    def _healthz(self):
+        """Public-safe process readiness; details remain behind authenticated preflight."""
+        report = surveyor_preflight.report() if surveyor is not None else {'ok': False}
+        self._json(surveyor_preflight.health_view(report) if surveyor is not None else {'ok': False},
+                   200 if report.get('ok') else 503)
 
     def _surv_me(self):
         """Authenticated identity for a /surveyor/* request, or None.
@@ -450,6 +494,245 @@ class H(BaseHTTPRequestHandler):
                     'recommendation': surveyor.recommendation.build(profile),
                     **surveyor.pipeline.public_profile(email, profile)})
 
+    def _surv_fde_recommendations(self):
+        """Return an authenticated, advisory-only registry routing trace."""
+        email, stop = self._surv_guard()
+        if stop: return
+        profile = surveyor.pipeline.load_profile(email)
+        states = surveyor.store.get_connector_states(email)
+        context = surveyor.skills.recommendation_context(profile, states)
+        query = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+        limit = query.get('limit', [5])[0]
+        self._json({'ok': True, **surveyor.fde_routing.recommend(context, limit)})
+
+    def _surv_artifacts(self):
+        """Inspectable source and compiled FDE context for the signed-in person."""
+        email, stop = self._surv_guard()
+        if stop: return
+        self._json({'ok': True, 'artifacts': surveyor.pipeline.artifact_bundle(email),
+                    'assessment': surveyor.pipeline.artifact_assessment(email),
+                    'connector_catalog': surveyor.artifacts.connector_catalog()})
+
+    def _surv_intent_miss(self, body):
+        email, stop = self._surv_guard()
+        if stop: return
+        result = surveyor.pipeline.record_intent_miss(
+            email, body.get('category'), body.get('correction'), body.get('effect'))
+        self._json(result, 200 if result.get('ok') else 400)
+
+    def _surv_approvals(self):
+        email, stop = self._surv_guard()
+        if stop: return
+        self._json({'ok': True, 'approvals': surveyor.store.pending_approvals(email)})
+
+    def _surv_capabilities(self):
+        email, stop = self._surv_guard()
+        if stop: return
+        states = surveyor.store.get_connector_states(email)
+        capabilities = []
+        for name, capability in surveyor.capability_gateway.catalog().items():
+            gate = surveyor.permissions.decide(name, states)
+            capabilities.append({'name': name, **capability, 'decision': gate['decision'],
+                                 'reason': gate['reason']})
+        self._json({'ok': True, 'capabilities': capabilities})
+
+    def _surv_skills(self):
+        email, stop = self._surv_guard()
+        if stop: return
+        states = surveyor.store.get_connector_states(email)
+        available = []
+        for skill_id, skill in surveyor.skills.catalog().items():
+            checks = [surveyor.permissions.decide(name, states)
+                      for name in skill['required_capabilities']]
+            available.append({'id': skill_id, **skill,
+                              'available': all(check['decision'] == 'ALLOW' for check in checks)})
+        self._json({'ok': True, 'skills': available})
+
+    def _surv_activity(self):
+        email, stop = self._surv_guard()
+        if stop: return
+        self._json({'ok': True, 'activity': surveyor.store.events(email, limit=20)})
+
+    def _surv_preflight(self):
+        email, stop = self._surv_guard()
+        if stop: return
+        self._json({'ok': True, 'preflight': surveyor_preflight.report()})
+
+    def _surv_decide_approval(self, body):
+        email, stop = self._surv_guard()
+        if stop: return
+        checkpoint = surveyor.store.get_pending_approval(email, str(body.get('id') or ''))
+        if not checkpoint:
+            self._json({'ok': False, 'error': 'approval not found or already decided'}, 404); return
+        try:
+            decision = surveyor.hitl_policy.decide(checkpoint, email, bool(body.get('approved')),
+                                                    body.get('note', ''))
+        except ValueError as exc:
+            self._json({'ok': False, 'error': str(exc)}, 400); return
+        if not surveyor.store.decide_approval(email, decision):
+            self._json({'ok': False, 'error': 'approval not found or already decided'}, 404); return
+        surveyor.store.log_event(email, 'approval_decided',
+                                 {'id': decision['id'], 'status': decision['status']})
+        self._json({'ok': True, 'approval': decision,
+                    'resume': surveyor.hitl_policy.resume_instruction(checkpoint, decision)})
+
+    def _surv_workspace(self):
+        """Return one person's canonical workspace state, never another user's."""
+        email, stop = self._surv_guard()
+        if stop: return
+        query = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+        workspace_id = str(query.get('id', [''])[0])
+        if not workspace_id:
+            self._json({'ok': False, 'error': 'workspace id is required'}, 400)
+            return
+        state = surveyor.store.get_workspace(email, workspace_id)
+        if not state:
+            legacy = surveyor.store.get_interface(email, workspace_id)
+            if not legacy:
+                self._json({'ok': False, 'error': 'workspace not found'}, 404)
+                return
+            definition = dict(legacy['definition'] or {})
+            definition.update({'name': legacy['name'], 'description': legacy['description']})
+            state = surveyor.workspace_state.from_interface(
+                workspace_id, definition, surveyor.store.get_connector_states(email))
+            surveyor.store.save_workspace(email, workspace_id, state)
+        self._json({'ok': True, 'workspace': state})
+
+    def _surv_workspace_mutation(self, body):
+        """Apply an allow-listed human workspace change to canonical state."""
+        email, stop = self._surv_guard()
+        if stop: return
+        workspace_id = str(body.get('id') or '')
+        state = surveyor.store.get_workspace(email, workspace_id)
+        if not state:
+            self._json({'ok': False, 'error': 'workspace not found'}, 404)
+            return
+        try:
+            changed = surveyor.workspace_state.apply_mutation(
+                state, body.get('mutation'), 'human')
+        except ValueError as exc:
+            self._json({'ok': False, 'error': str(exc)}, 400)
+            return
+        surveyor.store.save_workspace(email, workspace_id, changed)
+        surveyor.store.log_event(email, 'workspace_mutated',
+                                 {'id': workspace_id,
+                                  'kind': body.get('mutation', {}).get('kind')})
+        self._json({'ok': True, 'workspace': changed})
+
+    def _surv_github_repositories(self):
+        """Read-only GitHub summary through the first connector-native surface."""
+        email, stop = self._surv_guard()
+        if stop: return
+        try:
+            outcome = self._github_read_capability(email)
+        except (surveyor.github_connector.ConnectorUnavailable,
+                surveyor.vault.VaultUnavailable) as exc:
+            self._surv_connector_runtime(email, 'github', 'needs_attention')
+            self._json({'ok': False, 'error': str(exc)}, 503)
+            return
+        if not outcome['ok']:
+            self._json(outcome, 409)
+            return
+        self._surv_connector_runtime(email, 'github', 'live')
+        surveyor.store.log_event(email, 'github_repositories_read',
+                                 {'count': len(outcome['result']['repositories'])})
+        self._json({'ok': True, 'capability': outcome['capability'],
+                    'permission': outcome['permission'], **outcome['result']})
+
+    def _github_read_capability(self, email):
+        """One credential-resolution boundary shared by direct and skill execution."""
+        states = surveyor.store.get_connector_states(email)
+
+        def read_repositories():
+            # The gateway invokes this only after the connector permission is ALLOW.
+            # Keep both secret resolution and network activity inside that boundary.
+            stored = surveyor.store.get_secret(email, 'github')
+            if not stored:
+                raise surveyor.vault.VaultUnavailable(
+                    'Connect GitHub with a token before Cordia can read repositories.')
+            _secret_ref, ciphertext = stored
+            token = surveyor.vault.from_environment().open(ciphertext)
+            return surveyor.github_connector.list_repositories(token)
+
+        return surveyor.capability_gateway.execute(
+            'github.read_repositories', states,
+            read_repositories)
+
+    def _surv_execute_skill(self, body):
+        """Execute an allow-listed skill only through its declared typed capability."""
+        email, stop = self._surv_guard()
+        if stop: return
+        skill_id = str(body.get('id') or '')
+        try:
+            outcome = surveyor.skills.execute(
+                skill_id, surveyor.store.get_connector_states(email),
+                lambda capability: self._github_read_capability(email)
+                if capability == 'github.read_repositories'
+                else {'ok': False, 'error': 'skill capability is not implemented'})
+        except (surveyor.github_connector.ConnectorUnavailable,
+                surveyor.vault.VaultUnavailable) as exc:
+            self._surv_connector_runtime(email, 'github', 'needs_attention')
+            self._json({'ok': False, 'error': str(exc)}, 503)
+            return
+        if not outcome.get('ok'):
+            self._json(outcome, 409)
+            return
+        self._surv_connector_runtime(email, 'github', 'live')
+        surveyor.store.log_event(email, 'skill_executed', {'id': skill_id})
+        self._json({'ok': True, **outcome})
+
+    def _surv_connector_runtime(self, email, connector_id, runtime_status):
+        """Best-effort runtime health projection into every saved workspace."""
+        for workspace_id, state in surveyor.store.workspaces(email):
+            try:
+                surveyor.store.save_workspace(
+                    email, workspace_id,
+                    surveyor.workspace_state.record_connector_runtime(
+                        state, connector_id, runtime_status))
+            except Exception:
+                pass
+
+    def _surv_github_token(self, body):
+        """Validate then encrypt a user-entered GitHub token without returning it."""
+        email, stop = self._surv_guard()
+        if stop: return
+        try:
+            token = str(body.get('token') or '')
+            validation = surveyor.github_connector.validate_token(token)
+            ref, ciphertext = surveyor.vault.from_environment().seal(
+                'github', token)
+            surveyor.store.save_secret(ref, email, 'github', ciphertext)
+            states = surveyor.artifacts.merge_connector_states(
+                surveyor.store.get_connector_states(email), {'github': 'confirmed'})
+            surveyor.store.save_connector_states(email, states)
+            for workspace_id, state in surveyor.store.workspaces(email):
+                surveyor.store.save_workspace(email, workspace_id,
+                                              surveyor.workspace_state.refresh_connectors(state, states))
+        except (ValueError, surveyor.vault.VaultUnavailable,
+                surveyor.github_connector.ConnectorUnavailable) as exc:
+            code = 422 if isinstance(exc, surveyor.github_connector.AuthorizationRejected) else 503
+            self._json({'ok': False, 'error': str(exc)}, code)
+            return
+        self._surv_connector_runtime(email, 'github', 'live')
+        surveyor.store.log_event(email, 'github_secret_configured',
+                                 {'secret_ref': ref, 'repository_count': len(validation['repositories'])})
+        self._json({'ok': True, 'secret_ref': ref, 'connector_state': 'confirmed',
+                    'repository_limit': validation['repository_limit']})
+
+    def _surv_connectors(self, body):
+        """Store only explicit connector confirmations; authorization comes later."""
+        email, stop = self._surv_guard()
+        if stop: return
+        states = surveyor.artifacts.merge_connector_states(
+            surveyor.store.get_connector_states(email), body.get('connector_states'))
+        surveyor.store.save_connector_states(email, states)
+        for workspace_id, state in surveyor.store.workspaces(email):
+            surveyor.store.save_workspace(email, workspace_id,
+                                          surveyor.workspace_state.refresh_connectors(state, states))
+        surveyor.store.log_event(email, 'connector_preferences_updated', {'ids': sorted(states)})
+        self._json({'ok': True, 'connector_states': states,
+                    'artifacts': surveyor.pipeline.artifact_bundle(email)})
+
     def _surv_export(self):
         """Survey answers as JSONL, for phase-2 analysis. Admin only — this is
         every participant's raw text, not just the requester's."""
@@ -512,6 +795,17 @@ class H(BaseHTTPRequestHandler):
             self._json({'ok': False, 'error': 'not found'}, 404); return
         iid = surveyor.store.save_interface(email, existing, name, desc, definition,
                                             body.get('theme'))
+        workspace_definition = dict(definition)
+        workspace_definition.update({'name': name, 'description': desc})
+        workspace = surveyor.store.get_workspace(email, iid)
+        if workspace:
+            surveyor.store.save_workspace(
+                email, iid,
+                surveyor.workspace_state.merge_interface(workspace, workspace_definition))
+        else:
+            workspace = surveyor.workspace_state.from_interface(
+                iid, workspace_definition, surveyor.store.get_connector_states(email))
+            surveyor.store.save_workspace(email, iid, workspace)
         surveyor.store.log_event(email,
                                  'interface_updated' if existing else 'interface_created',
                                  {'id': iid, 'agents': len(definition.get('agents') or []),
@@ -558,17 +852,24 @@ class H(BaseHTTPRequestHandler):
         if not prompt:
             self._json({'ok': False, 'error': 'input required'}, 400); return
         profile = surveyor.pipeline.load_profile(email)
+        workspace = surveyor.store.get_workspace(email, iface['id']) or {}
         system = surveyor.prompts.runtime_system(
-            iface['definition'], surveyor.adaptation.soft_profile(profile))
+            iface['definition'], surveyor.adaptation.soft_profile(profile),
+            surveyor.pipeline.artifact_bundle(email), workspace)
         status = surveyor.llm.status(nous_key)
         try:
             out = self._surv_llm()(system, prompt, max_tokens=1200)
         except Exception as e:
             self._json({'ok': False, 'error': f'run failed: {e}'}, 502); return
-        surveyor.store.add_run(iface['id'], email, prompt, out, {'llm': status['mode']})
+        run_id = surveyor.store.add_run(iface['id'], email, prompt, out, {'llm': status['mode']})
+        approval_step = next((step for step in (iface['definition'].get('workflow') or {}).get('steps', [])
+                              if surveyor.hitl_policy.requires_approval(step)), None)
+        checkpoint = surveyor.hitl_policy.create_checkpoint(run_id, approval_step, out) if approval_step else None
+        if checkpoint:
+            surveyor.store.save_approval(email, checkpoint)
         surveyor.store.log_event(email, 'interface_run',
                                  {'id': iface['id'], 'llm': status['mode']})
-        self._json({'ok': True, 'output': out, 'llm': status})
+        self._json({'ok': True, 'output': out, 'llm': status, 'approval': checkpoint})
 
     def _surv_personalization(self, body):
         email, stop = self._surv_guard()
@@ -861,7 +1162,9 @@ class H(BaseHTTPRequestHandler):
         report = scoring.score_course(course_id, rows)
         report['scoring_method'] = 'rubric'
         try:
-            shadow = embedding_scoring.score_course(course_id, rows)
+            shadow = embedding_scoring.score_course(course_id, rows) if embedding_scoring else None
+            if shadow is None:
+                raise RuntimeError('embedding shadow scoring is unavailable')
             report['embedding_shadow'] = {
                 'score': shadow.get('score'),
                 'percent': shadow.get('percent'),
@@ -923,6 +1226,18 @@ class H(BaseHTTPRequestHandler):
             self._surv_run(body)
         elif p == '/surveyor/personalization':
             self._surv_personalization(body)
+        elif p == '/surveyor/connectors':
+            self._surv_connectors(body)
+        elif p == '/surveyor/intent-miss':
+            self._surv_intent_miss(body)
+        elif p == '/surveyor/workspace/mutate':
+            self._surv_workspace_mutation(body)
+        elif p == '/surveyor/approval/decision':
+            self._surv_decide_approval(body)
+        elif p == '/surveyor/skill/execute':
+            self._surv_execute_skill(body)
+        elif p == '/surveyor/github/token':
+            self._surv_github_token(body)
         elif p == '/train/survey':
             self._survey(body)
         elif p == '/train/rate':

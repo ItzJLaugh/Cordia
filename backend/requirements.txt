@@ -1,0 +1,4 @@
+# Required by the existing authentication and Surveyor persistence layers.
+psycopg2-binary>=2.9,<3
+# Required by surveyor.vault for authenticated encryption of per-user connector secrets.
+cryptography>=44,<46

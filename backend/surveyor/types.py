@@ -117,6 +117,7 @@ def empty_profile() -> dict:
         "adaptation": {},
         "scenarios": {},
         "freeform": {},
+        "intent_misses": [],
         "tensions": [],
         "reliability": {},
         "confidence": 0.0,
