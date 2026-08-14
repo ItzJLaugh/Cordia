@@ -2,6 +2,8 @@ const API = (location.hostname === 'localhost' || location.hostname === '127.0.0
   ? 'http://127.0.0.1:9995'
   : ''
 
+class ValidatedResponseError extends Error {}
+
 function safeServerError(value) {
   return typeof value === 'string'
     && value.length <= 160
@@ -11,7 +13,7 @@ function safeServerError(value) {
 }
 
 export function safeErrorMessage(error) {
-  return safeServerError(error instanceof Error ? error.message : '')
+  return error instanceof ValidatedResponseError ? error.message : 'Request failed'
 }
 
 // GET is the only Alidora client operation. The HttpOnly session cookie stays
@@ -30,10 +32,11 @@ export async function getApi(path) {
     })
     const body = await response.json().catch(() => null)
     if (!response.ok || !body || body.ok !== true) {
-      throw new Error(safeServerError(body && body.error))
+      throw new ValidatedResponseError(safeServerError(body && body.error))
     }
     return body
   } catch (error) {
-    throw new Error(safeErrorMessage(error))
+    if (error instanceof ValidatedResponseError) throw error
+    throw new Error('Request failed')
   }
 }
