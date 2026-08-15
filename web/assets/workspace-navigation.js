@@ -6,18 +6,41 @@
 })(typeof globalThis === 'object' ? globalThis : this, function () {
   'use strict';
 
-  // Matches the opaque identifier contract enforced by the Alidora backend map.
+  // Matches canonical UUID hex and existing bounded opaque safe ids. The
+  // credential check rejects safe-looking tokens before any URL is created.
   var SAFE_WORKSPACE_ID = /^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$/;
   var CREDENTIAL_SHAPED_ID = /^(?:(?:sk|pk|rk)-[A-Za-z0-9_-]{8,}|gh[pousr]_[A-Za-z0-9]{20,}|xox[baprs]-[A-Za-z0-9-]{10,}|AKIA[0-9A-Z]{16}|github_pat_[A-Za-z0-9_]{20,}|(?:api[-_.]?key|access[-_.]?token|token|secret|password|credential)[-_.])/i;
 
+  function safeWorkspaceId(workspaceId) {
+    return typeof workspaceId === 'string' && SAFE_WORKSPACE_ID.test(workspaceId) &&
+      !CREDENTIAL_SHAPED_ID.test(workspaceId);
+  }
+
+  function workspaceHref(workspaceId, view) {
+    if (!safeWorkspaceId(workspaceId)) return null;
+    return '/dashboard/?workspace=' + encodeURIComponent(workspaceId) +
+      (view === 'alidora' ? '&view=alidora' : '');
+  }
+
+  function buildWorkspaceNavigation(workspaceId) {
+    var href = workspaceHref(workspaceId);
+    return href ? { label: 'Workspace', href: href } : null;
+  }
+
   function buildAlidoraNavigation(workspaceId) {
-    if (typeof workspaceId !== 'string' || !SAFE_WORKSPACE_ID.test(workspaceId) ||
-        CREDENTIAL_SHAPED_ID.test(workspaceId)) return null;
+    var href = workspaceHref(workspaceId, 'alidora');
+    if (!href) return null;
     return {
       label: 'Alidora',
       subtitle: 'Agentic System Builder',
-      href: 'dashboard/?workspace=' + encodeURIComponent(workspaceId),
+      href: href,
     };
+  }
+
+  function legacyWorkspaceDestination(search) {
+    var id = new URLSearchParams(typeof search === 'string' ? search : '').get('id');
+    var navigation = buildWorkspaceNavigation(id);
+    return navigation ? navigation.href : '/interfaces.html';
   }
 
   function renderAlidoraNavigation(host, workspaceId, document) {
@@ -41,6 +64,8 @@
 
   return {
     buildAlidoraNavigation: buildAlidoraNavigation,
+    buildWorkspaceNavigation: buildWorkspaceNavigation,
+    legacyWorkspaceDestination: legacyWorkspaceDestination,
     renderAlidoraNavigation: renderAlidoraNavigation,
   };
 });

@@ -75,6 +75,154 @@ test('alidoraMapToFlow sorts safe nodes and emits a non-editable graph', () => {
   ])
 })
 
+test('alidoraMapToFlow drops unsafe node identity and strips secret or path-shaped display text', () => {
+  const flow = alidoraMapToFlow({
+    nodes: [
+      { id: 'C:\\private\\agent', kind: 'agent', label: 'Unsafe id', detail: '' },
+      { id: 'agent:wrong-kind', kind: 'runtime_secret', label: 'Unsafe kind', detail: '' },
+      { id: 'agent:review', kind: 'agent', label: 'password=hunter2', detail: 'Checks evidence.' },
+      { id: 'skill:deploy', kind: 'skill', label: 'Deploy', detail: 'Open C:\\private\\workspace' },
+      {
+        id: 'connector:github', kind: 'connector', label: 'token=private-value', detail: '',
+        connector_status: { consent: 'confirmed', implementation: 'live', lifecycle: 'live', runtime: 'live' },
+      },
+    ],
+    edges: [
+      { from: 'C:\\private\\agent', to: 'skill:deploy' },
+      { from: 'agent:review', to: 'skill:deploy' },
+      { from: 'agent:wrong-kind', to: 'skill:deploy' },
+    ],
+  })
+
+  assert.deepEqual(flow.nodes.map((node) => node.id), ['agent:review', 'connector:github', 'skill:deploy'])
+  assert.deepEqual(flow.nodes.map((node) => node.data), [
+    { kind: 'agent', label: '', detail: 'Checks evidence.' },
+    {
+      kind: 'connector', label: '', detail: '',
+      connectorStatus: { consent: 'confirmed', implementation: 'live', lifecycle: 'live', runtime: 'live' },
+    },
+    { kind: 'skill', label: 'Deploy', detail: '' },
+  ])
+  assert.deepEqual(flow.edges.map(({ source, target }) => ({ source, target })), [
+    { source: 'agent:review', target: 'skill:deploy' },
+  ])
+  assert.equal(JSON.stringify(flow).includes('private'), false)
+  assert.equal(JSON.stringify(flow).includes('hunter2'), false)
+  assert.equal(JSON.stringify(flow).includes('runtime_secret'), false)
+})
+
+test('alidoraMapToFlow strips metadata-prefixed local paths from node text', () => {
+  const localPaths = [
+    'path:C:\\private\\workspace',
+    'path:C:private',
+    'path:/home/cordia/private',
+    'file:///home/cordia/private',
+    'path:\\\\server\\private',
+    'path:/run/secrets/key',
+    'path:/srv/cordia/private',
+    'path:/mnt/c/private',
+    'path:/workspace/private',
+    'path:/Library/Keychains',
+    'path://server/share',
+  ]
+
+  for (const value of localPaths) {
+    const flow = alidoraMapToFlow({
+      nodes: [{ id: 'agent:review', kind: 'agent', label: value, detail: value }],
+      edges: [],
+    })
+    assert.deepEqual(flow.nodes[0].data, { kind: 'agent', label: '', detail: '' }, value)
+  }
+})
+
+test('alidoraMapToFlow preserves remote URL text but rejects unsafe or malformed components', () => {
+  const remoteUrls = [
+    'https://example.test/docs/start',
+    'http://localhost:8000/api/v1',
+    'ftp://files.example.test/public/readme',
+    'custom://host/one/two',
+    'https://[2001:db8::1]/docs/start',
+  ]
+
+  for (const value of remoteUrls) {
+    const flow = alidoraMapToFlow({
+      nodes: [{ id: 'agent:review', kind: 'agent', label: value, detail: value }],
+      edges: [],
+    })
+    assert.deepEqual(flow.nodes[0].data, { kind: 'agent', label: value, detail: value }, value)
+  }
+  for (const value of [
+    'file:///home/cordia/private',
+    'path://server/share',
+    'https://user:password@example.test/docs/start',
+    'https://example.test/docs/start?token=private',
+    'https://example.test/docs?next=file:///home/cordia/private',
+    'https://example.test/docs?next=path://server/share',
+    'https://example.test/docs?local=path:C:\\private\\workspace',
+    'https://example.test/docs?home=/home/cordia/private',
+    'https://example.test/docs?home=%2Fhome%2Fcordia%2Fprivate',
+    'https://example.test/docs?home=%2Fhome%2Fcordia%2Fprivate&bad=%ZZ',
+    'https://example.test/docs?%74oken%3Dprivate&bad=%ZZ',
+    'https://example.test/docs#bad=%ZZ',
+  ]) {
+    const flow = alidoraMapToFlow({
+      nodes: [{ id: 'agent:review', kind: 'agent', label: value, detail: value }],
+      edges: [],
+    })
+    assert.deepEqual(flow.nodes[0].data, { kind: 'agent', label: '', detail: '' }, value)
+  }
+})
+
+test('alidoraMapToFlow rejects token-shaped and drive-relative node and edge identifiers', () => {
+  const flow = alidoraMapToFlow({
+    nodes: [
+      { id: 'agent:1', kind: 'agent', label: 'Agent 1', detail: '' },
+      { id: 'skill:1', kind: 'skill', label: 'Skill 1', detail: '' },
+      { id: 'ghp_abcdefghijk', kind: 'agent', label: 'Credential id', detail: '' },
+      { id: 'C:private', kind: 'skill', label: 'Drive-relative id', detail: '' },
+    ],
+    edges: [
+      { from: 'agent:1', to: 'skill:1' },
+      { from: 'ghp_abcdefghijk', to: 'skill:1' },
+      { from: 'agent:1', to: 'C:private' },
+    ],
+  })
+
+  assert.deepEqual(flow.nodes.map((node) => node.id), ['agent:1', 'skill:1'])
+  assert.deepEqual(flow.edges.map(({ source, target }) => ({ source, target })), [
+    { source: 'agent:1', target: 'skill:1' },
+  ])
+  assert.equal(JSON.stringify(flow).includes('ghp_'), false)
+  assert.equal(JSON.stringify(flow).includes('C:private'), false)
+})
+
+test('alidoraMapToFlow preserves bounded synthetic entity ids without admitting workspace ids or credential prefixes', () => {
+  const flow = alidoraMapToFlow({
+    nodes: [
+      { id: 'agent:review', kind: 'agent', label: 'Reviewer', detail: '' },
+      { id: 'skill:summarize', kind: 'skill', label: 'Summarize', detail: '' },
+      {
+        id: 'connector:github', kind: 'connector', label: 'GitHub', detail: '',
+        connector_status: { consent: 'confirmed', implementation: 'live', lifecycle: 'live', runtime: 'live' },
+      },
+      { id: 'ghp_testvalue', kind: 'agent', label: 'Unsafe', detail: '' },
+      { id: 'AKIA1234567890ABCDEF', kind: 'skill', label: 'Unsafe', detail: '' },
+      { id: 'workspace-1', kind: 'agent', label: 'Wrong boundary', detail: '' },
+    ],
+    edges: [
+      { from: 'agent:review', to: 'skill:summarize' },
+      { from: 'workspace-1', to: 'skill:summarize' },
+    ],
+  })
+
+  assert.deepEqual(flow.nodes.map((node) => node.id), [
+    'agent:review', 'connector:github', 'skill:summarize',
+  ])
+  assert.deepEqual(flow.edges.map(({ source, target }) => ({ source, target })), [
+    { source: 'agent:review', target: 'skill:summarize' },
+  ])
+})
+
 test('getApi bounds secret-bearing transport failures', async () => {
   const originals = new Map()
   function replaceGlobal(name, value) {
