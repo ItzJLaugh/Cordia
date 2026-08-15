@@ -124,6 +124,43 @@ class TestSaveInterfaceRequest(EnvHermeticCase):
         self.assertEqual(len(cleaned["definition"]["workflow"]["steps"]), 45)
 
 
+class TestStaleRowConflict(EnvHermeticCase):
+    """The time half of the write guard (Step 9): a save carrying the
+    stamp its copy was loaded from must refuse when the row moved on —
+    otherwise two tabs silently clobber each other, last write wins."""
+
+    def test_no_stamp_means_no_check(self):
+        """Old clients and the vanilla builder send no stamp — their saves
+        keep working exactly as before."""
+        self.assertIsNone(api.stale_row_conflict(None, "2026-08-14 10:00:00+00:00"))
+        self.assertIsNone(api.stale_row_conflict(None, None))
+
+    def test_matching_stamp_passes(self):
+        stamp = "2026-08-14 10:00:00+00:00"
+        self.assertIsNone(api.stale_row_conflict(stamp, stamp))
+
+    def test_moved_row_refuses_with_reload_copy(self):
+        msg = api.stale_row_conflict("2026-08-14 10:00:00+00:00",
+                                     "2026-08-14 10:05:00+00:00")
+        self.assertIn("reload", msg)
+        self.assertEqual(stypes.assert_positive(msg), [])
+
+    def test_stamp_shaping_in_save_request(self):
+        """The str(None) trap again: a JSON null stamp must mean 'no
+        check', never the string 'None' (which would refuse every save)."""
+        body = {"definition": {"agents": [], "tools": [],
+                               "workflow": {"steps": []}}}
+        for absent in ({}, {"expected_updated": None},
+                       {"expected_updated": ""}, {"expected_updated": "  "}):
+            err, cleaned = api.save_interface_request(dict(body, **absent))
+            self.assertIsNone(err)
+            self.assertIsNone(cleaned["expected_updated"], absent)
+        err, cleaned = api.save_interface_request(
+            dict(body, expected_updated=" 2026-08-14 10:00:00+00:00 "))
+        self.assertEqual(cleaned["expected_updated"],
+                         "2026-08-14 10:00:00+00:00")
+
+
 class TestStoredRowConflict(EnvHermeticCase):
     """The second half of the write guard: an edit must refuse when the
     STORED row holds content the dashboard cannot represent — the read path
