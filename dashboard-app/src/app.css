@@ -172,6 +172,29 @@ a { color: inherit; }
 .artifact-items li { min-width: 0; display: flex; align-items: baseline; justify-content: space-between; gap: 14px; padding: 8px 0; border-top: 1px solid rgba(11, 11, 11, 0.065); font-size: 12px; line-height: 1.4; }
 .artifact-items li > span:first-child { min-width: 0; overflow-wrap: anywhere; }
 .artifact-meta { color: #6e6e6e; font-size: 10.5px; text-align: right; overflow-wrap: anywhere; }
+.artifact-action {
+  min-height: 34px;
+  margin-top: 14px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 9px;
+  background: #4a5a42;
+  color: #ffffff;
+  cursor: pointer;
+  font-family: "Work Sans", Inter, system-ui, sans-serif;
+  font-size: 11px;
+  font-weight: 650;
+}
+.artifact-action:disabled { opacity: 0.48; cursor: default; }
+.artifact-action-status {
+  margin: 14px 0 0;
+  padding: 9px 10px;
+  border-radius: 9px;
+  background: #f6f7f4;
+  color: #686868;
+  font-size: 11px;
+  line-height: 1.45;
+}
 .canvas-notice, .canvas-empty { height: 100%; min-height: 260px; display: grid; place-items: center; padding: 40px; color: #6e6e6e; font-size: 14px; line-height: 1.55; text-align: center; }
 
 .alidora-canvas { height: 100%; min-height: 0; display: flex; flex-direction: column; }

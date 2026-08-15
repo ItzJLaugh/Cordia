@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 
-import { apiErrorKind, getApi, postRun } from './api.js'
+import { apiErrorKind, getApi, postRun, postSkillExecute } from './api.js'
 import ArtifactCard from './ArtifactCard.jsx'
 import DefinitionGraph from './DefinitionGraph.jsx'
 import { alidoraMapToFlow } from './graph.js'
@@ -8,16 +8,11 @@ import {
   assistantReplyModel,
   assistantTurnFailed,
   assistantTurnStarted,
+  createSkillInteractionController,
   isAssistantSendKey,
+  loadWorkspaceTruth,
   workspaceRendererModel,
 } from './workspace-view.js'
-
-const SUPPLEMENTAL_ENDPOINTS = {
-  artifacts: '/surveyor/artifacts',
-  capabilities: '/surveyor/capabilities',
-  skills: '/surveyor/skills',
-  activity: '/surveyor/activity',
-}
 
 function loadNotice(state, subject) {
   if (state.phase === 'loading') return `Loading ${subject}…`
@@ -27,12 +22,10 @@ function loadNotice(state, subject) {
   return `Unable to load ${subject}. Refresh to try again.`
 }
 
-function Assistant({ workspaceId, enabled, readOnly }) {
-  const [state, setState] = useState({ transcript: [], draft: '', note: '', busy: false, pending: null })
+function Assistant({ workspaceId, enabled, readOnly, state, setState, nextId, operationRef }) {
   const inputRef = useRef(null)
   const scrollRef = useRef(null)
   const aliveRef = useRef(true)
-  const idRef = useRef(0)
   const wasBusyRef = useRef(false)
 
   useEffect(() => {
@@ -51,13 +44,15 @@ function Assistant({ workspaceId, enabled, readOnly }) {
   }, [enabled, state.busy])
 
   function fail(copy) {
+    operationRef.current = ''
     setState((current) => assistantTurnFailed(current, copy))
   }
 
   function send() {
-    if (!enabled || readOnly || state.busy || !state.draft.trim()) return
-    const started = assistantTurnStarted(state, ++idRef.current)
+    if (!enabled || readOnly || state.busy || operationRef.current || !state.draft.trim()) return
+    const started = assistantTurnStarted(state, nextId())
     if (!started.pending) return
+    operationRef.current = 'assistant'
     setState(started)
     postRun(workspaceId, started.pending.text).then((response) => {
       if (!aliveRef.current) return
@@ -66,7 +61,8 @@ function Assistant({ workspaceId, enabled, readOnly }) {
         fail('Cordia returned an unexpected response. Your draft is safe to send again.')
         return
       }
-      const replyId = ++idRef.current
+      const replyId = nextId()
+      operationRef.current = ''
       setState((current) => ({
         transcript: [...current.transcript, { id: replyId, who: 'cordia', text: reply.text }],
         draft: '', note: reply.note, busy: false, pending: null,
@@ -135,21 +131,17 @@ function Assistant({ workspaceId, enabled, readOnly }) {
   )
 }
 
-function WorkspaceCanvas({ workspaceId, onReadyChange }) {
+function WorkspaceCanvas({
+  workspaceId, onReadyChange, refreshRevision, onSkillAction, skillBusyId, actionsDisabled,
+}) {
   const [state, setState] = useState({ phase: 'loading' })
 
   useEffect(() => {
     let active = true
     setState({ phase: 'loading' })
     onReadyChange(false)
-    getApi(`/surveyor/workspace?id=${encodeURIComponent(workspaceId)}`).then(async (workspace) => {
-      const entries = Object.entries(SUPPLEMENTAL_ENDPOINTS)
-      const settled = await Promise.allSettled(entries.map(([, path]) => getApi(path)))
+    loadWorkspaceTruth(getApi, workspaceId).then(({ workspace, supplemental }) => {
       if (!active) return
-      const supplemental = {}
-      settled.forEach((result, index) => {
-        if (result.status === 'fulfilled') supplemental[entries[index][0]] = result.value
-      })
       const model = workspaceRendererModel(workspace, supplemental, workspaceId)
       if (!model) {
         setState({ phase: 'malformed' })
@@ -162,7 +154,7 @@ function WorkspaceCanvas({ workspaceId, onReadyChange }) {
       setState({ phase: apiErrorKind(error) })
     })
     return () => { active = false }
-  }, [workspaceId, onReadyChange])
+  }, [workspaceId, onReadyChange, refreshRevision])
 
   if (state.phase !== 'ready') {
     return <div className="canvas-notice" role="status">{loadNotice(state, 'your workspace')}</div>
@@ -180,7 +172,15 @@ function WorkspaceCanvas({ workspaceId, onReadyChange }) {
       </header>
       {state.model.cards.length ? (
         <div className="artifact-grid">
-          {state.model.cards.map((card) => <ArtifactCard key={card.id} card={card} />)}
+          {state.model.cards.map((card) => (
+            <ArtifactCard
+              key={card.id}
+              card={card}
+              actionBusy={card.action && card.action.id === skillBusyId}
+              actionsDisabled={actionsDisabled}
+              onAction={onSkillAction}
+            />
+          ))}
         </div>
       ) : (
         <div className="canvas-empty">This workspace is ready for Cordia to shape its first artifacts.</div>
@@ -229,14 +229,49 @@ function AlidoraCanvas({ workspaceId }) {
 
 export default function WorkspaceView({ route }) {
   const [workspaceReady, setWorkspaceReady] = useState(false)
+  const [refreshRevision, setRefreshRevision] = useState(0)
+  const [assistantState, setAssistantState] = useState({
+    transcript: [], draft: '', note: '', busy: false, pending: null,
+  })
+  const operationRef = useRef('')
+  const idRef = useRef(0)
+  const skillControllerRef = useRef(null)
+  if (!skillControllerRef.current) {
+    skillControllerRef.current = createSkillInteractionController({
+      executeSkill: postSkillExecute,
+      errorKind: apiErrorKind,
+      nextId: () => ++idRef.current,
+      operation: operationRef,
+      updateState: setAssistantState,
+      refresh: () => setRefreshRevision((revision) => revision + 1),
+    })
+  }
   const isAlidora = route.view === 'alidora'
   return (
     <main className="workspace-layout">
-      <Assistant workspaceId={route.workspaceId} enabled={workspaceReady} readOnly={isAlidora} />
+      <Assistant
+        workspaceId={route.workspaceId}
+        enabled={workspaceReady}
+        readOnly={isAlidora}
+        state={assistantState}
+        setState={setAssistantState}
+        nextId={() => ++idRef.current}
+        operationRef={operationRef}
+      />
       <div className="workspace-surface">
         {isAlidora
           ? <AlidoraCanvas workspaceId={route.workspaceId} />
-          : <WorkspaceCanvas workspaceId={route.workspaceId} onReadyChange={setWorkspaceReady} />}
+          : (
+            <WorkspaceCanvas
+              workspaceId={route.workspaceId}
+              onReadyChange={setWorkspaceReady}
+              refreshRevision={refreshRevision}
+              onSkillAction={skillControllerRef.current.run}
+              skillBusyId={assistantState.pending && assistantState.pending.kind === 'skill'
+                ? assistantState.pending.skillId : ''}
+              actionsDisabled={assistantState.busy}
+            />
+          )}
       </div>
     </main>
   )

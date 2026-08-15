@@ -1,4 +1,6 @@
-export default function ArtifactCard({ card }) {
+import SkillAction from './SkillAction.js'
+
+export default function ArtifactCard({ card, actionBusy = false, actionsDisabled = false, onAction }) {
   return (
     <article className={`artifact-card artifact-${card.kind}`} aria-labelledby={`${card.id}-title`}>
       <header className="artifact-header">
@@ -18,6 +20,14 @@ export default function ArtifactCard({ card }) {
             </li>
           ))}
         </ul>
+      )}
+      {card.action && (
+        <SkillAction
+          action={card.action}
+          busy={actionBusy}
+          disabled={actionsDisabled}
+          onAction={onAction}
+        />
       )}
     </article>
   )

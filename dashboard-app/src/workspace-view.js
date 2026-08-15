@@ -6,6 +6,12 @@ const SECRET_OR_PATH = /(?:[A-Za-z]:\\|\\\\[^\s]+\\|\/(?:home|root|Users)\/|\b(?
 const SAFE_TIMESTAMP = /^\d{4}-\d{2}-\d{2}T[0-9:.+-]+Z?$/
 const DECISIONS = new Set(['ALLOW', 'ASK', 'DENY'])
 const PERMISSIONS = new Set(['ALLOW', 'ASK', 'DENY'])
+const SUPPLEMENTAL_ENDPOINTS = {
+  artifacts: '/surveyor/artifacts',
+  capabilities: '/surveyor/capabilities',
+  skills: '/surveyor/skills',
+  activity: '/surveyor/activity',
+}
 
 function safeId(value) {
   return typeof value === 'string' && SAFE_ID.test(value) && !CREDENTIAL_PREFIX.test(value) ? value : ''
@@ -36,10 +42,10 @@ function stable(records) {
 function connectorReadiness(connectors, requiredIds) {
   const byId = new Map(connectors.map((connector) => [connector.id, connector]))
   const required = requiredIds.map((id) => byId.get(id))
-  if (required.some((connector) => !connector)) return 'unavailable'
+  if (required.some((connector) => !connector)) return 'missing'
   if (required.some((connector) => connector.implementation === 'planned')) return 'planned'
   if (required.some((connector) => connector.consent !== 'confirmed')) return 'connect'
-  if (required.some((connector) => connector.lifecycle === 'failed' || connector.runtime === 'needs_attention')) return 'unavailable'
+  if (required.some((connector) => connector.lifecycle !== 'live' || connector.runtime !== 'live')) return 'unhealthy'
   return 'ready'
 }
 
@@ -53,7 +59,23 @@ function connectorIds(value) {
 function readinessBadge(readiness) {
   if (readiness === 'planned') return 'Planned'
   if (readiness === 'connect') return 'Connect first'
-  if (readiness === 'unavailable') return 'Unavailable'
+  if (readiness === 'missing' || readiness === 'unhealthy') return 'Unavailable'
+  return ''
+}
+
+function skillRequest(title) {
+  const name = title.replace(/[.!?]+$/u, '').trim()
+  return name ? safeText(`Run skill: ${name}.`, 200) : ''
+}
+
+function skillActionReason(skill, readiness) {
+  if (readiness === 'missing') return 'A required connector is not available in this workspace.'
+  if (readiness === 'planned') return 'This skill is planned for a desktop or local surface and is not available here.'
+  if (readiness === 'connect') return 'Connect the required connector before running this skill.'
+  if (readiness === 'unhealthy') return 'A required connector needs attention before this skill can run.'
+  if (skill.permission === 'ASK') return 'Approval is required. This web view cannot continue the protected external action.'
+  if (skill.permission === 'DENY') return 'Cordia policy does not allow this skill.'
+  if (skill.available !== true) return 'This skill is not available through its declared capability.'
   return ''
 }
 
@@ -134,10 +156,18 @@ function skillCards(response, connectors) {
     if (!id || !title || !body || !permission || !requiredConnectors) return null
     const readiness = connectorReadiness(connectors, requiredConnectors)
     const connectorBadge = readinessBadge(readiness)
+    const reason = skillActionReason(skill, readiness)
+    const request = skillRequest(title)
+    if (!request) return null
     return {
       id: `skill:${id}`, kind: 'skill', title, body,
       badge: connectorBadge || (skill.available === true && permission === 'ALLOW'
         ? 'Available now' : permission === 'ASK' ? 'Approval required' : 'Unavailable'),
+      action: {
+        kind: 'skill', id, request,
+        enabled: readiness === 'ready' && skill.available === true && permission === 'ALLOW',
+        reason,
+      },
     }
   }).filter(Boolean)
   return stable(cards)
@@ -217,6 +247,19 @@ export function workspaceRendererModel(response, supplemental = {}, expectedWork
   }
 }
 
+export async function loadWorkspaceTruth(get, workspaceId) {
+  const id = safeId(workspaceId)
+  if (!id || typeof get !== 'function') throw new Error('Invalid workspace request')
+  const workspace = await get(`/surveyor/workspace?id=${encodeURIComponent(id)}`)
+  const entries = Object.entries(SUPPLEMENTAL_ENDPOINTS)
+  const settled = await Promise.allSettled(entries.map(([, path]) => get(path)))
+  const supplemental = {}
+  settled.forEach((result, index) => {
+    if (result.status === 'fulfilled') supplemental[entries[index][0]] = result.value
+  })
+  return { workspace, supplemental }
+}
+
 function boundedAssistantText(value) {
   return typeof value === 'string' ? value.trim().slice(0, 6000) : ''
 }
@@ -248,6 +291,92 @@ export function assistantTurnFailed(state, note) {
     busy: false,
     pending: null,
   }
+}
+
+const SKILL_ACTION_KEYS = ['enabled', 'id', 'kind', 'reason', 'request']
+
+function runnableSkillAction(action) {
+  if (!action || typeof action !== 'object' || Array.isArray(action)
+      || Object.keys(action).sort().join('|') !== SKILL_ACTION_KEYS.join('|')
+      || action.kind !== 'skill' || action.enabled !== true || action.reason !== ''
+      || typeof action.id !== 'string' || !/^[a-z][a-z0-9_]{0,79}$/.test(action.id)) return false
+  const request = safeText(action.request, 200)
+  return request === action.request && /^Run skill: .{1,160}\.$/u.test(request)
+}
+
+function skillNameFromRequest(request) {
+  const match = /^Run skill: (.{1,160})\.$/u.exec(request)
+  return match ? safeText(match[1], 160) : ''
+}
+
+function skillTurnStarted(state, operation) {
+  return {
+    transcript: [...(Array.isArray(state.transcript) ? state.transcript : []), {
+      id: operation.id, who: 'you', text: operation.action.request,
+    }],
+    draft: typeof state.draft === 'string' ? state.draft : '',
+    note: '', busy: true,
+    pending: { id: operation.id, text: operation.action.request, kind: 'skill', skillId: operation.action.id },
+  }
+}
+
+function skillTurnCompleted(state, operation, replyId) {
+  if (!state || !state.pending || state.pending.kind !== 'skill' || state.pending.id !== operation.id) return state
+  const name = skillNameFromRequest(operation.action.request)
+  if (!name) return state
+  return {
+    transcript: [...state.transcript, { id: replyId, who: 'cordia', text: `${name} completed.` }],
+    draft: state.draft, note: '', busy: false, pending: null,
+  }
+}
+
+function skillTurnFailed(state, operation, note) {
+  if (!state || !state.pending || state.pending.kind !== 'skill' || state.pending.id !== operation.id) return state
+  return {
+    transcript: state.transcript.filter((message) => message.id !== operation.id),
+    draft: state.draft,
+    note: safeText(note, 240) || 'That skill did not run. Review its prerequisites and try again.',
+    busy: false,
+    pending: null,
+  }
+}
+
+function skillFailureCopy(kind) {
+  if (kind === 'signed-out') return 'Your session ended. Sign in again before retrying this skill.'
+  if (kind === 'offline') return 'The server is unreachable right now. Retry this skill when Cordia is available.'
+  if (kind === 'rate-limit') return 'Skill limit reached. Wait a few minutes before retrying.'
+  if (kind === 'gate') return 'Cordia\'s execution gate did not allow this skill. Review its prerequisites and try again.'
+  return 'That skill did not run. Review its prerequisites and try again.'
+}
+
+export function createSkillInteractionController({
+  executeSkill, errorKind, nextId, operation, updateState, refresh,
+}) {
+  function run(action) {
+    if (!runnableSkillAction(action) || operation.current) return false
+    const pending = { id: nextId(), action }
+    operation.current = 'skill'
+    updateState((state) => skillTurnStarted(state, pending))
+
+    let execution
+    try {
+      execution = executeSkill(action.id)
+    } catch (error) {
+      execution = Promise.reject(error)
+    }
+    Promise.resolve(execution).then((response) => {
+      if (!response || response.ok !== true) throw new Error('skill execution failed')
+      updateState((state) => skillTurnCompleted(state, pending, nextId()))
+      refresh()
+    }).catch((error) => {
+      updateState((state) => skillTurnFailed(state, pending, skillFailureCopy(errorKind(error))))
+    }).finally(() => {
+      operation.current = ''
+    })
+    return true
+  }
+
+  return { run }
 }
 
 export function isAssistantSendKey(event) {

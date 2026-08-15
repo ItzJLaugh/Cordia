@@ -44,6 +44,42 @@ test('postRun exposes only the fixed Surveyor run request with a bounded input',
   }
 })
 
+test('postSkillExecute exposes only the fixed skill route with one registered-looking id', async () => {
+  const originals = new Map()
+  const requests = []
+  replaceGlobal('location', { hostname: 'cordia.example.test' }, originals)
+  replaceGlobal('localStorage', { getItem: () => null }, originals)
+  replaceGlobal('fetch', async (url, options) => {
+    requests.push({ url, options })
+    return { ok: true, status: 200, json: async () => ({
+      ok: true,
+      skill: { name: 'Untrusted nested name', prompt: 'must not cross into the transcript' },
+      result: { token: 'must not cross into renderer state' },
+    }) }
+  }, originals)
+
+  try {
+    const api = await import('../src/api.js?skill-execute-contract')
+    assert.equal(typeof api.postSkillExecute, 'function')
+    assert.equal((await api.postSkillExecute('github_repository_review')).ok, true)
+    assert.deepEqual(requests, [{
+      url: '/surveyor/skill/execute',
+      options: {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ id: 'github_repository_review' }),
+      },
+    }])
+    await assert.rejects(api.postSkillExecute('C:\\private\\skill'), /Invalid skill request/)
+    await assert.rejects(api.postSkillExecute('token:secret'), /Invalid skill request/)
+    await assert.rejects(api.postSkillExecute('GitHub_Repository_Review'), /Invalid skill request/)
+    assert.equal(requests.length, 1)
+  } finally {
+    restoreGlobals(originals)
+  }
+})
+
 test('API errors distinguish signed-out, rate-limited, and offline states without leaking transport details', async () => {
   const originals = new Map()
   replaceGlobal('location', { hostname: 'cordia.example.test' }, originals)

@@ -1,14 +1,16 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 
-import {
+import * as workspaceView from '../src/workspace-view.js'
+
+const {
   assistantReplyModel,
   assistantTurnFailed,
   assistantTurnStarted,
   isAssistantSendKey,
   routeFromSearch,
   workspaceRendererModel,
-} from '../src/workspace-view.js'
+} = workspaceView
 
 const workspaceResponse = {
   ok: true,
@@ -184,6 +186,69 @@ test('workspaceRendererModel gates skill and capability badges on canonical conn
   assert.equal(cards.get('capability:unstable.read').badge, 'Unavailable')
 })
 
+test('workspaceRendererModel is the sole source of bounded skill action and gate truth', () => {
+  const canonical = structuredClone(workspaceResponse)
+  canonical.workspace.connectors.push(
+    {
+      id: 'desktop.local_repository', status: 'confirmed', implementation_status: 'planned',
+      lifecycle: 'needs_handoff', runtime_status: 'not_observed',
+    },
+    {
+      id: 'unstable.connector', status: 'confirmed', implementation_status: 'live',
+      lifecycle: 'live', runtime_status: 'needs_attention',
+    },
+  )
+  const feeds = structuredClone(supplemental)
+  feeds.skills.skills.push(
+    {
+      id: 'temporarily_unavailable', name: 'Unavailable skill', summary: 'Unavailable at its capability boundary.',
+      permission: 'ALLOW', available: false,
+    },
+    {
+      id: 'approval_skill', name: 'Protected publish', summary: 'Requires a protected external continuation.',
+      permission: 'ASK', available: false, required_connectors: ['github'],
+    },
+    {
+      id: 'denied_skill', name: 'Denied publish', summary: 'Denied by Cordia policy.',
+      permission: 'DENY', available: false, required_connectors: ['github'],
+    },
+    {
+      id: 'missing_connector_skill', name: 'Missing connector skill', summary: 'Needs an unknown connector.',
+      permission: 'ALLOW', available: true, required_connectors: ['missing.connector'],
+    },
+    {
+      id: 'planned_connector_skill', name: 'Desktop Git status', summary: 'Runs only on the planned desktop surface.',
+      permission: 'ALLOW', available: true, required_connectors: ['desktop.local_repository'],
+    },
+    {
+      id: 'unhealthy_connector_skill', name: 'Unhealthy connector skill', summary: 'Needs a healthy connector.',
+      permission: 'ALLOW', available: true, required_connectors: ['unstable.connector'],
+    },
+  )
+
+  const skills = new Map(workspaceRendererModel(canonical, feeds, 'workspace-1').cards
+    .filter((card) => card.kind === 'skill').map((card) => [card.id, card]))
+  assert.deepEqual(skills.get('skill:github_repository_review').action, {
+    kind: 'skill', id: 'github_repository_review',
+    request: 'Run skill: Review repositories.', enabled: true, reason: '',
+  })
+  assert.deepEqual(skills.get('skill:temporarily_unavailable').action, {
+    kind: 'skill', id: 'temporarily_unavailable', request: 'Run skill: Unavailable skill.',
+    enabled: false, reason: 'This skill is not available through its declared capability.',
+  })
+  assert.equal(skills.get('skill:approval_skill').action.enabled, false)
+  assert.equal(skills.get('skill:approval_skill').action.reason,
+    'Approval is required. This web view cannot continue the protected external action.')
+  assert.equal(skills.get('skill:denied_skill').action.reason, 'Cordia policy does not allow this skill.')
+  assert.equal(skills.get('skill:missing_connector_skill').action.reason,
+    'A required connector is not available in this workspace.')
+  assert.equal(skills.get('skill:planned_connector_skill').action.reason,
+    'This skill is planned for a desktop or local surface and is not available here.')
+  assert.equal(skills.get('skill:unhealthy_connector_skill').action.reason,
+    'A required connector needs attention before this skill can run.')
+  assert.equal(JSON.stringify([...skills.values()]).includes('private-capability-shape'), false)
+})
+
 test('workspaceRendererModel retains connector-independent skills but rejects malformed connector prerequisites', () => {
   const feeds = structuredClone(supplemental)
   feeds.skills.skills = [
@@ -202,6 +267,10 @@ test('workspaceRendererModel retains connector-independent skills but rejects ma
   assert.deepEqual(skills, [{
     id: 'skill:summarize_context', kind: 'skill', title: 'Summarize context',
     body: 'Summarize the bounded workspace context.', badge: 'Available now',
+    action: {
+      kind: 'skill', id: 'summarize_context', request: 'Run skill: Summarize context.',
+      enabled: true, reason: '',
+    },
   }])
   assert.equal(JSON.stringify(model).includes('Malformed connectors'), false)
 })
@@ -224,6 +293,32 @@ test('workspaceRendererModel ignores malformed supplemental categories and unsaf
   assert.equal(model.cards.some((card) => card.kind === 'capability'), false)
   assert.equal(model.cards.some((card) => card.kind === 'skill'), false)
   assert.equal(model.cards.some((card) => card.kind === 'activity'), false)
+})
+
+test('loadWorkspaceTruth refreshes canonical state and every bounded supplemental feed', async () => {
+  assert.equal(typeof workspaceView.loadWorkspaceTruth, 'function')
+  const requested = []
+  const responses = new Map([
+    ['/surveyor/workspace?id=workspace-1', workspaceResponse],
+    ['/surveyor/artifacts', supplemental.artifacts],
+    ['/surveyor/capabilities', supplemental.capabilities],
+    ['/surveyor/skills', supplemental.skills],
+    ['/surveyor/activity', supplemental.activity],
+  ])
+  const truth = await workspaceView.loadWorkspaceTruth(async (path) => {
+    requested.push(path)
+    return responses.get(path)
+  }, 'workspace-1')
+
+  assert.deepEqual(requested, [
+    '/surveyor/workspace?id=workspace-1',
+    '/surveyor/artifacts',
+    '/surveyor/capabilities',
+    '/surveyor/skills',
+    '/surveyor/activity',
+  ])
+  assert.equal(truth.workspace, workspaceResponse)
+  assert.deepEqual(Object.keys(truth.supplemental), ['artifacts', 'capabilities', 'skills', 'activity'])
 })
 
 test('assistant turn helpers withdraw failed optimistic messages and restore the bounded draft', () => {

@@ -27,6 +27,7 @@ export function apiErrorKind(error) {
 
 function responseKind(status) {
   if (status === 401 || status === 403) return 'signed-out'
+  if (status === 409) return 'gate'
   if (status === 429) return 'rate-limit'
   if (status === 503) return 'offline'
   return 'error'
@@ -76,5 +77,22 @@ export async function postRun(workspaceId, input) {
     headers,
     credentials: 'include',
     body: JSON.stringify({ id: workspaceId, input: boundedText }),
+  })
+}
+
+// Skill execution has one fixed mutation contract. The caller can select only
+// a registered-looking identifier; the server remains the execution authority.
+export async function postSkillExecute(skillId) {
+  if (typeof skillId !== 'string' || !/^[a-z][a-z0-9_]{0,79}$/.test(skillId)) {
+    throw new ApiResponseError('Invalid skill request', 'error')
+  }
+  const headers = { 'Content-Type': 'application/json' }
+  const devToken = localStorage.getItem('cordia-dev-token')
+  if (devToken) headers.Authorization = `Bearer ${devToken}`
+  return validatedRequest('/surveyor/skill/execute', {
+    method: 'POST',
+    headers,
+    credentials: 'include',
+    body: JSON.stringify({ id: skillId }),
   })
 }
