@@ -111,6 +111,29 @@ test('alidoraMapToFlow drops unsafe node identity and strips secret or path-shap
   assert.equal(JSON.stringify(flow).includes('runtime_secret'), false)
 })
 
+test('alidoraMapToFlow rejects token-shaped and drive-relative node and edge identifiers', () => {
+  const flow = alidoraMapToFlow({
+    nodes: [
+      { id: 'agent:1', kind: 'agent', label: 'Agent 1', detail: '' },
+      { id: 'skill:1', kind: 'skill', label: 'Skill 1', detail: '' },
+      { id: 'ghp_abcdefghijk', kind: 'agent', label: 'Credential id', detail: '' },
+      { id: 'C:private', kind: 'skill', label: 'Drive-relative id', detail: '' },
+    ],
+    edges: [
+      { from: 'agent:1', to: 'skill:1' },
+      { from: 'ghp_abcdefghijk', to: 'skill:1' },
+      { from: 'agent:1', to: 'C:private' },
+    ],
+  })
+
+  assert.deepEqual(flow.nodes.map((node) => node.id), ['agent:1', 'skill:1'])
+  assert.deepEqual(flow.edges.map(({ source, target }) => ({ source, target })), [
+    { source: 'agent:1', target: 'skill:1' },
+  ])
+  assert.equal(JSON.stringify(flow).includes('ghp_'), false)
+  assert.equal(JSON.stringify(flow).includes('C:private'), false)
+})
+
 test('getApi bounds secret-bearing transport failures', async () => {
   const originals = new Map()
   function replaceGlobal(name, value) {

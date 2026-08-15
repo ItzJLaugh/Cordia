@@ -22,7 +22,8 @@ function stringField(value) {
 }
 
 function safeIdentifier(value) {
-  return typeof value === 'string' && SAFE_NODE_ID.test(value) && !CREDENTIAL_PREFIX.test(value) ? value : ''
+  return typeof value === 'string' && SAFE_NODE_ID.test(value)
+    && !/^[A-Za-z]:/.test(value) && !CREDENTIAL_PREFIX.test(value) && !SECRET_OR_PATH.test(value) ? value : ''
 }
 
 function safeDisplayText(value, limit) {

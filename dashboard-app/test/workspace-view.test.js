@@ -184,6 +184,28 @@ test('workspaceRendererModel gates skill and capability badges on canonical conn
   assert.equal(cards.get('capability:unstable.read').badge, 'Unavailable')
 })
 
+test('workspaceRendererModel retains connector-independent skills but rejects malformed connector prerequisites', () => {
+  const feeds = structuredClone(supplemental)
+  feeds.skills.skills = [
+    {
+      id: 'summarize_context', name: 'Summarize context', summary: 'Summarize the bounded workspace context.',
+      permission: 'ALLOW', available: true,
+    },
+    {
+      id: 'malformed_connectors', name: 'Malformed connectors', summary: 'Must not cross the renderer boundary.',
+      permission: 'ALLOW', available: true, required_connectors: 'github',
+    },
+  ]
+
+  const model = workspaceRendererModel(workspaceResponse, feeds, 'workspace-1')
+  const skills = model.cards.filter((card) => card.kind === 'skill')
+  assert.deepEqual(skills, [{
+    id: 'skill:summarize_context', kind: 'skill', title: 'Summarize context',
+    body: 'Summarize the bounded workspace context.', badge: 'Available now',
+  }])
+  assert.equal(JSON.stringify(model).includes('Malformed connectors'), false)
+})
+
 test('workspaceRendererModel rejects malformed and cross-workspace canonical responses', () => {
   assert.equal(workspaceRendererModel({ ok: true, workspace: [] }, supplemental, 'workspace-1'), null)
   assert.equal(workspaceRendererModel(workspaceResponse, supplemental, 'workspace-2'), null)

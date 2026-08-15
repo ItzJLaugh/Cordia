@@ -44,6 +44,7 @@ function connectorReadiness(connectors, requiredIds) {
 }
 
 function connectorIds(value) {
+  if (value === undefined) return []
   if (!Array.isArray(value)) return null
   const ids = [...new Set(value.map(safeId).filter(Boolean))].sort((left, right) => left.localeCompare(right))
   return ids.length === value.length ? ids : null
