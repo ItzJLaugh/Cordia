@@ -135,6 +135,35 @@ test('alidoraMapToFlow strips metadata-prefixed local paths from node text', () 
   }
 })
 
+test('alidoraMapToFlow preserves remote URL text but rejects local and credential URLs', () => {
+  const remoteUrls = [
+    'https://example.test/docs/start',
+    'http://localhost:8000/api/v1',
+    'ftp://files.example.test/public/readme',
+    'custom://host/one/two',
+  ]
+
+  for (const value of remoteUrls) {
+    const flow = alidoraMapToFlow({
+      nodes: [{ id: 'agent:review', kind: 'agent', label: value, detail: value }],
+      edges: [],
+    })
+    assert.deepEqual(flow.nodes[0].data, { kind: 'agent', label: value, detail: value }, value)
+  }
+  for (const value of [
+    'file:///home/cordia/private',
+    'path://server/share',
+    'https://user:password@example.test/docs/start',
+    'https://example.test/docs/start?token=private',
+  ]) {
+    const flow = alidoraMapToFlow({
+      nodes: [{ id: 'agent:review', kind: 'agent', label: value, detail: value }],
+      edges: [],
+    })
+    assert.deepEqual(flow.nodes[0].data, { kind: 'agent', label: '', detail: '' }, value)
+  }
+})
+
 test('alidoraMapToFlow rejects token-shaped and drive-relative node and edge identifiers', () => {
   const flow = alidoraMapToFlow({
     nodes: [

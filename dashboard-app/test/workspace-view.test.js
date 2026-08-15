@@ -622,6 +622,27 @@ test('assistantReplyModel allow-lists bounded output and truthful limited-mode n
   assert.equal(assistantReplyModel({ ok: true, output: { arbitrary: true } }), null)
 })
 
+test('assistantReplyModel preserves remote URLs but rejects local and credential-bearing URLs', () => {
+  const remoteUrls = [
+    'https://example.test/docs/start',
+    'http://localhost:8000/api/v1',
+    'ftp://files.example.test/public/readme',
+    'custom://host/one/two',
+  ]
+
+  for (const value of remoteUrls) {
+    assert.deepEqual(assistantReplyModel({ ok: true, output: value }), {
+      text: value, limited: false, note: '',
+    }, value)
+  }
+  for (const value of [
+    'file:///home/cordia/private',
+    'path://server/share',
+    'https://user:password@example.test/docs/start',
+    'https://example.test/docs/start?token=private',
+  ]) assert.equal(assistantReplyModel({ ok: true, output: value }), null, value)
+})
+
 test('assistantReplyModel projects only safe current-run pending approval status and pause copy', () => {
   const model = assistantReplyModel({
     ok: true,

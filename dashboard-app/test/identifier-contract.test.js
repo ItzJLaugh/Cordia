@@ -38,6 +38,23 @@ test('shared renderer text boundary rejects metadata-prefixed local paths withou
   assert.equal(isSafeSyntheticEntityIdentifier('agent:review'), true)
 })
 
+test('shared renderer text boundary preserves complete remote URLs but rejects remote credentials', () => {
+  const remoteUrls = [
+    'https://example.test/docs/start',
+    'http://localhost:8000/api/v1',
+    'ftp://files.example.test/public/readme',
+    'custom://host/one/two',
+  ]
+
+  for (const value of remoteUrls) assert.equal(isSensitiveText(value), false, value)
+  for (const value of [
+    'https://user:password@example.test/docs/start',
+    'https://example.test/docs/start?token=private',
+    'file:///home/cordia/private',
+    'path://server/share',
+  ]) assert.equal(isSensitiveText(value), true, value)
+})
+
 test('legacy navigation and the dashboard route enforce one safe workspace-id contract', () => {
   const cases = [
     ['workspace-1', true],
