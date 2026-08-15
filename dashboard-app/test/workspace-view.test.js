@@ -479,6 +479,12 @@ test('workspaceRendererModel rejects metadata-prefixed local paths in bounded wo
     'path:/home/cordia/private',
     'file:///home/cordia/private',
     'path:\\\\server\\private',
+    'path:/run/secrets/key',
+    'path:/srv/cordia/private',
+    'path:/mnt/c/private',
+    'path:/workspace/private',
+    'path:/Library/Keychains',
+    'path://server/share',
   ]
   const fields = [
     ['workspace title', (workspace, value) => { workspace.title = value }],

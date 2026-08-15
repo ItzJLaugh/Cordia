@@ -21,11 +21,17 @@ test('shared renderer text boundary rejects metadata-prefixed local paths withou
     'path:/System/Library',
     'path:/etc/hosts',
     'path:/usr/local/bin',
+    'path:/run/secrets/key',
+    'path:/srv/cordia/private',
+    'path:/mnt/c/private',
+    'path:/workspace/private',
+    'path:/Library/Keychains',
+    'path://server/share',
   ]
 
   for (const value of localPaths) assert.equal(isSensitiveText(value), true, value)
 
-  for (const value of ['Ordinary workspace text', 'workspace-1', 'agent:review', '/github.html']) {
+  for (const value of ['Ordinary workspace text', 'CI/CD pipeline', 'workspace-1', 'agent:review']) {
     assert.equal(isSensitiveText(value), false, value)
   }
   assert.equal(isSafeIdentifier('workspace-1'), true)
