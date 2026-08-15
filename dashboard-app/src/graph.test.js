@@ -135,7 +135,7 @@ test('alidoraMapToFlow strips metadata-prefixed local paths from node text', () 
   }
 })
 
-test('alidoraMapToFlow preserves remote URL text but rejects local and credential URLs', () => {
+test('alidoraMapToFlow preserves remote URL text but rejects unsafe or malformed components', () => {
   const remoteUrls = [
     'https://example.test/docs/start',
     'http://localhost:8000/api/v1',
@@ -161,6 +161,9 @@ test('alidoraMapToFlow preserves remote URL text but rejects local and credentia
     'https://example.test/docs?local=path:C:\\private\\workspace',
     'https://example.test/docs?home=/home/cordia/private',
     'https://example.test/docs?home=%2Fhome%2Fcordia%2Fprivate',
+    'https://example.test/docs?home=%2Fhome%2Fcordia%2Fprivate&bad=%ZZ',
+    'https://example.test/docs?%74oken%3Dprivate&bad=%ZZ',
+    'https://example.test/docs#bad=%ZZ',
   ]) {
     const flow = alidoraMapToFlow({
       nodes: [{ id: 'agent:review', kind: 'agent', label: value, detail: value }],

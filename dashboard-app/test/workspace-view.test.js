@@ -622,7 +622,7 @@ test('assistantReplyModel allow-lists bounded output and truthful limited-mode n
   assert.equal(assistantReplyModel({ ok: true, output: { arbitrary: true } }), null)
 })
 
-test('assistantReplyModel preserves remote URLs but rejects local and credential-bearing URLs', () => {
+test('assistantReplyModel preserves remote URLs but rejects unsafe or malformed components', () => {
   const remoteUrls = [
     'https://example.test/docs/start',
     'http://localhost:8000/api/v1',
@@ -646,6 +646,9 @@ test('assistantReplyModel preserves remote URLs but rejects local and credential
     'https://example.test/docs?local=path:C:\\private\\workspace',
     'https://example.test/docs?home=/home/cordia/private',
     'https://example.test/docs?home=%2Fhome%2Fcordia%2Fprivate',
+    'https://example.test/docs?home=%2Fhome%2Fcordia%2Fprivate&bad=%ZZ',
+    'https://example.test/docs?%74oken%3Dprivate&bad=%ZZ',
+    'https://example.test/docs#bad=%ZZ',
   ]) assert.equal(assistantReplyModel({ ok: true, output: value }), null, value)
 })
 

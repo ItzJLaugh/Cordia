@@ -10,13 +10,13 @@ function decodedForInspection(value) {
   try {
     return decodeURIComponent(value)
   } catch {
-    return value
+    return null
   }
 }
 
 function urlComponentIsSensitive(value) {
   const decoded = decodedForInspection(value)
-  return CREDENTIAL_PREFIX.test(decoded) || LOCAL_PATH.test(decoded)
+  return decoded === null || CREDENTIAL_PREFIX.test(decoded) || LOCAL_PATH.test(decoded)
 }
 
 function safeRemoteUrlSpans(value) {
