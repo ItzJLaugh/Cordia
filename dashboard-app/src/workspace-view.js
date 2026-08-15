@@ -69,12 +69,12 @@ function skillRequest(title) {
 }
 
 function skillActionReason(skill, readiness) {
+  if (skill.permission === 'DENY') return 'Cordia policy does not allow this skill.'
+  if (skill.permission === 'ASK') return 'Approval is required. This web view cannot continue the protected external action.'
   if (readiness === 'missing') return 'A required connector is not available in this workspace.'
   if (readiness === 'planned') return 'This skill is planned for a desktop or local surface and is not available here.'
   if (readiness === 'connect') return 'Connect the required connector before running this skill.'
   if (readiness === 'unhealthy') return 'A required connector needs attention before this skill can run.'
-  if (skill.permission === 'ASK') return 'Approval is required. This web view cannot continue the protected external action.'
-  if (skill.permission === 'DENY') return 'Cordia policy does not allow this skill.'
   if (skill.available !== true) return 'This skill is not available through its declared capability.'
   return ''
 }
@@ -336,43 +336,86 @@ function skillTurnFailed(state, operation, note) {
     transcript: state.transcript.filter((message) => message.id !== operation.id),
     draft: state.draft,
     note: safeText(note, 240) || 'That skill did not run. Review its prerequisites and try again.',
-    busy: false,
-    pending: null,
+    busy: true,
+    pending: state.pending,
   }
+}
+
+function skillRefreshSettled(state, operation) {
+  if (!state || !state.pending || state.pending.kind !== 'skill' || state.pending.id !== operation.id) return state
+  return { ...state, busy: false, pending: null }
 }
 
 function skillFailureCopy(kind) {
   if (kind === 'signed-out') return 'Your session ended. Sign in again before retrying this skill.'
-  if (kind === 'offline') return 'The server is unreachable right now. Retry this skill when Cordia is available.'
+  if (kind === 'offline') return 'Cordia or the required connector is unavailable right now. Workspace status is being refreshed before retry.'
   if (kind === 'rate-limit') return 'Skill limit reached. Wait a few minutes before retrying.'
   if (kind === 'gate') return 'Cordia\'s execution gate did not allow this skill. Review its prerequisites and try again.'
   return 'That skill did not run. Review its prerequisites and try again.'
 }
 
+export function createWorkspaceRefreshCoordinator(requestRefresh) {
+  let revision = 0
+  const pending = new Map()
+
+  function refresh() {
+    revision += 1
+    const requestedRevision = revision
+    return new Promise((resolve, reject) => {
+      pending.set(requestedRevision, { resolve, reject })
+      try {
+        requestRefresh(requestedRevision)
+      } catch (error) {
+        pending.delete(requestedRevision)
+        reject(error)
+      }
+    })
+  }
+
+  function settle(settledRevision, ok) {
+    const waiter = pending.get(settledRevision)
+    if (!waiter) return
+    pending.delete(settledRevision)
+    if (ok) waiter.resolve()
+    else waiter.reject(new Error('workspace refresh failed'))
+  }
+
+  return { refresh, settle }
+}
+
 export function createSkillInteractionController({
   executeSkill, errorKind, nextId, operation, updateState, refresh,
 }) {
+  let refreshSafe = true
+
+  async function execute(pending) {
+    let failed = false
+    try {
+      const response = await executeSkill(pending.action.id)
+      if (!response || response.ok !== true) throw new Error('skill execution failed')
+      updateState((state) => skillTurnCompleted(state, pending, nextId()))
+    } catch (error) {
+      failed = true
+      updateState((state) => skillTurnFailed(state, pending, skillFailureCopy(errorKind(error))))
+    }
+
+    try {
+      await refresh()
+      refreshSafe = true
+    } catch (_error) {
+      refreshSafe = false
+    } finally {
+      if (failed) updateState((state) => skillRefreshSettled(state, pending))
+      operation.current = ''
+    }
+  }
+
   function run(action) {
-    if (!runnableSkillAction(action) || operation.current) return false
+    if (!runnableSkillAction(action) || operation.current || !refreshSafe) return false
     const pending = { id: nextId(), action }
     operation.current = 'skill'
     updateState((state) => skillTurnStarted(state, pending))
-
-    let execution
-    try {
-      execution = executeSkill(action.id)
-    } catch (error) {
-      execution = Promise.reject(error)
-    }
-    Promise.resolve(execution).then((response) => {
-      if (!response || response.ok !== true) throw new Error('skill execution failed')
-      updateState((state) => skillTurnCompleted(state, pending, nextId()))
-      refresh()
-    }).catch((error) => {
-      updateState((state) => skillTurnFailed(state, pending, skillFailureCopy(errorKind(error))))
-    }).finally(() => {
-      operation.current = ''
-    })
+    execute(pending)
     return true
   }
 

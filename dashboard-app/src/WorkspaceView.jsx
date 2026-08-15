@@ -9,6 +9,7 @@ import {
   assistantTurnFailed,
   assistantTurnStarted,
   createSkillInteractionController,
+  createWorkspaceRefreshCoordinator,
   isAssistantSendKey,
   loadWorkspaceTruth,
   workspaceRendererModel,
@@ -132,7 +133,8 @@ function Assistant({ workspaceId, enabled, readOnly, state, setState, nextId, op
 }
 
 function WorkspaceCanvas({
-  workspaceId, onReadyChange, refreshRevision, onSkillAction, skillBusyId, actionsDisabled,
+  workspaceId, onReadyChange, refreshRevision, onRefreshSettled,
+  onSkillAction, skillBusyId, actionsDisabled,
 }) {
   const [state, setState] = useState({ phase: 'loading' })
 
@@ -145,16 +147,19 @@ function WorkspaceCanvas({
       const model = workspaceRendererModel(workspace, supplemental, workspaceId)
       if (!model) {
         setState({ phase: 'malformed' })
+        onRefreshSettled(refreshRevision, false)
         return
       }
       setState({ phase: 'ready', model })
       onReadyChange(true)
+      onRefreshSettled(refreshRevision, true)
     }).catch((error) => {
       if (!active) return
       setState({ phase: apiErrorKind(error) })
+      onRefreshSettled(refreshRevision, false)
     })
     return () => { active = false }
-  }, [workspaceId, onReadyChange, refreshRevision])
+  }, [workspaceId, onReadyChange, refreshRevision, onRefreshSettled])
 
   if (state.phase !== 'ready') {
     return <div className="canvas-notice" role="status">{loadNotice(state, 'your workspace')}</div>
@@ -235,6 +240,10 @@ export default function WorkspaceView({ route }) {
   })
   const operationRef = useRef('')
   const idRef = useRef(0)
+  const refreshCoordinatorRef = useRef(null)
+  if (!refreshCoordinatorRef.current) {
+    refreshCoordinatorRef.current = createWorkspaceRefreshCoordinator(setRefreshRevision)
+  }
   const skillControllerRef = useRef(null)
   if (!skillControllerRef.current) {
     skillControllerRef.current = createSkillInteractionController({
@@ -243,7 +252,7 @@ export default function WorkspaceView({ route }) {
       nextId: () => ++idRef.current,
       operation: operationRef,
       updateState: setAssistantState,
-      refresh: () => setRefreshRevision((revision) => revision + 1),
+      refresh: refreshCoordinatorRef.current.refresh,
     })
   }
   const isAlidora = route.view === 'alidora'
@@ -266,6 +275,7 @@ export default function WorkspaceView({ route }) {
               workspaceId={route.workspaceId}
               onReadyChange={setWorkspaceReady}
               refreshRevision={refreshRevision}
+              onRefreshSettled={refreshCoordinatorRef.current.settle}
               onSkillAction={skillControllerRef.current.run}
               skillBusyId={assistantState.pending && assistantState.pending.kind === 'skill'
                 ? assistantState.pending.skillId : ''}

@@ -124,10 +124,13 @@ test('blocked skill cards render truthful status without an execution control', 
   }
 })
 
-test('a failed skill request is withdrawn, restores a retryable action, and uses bounded gate copy', async () => {
+test('a failed skill refreshes canonical truth and stays locked until the refreshed gate is visible', async () => {
   assert.equal(typeof workspaceView.createSkillInteractionController, 'function')
   const first = deferred()
+  const refreshDone = deferred()
   const calls = []
+  let refreshes = 0
+  let refreshedAction = null
   const operation = { current: '' }
   let state = { transcript: [], draft: '', note: '', busy: false, pending: null }
   const controller = workspaceView.createSkillInteractionController({
@@ -139,7 +142,28 @@ test('a failed skill request is withdrawn, restores a retryable action, and uses
     nextId: (() => { let id = 10; return () => ++id })(),
     operation,
     updateState: (update) => { state = update(state) },
-    refresh: () => {},
+    refresh: async () => {
+      refreshes += 1
+      await refreshDone.promise
+      const response = {
+        ok: true,
+        workspace: {
+          id: 'workspace-1', windows: [], agents: [], workflow: { steps: [] },
+          connectors: [{
+            id: 'github', status: 'confirmed', implementation_status: 'live',
+            lifecycle: 'live', runtime_status: 'needs_attention',
+          }],
+        },
+      }
+      const model = workspaceView.workspaceRendererModel(response, { skills: {
+        ok: true,
+        skills: [{
+          id: 'github_repository_review', name: 'Review GitHub repositories', summary: 'Review repositories.',
+          permission: 'ALLOW', available: true, required_connectors: ['github'],
+        }],
+      } }, 'workspace-1')
+      refreshedAction = model.cards.find((card) => card.id === 'skill:github_repository_review').action
+    },
   })
   const action = {
     kind: 'skill', id: 'github_repository_review',
@@ -151,18 +175,50 @@ test('a failed skill request is withdrawn, restores a retryable action, and uses
   await first.promise.catch(() => {})
   await new Promise((resolve) => setTimeout(resolve, 0))
   assert.deepEqual(state.transcript, [])
+  assert.equal(refreshes, 1)
+  assert.equal(state.busy, true)
+  assert.equal(operation.current, 'skill')
+  assert.equal(state.note, 'Cordia\'s execution gate did not allow this skill. Review its prerequisites and try again.')
+  assert.equal(controller.run(action), false)
+
+  refreshDone.resolve()
+  await new Promise((resolve) => setTimeout(resolve, 0))
   assert.equal(state.busy, false)
   assert.equal(operation.current, '')
-  assert.equal(state.note, 'Cordia\'s execution gate did not allow this skill. Review its prerequisites and try again.')
+  assert.equal(refreshedAction.enabled, false)
+  assert.equal(refreshedAction.reason, 'A required connector needs attention before this skill can run.')
+  assert.equal(calls.length, 1)
+})
+
+test('a failed canonical refresh fails closed for skills without deadlocking ordinary recovery', async () => {
+  const operation = { current: '' }
+  let state = { transcript: [], draft: '', note: '', busy: false, pending: null }
+  const action = {
+    kind: 'skill', id: 'github_repository_review',
+    request: 'Run skill: Review GitHub repositories.', enabled: true, reason: '',
+  }
+  const controller = workspaceView.createSkillInteractionController({
+    executeSkill: () => Promise.reject(new Error('connector failed')),
+    errorKind: () => 'offline',
+    nextId: (() => { let id = 30; return () => ++id })(),
+    operation,
+    updateState: (update) => { state = update(state) },
+    refresh: () => Promise.reject(new Error('canonical refresh failed')),
+  })
+
   assert.equal(controller.run(action), true)
   await new Promise((resolve) => setTimeout(resolve, 0))
-  assert.deepEqual(calls, ['github_repository_review', 'github_repository_review'])
+  assert.equal(operation.current, '')
+  assert.equal(state.busy, false)
+  assert.equal(controller.run(action), false)
+  assert.equal(state.note,
+    'Cordia or the required connector is unavailable right now. Workspace status is being refreshed before retry.')
 })
 
 test('skill failures use bounded signed-out and offline copy without transport details', async () => {
   const cases = [
     ['signed-out', 'Your session ended. Sign in again before retrying this skill.'],
-    ['offline', 'The server is unreachable right now. Retry this skill when Cordia is available.'],
+    ['offline', 'Cordia or the required connector is unavailable right now. Workspace status is being refreshed before retry.'],
   ]
   const action = {
     kind: 'skill', id: 'github_repository_review',
@@ -178,7 +234,7 @@ test('skill failures use bounded signed-out and offline copy without transport d
       nextId: (() => { let id = 20; return () => ++id })(),
       operation,
       updateState: (update) => { state = update(state) },
-      refresh: () => assert.fail('failed execution must not refresh workspace truth'),
+      refresh: () => Promise.resolve(),
     })
 
     assert.equal(controller.run(action), true)
@@ -187,4 +243,23 @@ test('skill failures use bounded signed-out and offline copy without transport d
     assert.equal(state.note, expected)
     assert.equal(JSON.stringify(state).includes('private-transport-detail'), false)
   }
+})
+
+test('workspace refresh coordination settles only after the matching canvas load', async () => {
+  assert.equal(typeof workspaceView.createWorkspaceRefreshCoordinator, 'function')
+  const requested = []
+  const coordinator = workspaceView.createWorkspaceRefreshCoordinator((revision) => requested.push(revision))
+  let settled = false
+  const first = coordinator.refresh().then(() => { settled = true })
+  await Promise.resolve()
+  assert.deepEqual(requested, [1])
+  assert.equal(settled, false)
+  coordinator.settle(1, true)
+  await first
+  assert.equal(settled, true)
+
+  const second = coordinator.refresh()
+  assert.deepEqual(requested, [1, 2])
+  coordinator.settle(2, false)
+  await assert.rejects(second, /workspace refresh failed/)
 })

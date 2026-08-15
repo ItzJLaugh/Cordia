@@ -224,6 +224,18 @@ test('workspaceRendererModel is the sole source of bounded skill action and gate
       id: 'unhealthy_connector_skill', name: 'Unhealthy connector skill', summary: 'Needs a healthy connector.',
       permission: 'ALLOW', available: true, required_connectors: ['unstable.connector'],
     },
+    {
+      id: 'approval_planned_skill', name: 'Protected desktop publish', summary: 'Approval remains authoritative.',
+      permission: 'ASK', available: false, required_connectors: ['desktop.local_repository'],
+    },
+    {
+      id: 'denied_missing_skill', name: 'Denied missing publish', summary: 'Policy remains authoritative.',
+      permission: 'DENY', available: false, required_connectors: ['missing.connector'],
+    },
+    {
+      id: 'denied_unhealthy_skill', name: 'Denied unhealthy publish', summary: 'Policy remains authoritative.',
+      permission: 'DENY', available: false, required_connectors: ['unstable.connector'],
+    },
   )
 
   const skills = new Map(workspaceRendererModel(canonical, feeds, 'workspace-1').cards
@@ -246,6 +258,10 @@ test('workspaceRendererModel is the sole source of bounded skill action and gate
     'This skill is planned for a desktop or local surface and is not available here.')
   assert.equal(skills.get('skill:unhealthy_connector_skill').action.reason,
     'A required connector needs attention before this skill can run.')
+  assert.equal(skills.get('skill:approval_planned_skill').action.reason,
+    'Approval is required. This web view cannot continue the protected external action.')
+  assert.equal(skills.get('skill:denied_missing_skill').action.reason, 'Cordia policy does not allow this skill.')
+  assert.equal(skills.get('skill:denied_unhealthy_skill').action.reason, 'Cordia policy does not allow this skill.')
   assert.equal(JSON.stringify([...skills.values()]).includes('private-capability-shape'), false)
 })
 
