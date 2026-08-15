@@ -8,6 +8,7 @@
       "package.json",
       "src/App.jsx",
       "src/ArtifactCard.jsx",
+      "src/ArtifactLink.js",
       "src/DefinitionGraph.jsx",
       "src/SkillAction.js",
       "src/WorkspaceView.jsx",
@@ -22,20 +23,20 @@
       "src/workspace.js",
       "vite.config.js"
     ],
-    "sha256": "4dd46ad02383032584d8858429b19d68397e1880b484a77d46ddccf1f3adc860"
+    "sha256": "cbe80c192960a29c75fb7db28db716d3f0ee5991902cb48a69760b150bd5776f"
   },
   "outputs": [
     {
-      "path": "assets/index-CAVEeD60.css",
-      "sha256": "df1cb77ac8658b97fc9bc5bf54e2ace0e649b0a3f957076a0d59504c1e92d887"
+      "path": "assets/index-CP-PMxsD.css",
+      "sha256": "b76415d479b5681dcd5af16712535dca375c36ad50b2f03f735fbcc9e2bdff61"
     },
     {
-      "path": "assets/index-DpLf8F_q.js",
-      "sha256": "b010d57c53f925b0aa824ee8e70497855523a0b36d4ac1ecb3035e568013e10e"
+      "path": "assets/index-sRAzhEY1.js",
+      "sha256": "9f814115eb3b009e6935f906c88f92e97f2ec06886e5078754520dbb20fd2822"
     },
     {
       "path": "index.html",
-      "sha256": "8b58ead2b806d2164537a8c0f6be7effc336dad564ac6dcff3dcded287a8427a"
+      "sha256": "bce714f71ab178c914b41c80d4ebc03ac6e228574995ce913ed27014466227f9"
     }
   ]
 }

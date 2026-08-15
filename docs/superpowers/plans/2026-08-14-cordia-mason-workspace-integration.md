@@ -85,4 +85,3 @@
 - [ ] Through Hostinger hPanel's VPS Web Console: inspect current production drift, create a rollback point, update without discarding server-only changes, rebuild/restart if required, and verify service health.
 - [ ] Browser-smoke the public auth, Surveyor, builder, primary Workspace, Alidora, GitHub read-only window, skill gate, reload persistence, and old deep-link journey.
 - [ ] Verify the public dashboard references the exact committed asset hashes and record remaining planned—not-live—capabilities truthfully.
-

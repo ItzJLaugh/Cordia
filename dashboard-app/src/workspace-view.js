@@ -1,7 +1,6 @@
 import { workspaceToRendererModel } from './workspace.js'
-import { isSafeIdentifier } from './identifier.js'
+import { isSafeIdentifier, isSensitiveText } from './identifier.js'
 
-const SECRET_OR_PATH = /(?:[A-Za-z]:\\|\\\\[^\s]+\\|\/(?:home|root|Users)\/|\b(?:token|secret|password|authorization|bearer|api[_-]?key)\b\s*[:=]|\b(?:ghp_|github_pat_|xox[baprs]-|sk-)[A-Za-z0-9_-]{8,})/i
 const SAFE_TIMESTAMP = /^\d{4}-\d{2}-\d{2}T[0-9:.+-]+Z?$/
 const DECISIONS = new Set(['ALLOW', 'ASK', 'DENY'])
 const PERMISSIONS = new Set(['ALLOW', 'ASK', 'DENY'])
@@ -11,6 +10,12 @@ const SUPPLEMENTAL_ENDPOINTS = {
   skills: '/surveyor/skills',
   activity: '/surveyor/activity',
 }
+const SUPPLEMENTAL_FEED_LABELS = {
+  artifacts: 'Mission',
+  capabilities: 'Capabilities',
+  skills: 'Skills',
+  activity: 'Recent account activity',
+}
 
 function safeId(value) {
   return isSafeIdentifier(value) ? value : ''
@@ -19,7 +24,7 @@ function safeId(value) {
 function safeText(value, limit = 160) {
   if (typeof value !== 'string') return ''
   const text = value.trim()
-  if (!text || text.length > limit || /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/.test(text) || SECRET_OR_PATH.test(text)) return ''
+  if (!text || text.length > limit || /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/.test(text) || isSensitiveText(text)) return ''
   return text
 }
 
@@ -62,6 +67,15 @@ function readinessBadge(readiness) {
   return ''
 }
 
+function readinessDetail(readiness) {
+  if (readiness === 'ready') return 'Available now'
+  if (readiness === 'planned') return 'Planned'
+  if (readiness === 'connect') return 'Connect first'
+  if (readiness === 'missing') return 'Missing'
+  if (readiness === 'unhealthy') return 'Needs attention'
+  return 'Unavailable'
+}
+
 function skillRequest(title) {
   const name = title.replace(/[.!?]+$/u, '').trim()
   return name ? safeText(`Run skill: ${name}.`, 200) : ''
@@ -87,6 +101,30 @@ function missionCard(response) {
     .replace(/^# FDE Mission Brief\s*/i, '')
     .trim()
   return body ? { id: 'mission', kind: 'mission', title: 'Cordia mission', body } : null
+}
+
+function supplementalFeedStatusCard(status) {
+  if (!status || typeof status !== 'object' || Array.isArray(status)
+      || Object.keys(status).sort().join('|') !== 'state|unavailable'
+      || !['partial', 'rate-limited'].includes(status.state)
+      || !Array.isArray(status.unavailable) || status.unavailable.length < 1
+      || status.unavailable.length > Object.keys(SUPPLEMENTAL_FEED_LABELS).length
+      || new Set(status.unavailable).size !== status.unavailable.length
+      || status.unavailable.some((feed) => !Object.hasOwn(SUPPLEMENTAL_FEED_LABELS, feed))) return null
+  const unavailable = Object.keys(SUPPLEMENTAL_FEED_LABELS)
+    .filter((feed) => status.unavailable.includes(feed))
+  return {
+    id: 'supplemental-feed-status',
+    kind: 'status',
+    title: 'Workspace details are incomplete',
+    badge: status.state === 'rate-limited' ? 'Rate limited' : 'Partial view',
+    body: status.state === 'rate-limited'
+      ? 'Some supplemental workspace details are temporarily rate limited. Reload later to refresh the complete view.'
+      : 'Some supplemental workspace details could not be loaded. Reload to refresh the complete view.',
+    items: unavailable.map((feed) => ({
+      label: SUPPLEMENTAL_FEED_LABELS[feed], meta: 'May be incomplete',
+    })),
+  }
 }
 
 function contextCard(workspace) {
@@ -138,6 +176,35 @@ function connectorCards(model) {
   })
 }
 
+function githubRepositoryCard(model) {
+  const declared = model.artifactCards.find((card) => (
+    card.id === 'github-repositories' && card.kind === 'connector'
+  ))
+  if (!declared || (declared.connector && declared.connector.id !== 'github')) return null
+
+  const readiness = connectorReadiness(model.connectors, ['github'])
+  let badge = 'Needs attention'
+  let body = 'GitHub needs attention before Cordia can read repositories.'
+  if (readiness === 'ready') {
+    badge = 'Available now'
+    body = 'GitHub is connected. Open the bounded repository view to review its available repositories.'
+  } else if (readiness === 'missing' || readiness === 'connect') {
+    badge = 'Setup required'
+    body = 'Connect GitHub before Cordia can read repositories in this bounded view.'
+  } else if (readiness === 'planned') {
+    badge = 'Unavailable'
+    body = 'GitHub repository access is not available on this surface yet.'
+  }
+  return {
+    id: 'github-repository-surface',
+    kind: 'github-repositories',
+    title: 'GitHub repositories',
+    badge,
+    body,
+    link: { href: '/github.html', label: 'Open GitHub repositories' },
+  }
+}
+
 function derivedCards(model) {
   return model.artifactCards
     .filter((card) => card.kind === 'derived')
@@ -180,10 +247,11 @@ function capabilityCards(response, connectors) {
     const decision = DECISIONS.has(capability.decision) ? capability.decision : ''
     const connectorId = safeId(capability.connector)
     if (!id || !title || !decision || !connectorId) return null
-    const connectorBadge = readinessBadge(connectorReadiness(connectors, [connectorId]))
+    const readiness = connectorReadiness(connectors, [connectorId])
     return {
       id: `capability:${id}`, kind: 'capability', title,
-      badge: connectorBadge || (decision === 'ALLOW' ? 'Can use' : decision === 'ASK' ? 'Will ask' : 'Cannot use'),
+      badge: decision === 'ALLOW' ? 'Allowed by policy' : decision === 'ASK' ? 'Approval required' : 'Not allowed',
+      items: [{ label: 'Connector readiness', meta: readinessDetail(readiness) }],
     }
   }).filter(Boolean)
   return stable(cards)
@@ -197,7 +265,7 @@ function activityCards(response) {
       ? event.created : ''
     if (!eventType) return null
     return {
-      id: `activity:${String(index).padStart(4, '0')}`, kind: 'activity', title: 'Recent activity',
+      id: `activity:${String(index).padStart(4, '0')}`, kind: 'activity', title: 'Recent account activity',
       items: [{ label: eventType.replaceAll('_', ' '), ...(created ? { meta: created } : {}) }],
     }
   }).filter(Boolean)
@@ -228,10 +296,12 @@ export function workspaceRendererModel(response, supplemental = {}, expectedWork
   const canonical = workspaceToRendererModel(response)
   const cards = [
     missionCard(supplemental.artifacts),
+    supplementalFeedStatusCard(supplemental.feedStatus),
     contextCard(workspace),
     workflowCard(canonical),
     ...agentCards(workspace),
     ...connectorCards(canonical),
+    githubRepositoryCard(canonical),
     ...derivedCards(canonical),
     ...skillCards(supplemental.skills, canonical.connectors),
     ...capabilityCards(supplemental.capabilities, canonical.connectors),
@@ -246,16 +316,31 @@ export function workspaceRendererModel(response, supplemental = {}, expectedWork
   }
 }
 
-export async function loadWorkspaceTruth(get, workspaceId) {
+export async function loadWorkspaceTruth(get, workspaceId, errorKind = () => 'error') {
   const id = safeId(workspaceId)
   if (!id || typeof get !== 'function') throw new Error('Invalid workspace request')
   const workspace = await get(`/surveyor/workspace?id=${encodeURIComponent(id)}`)
   const entries = Object.entries(SUPPLEMENTAL_ENDPOINTS)
   const settled = await Promise.allSettled(entries.map(([, path]) => get(path)))
   const supplemental = {}
+  const unavailable = []
+  let rateLimited = false
   settled.forEach((result, index) => {
-    if (result.status === 'fulfilled') supplemental[entries[index][0]] = result.value
+    const feed = entries[index][0]
+    if (result.status === 'fulfilled') supplemental[feed] = result.value
+    else {
+      unavailable.push(feed)
+      try {
+        if (errorKind(result.reason) === 'rate-limit') rateLimited = true
+      } catch (_error) {
+        // Error classifiers are advisory only; the bounded partial state remains safe.
+      }
+    }
   })
+  if (unavailable.length) supplemental.feedStatus = {
+    state: rateLimited ? 'rate-limited' : 'partial',
+    unavailable,
+  }
   return { workspace, supplemental }
 }
 
@@ -268,8 +353,13 @@ export function assistantReplyModel(response) {
   const text = safeText(response.output, 6000)
   if (!text) return null
   const limited = Boolean(response.llm && typeof response.llm === 'object' && response.llm.live === false)
-  const note = limited ? safeText(response.llm.note, 240) : ''
-  return { text, limited, note }
+  const limitedNote = limited ? safeText(response.llm.note, 240) : ''
+  const approvalPending = Boolean(response.approval && typeof response.approval === 'object'
+    && !Array.isArray(response.approval) && response.approval.status === 'pending')
+  const approvalNote = approvalPending
+    ? 'Cordia prepared a draft and paused for your approval. No protected continuation occurred.' : ''
+  const note = [approvalNote, limitedNote].filter(Boolean).join(' ')
+  return { text, limited, note, ...(approvalPending ? { approvalStatus: 'pending' } : {}) }
 }
 
 export function assistantTurnStarted(state, id) {
@@ -345,6 +435,16 @@ function skillRefreshSettled(state, operation) {
   return { ...state, busy: false, pending: null }
 }
 
+function skillRefreshFailed(state) {
+  if (!state || typeof state !== 'object' || Array.isArray(state)) return state
+  return {
+    ...state,
+    note: 'Workspace refresh failed. Reload this page before retrying the skill.',
+    busy: false,
+    pending: null,
+  }
+}
+
 function skillFailureCopy(kind) {
   if (kind === 'signed-out') return 'Your session ended. Sign in again before retrying this skill.'
   if (kind === 'offline') return 'Cordia or the required connector is unavailable right now. Workspace status is being refreshed before retry.'
@@ -403,6 +503,7 @@ export function createSkillInteractionController({
       refreshSafe = true
     } catch (_error) {
       refreshSafe = false
+      updateState((state) => skillRefreshFailed(state))
     } finally {
       if (failed) updateState((state) => skillRefreshSettled(state, pending))
       operation.current = ''

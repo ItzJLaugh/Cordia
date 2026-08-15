@@ -1,3 +1,5 @@
+import { isSafeSyntheticEntityIdentifier, isSensitiveText } from './identifier.js'
+
 // Pure projection of the safe Alidora map contract into React Flow data.
 // The renderer never receives canonical workspace state; it accepts only
 // the endpoint's allow-listed nodes and references between those nodes.
@@ -7,9 +9,6 @@ export const CARD_W = 210
 export const MAX_CARD_H = 180
 const ROW_GAP = 80
 const NODE_KINDS = new Set(['agent', 'skill', 'connector'])
-const SAFE_NODE_ID = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,95}$/
-const CREDENTIAL_PREFIX = /^(?:token|authorization|password|secret|credential|api[_-]?key)\s*[:=]/i
-const SECRET_OR_PATH = /(?:[A-Za-z]:\\|\\\\[^\s]+\\|\/(?:home|root|Users)\/|\b(?:token|secret|password|credential|authorization|bearer|api[_-]?key)\b\s*[:=]|\b(?:ghp_|github_pat_|xox[baprs]-|sk-)[A-Za-z0-9_-]{8,})/i
 const CONNECTOR_ENUMS = {
   consent: new Set(['confirmed', 'suggested']),
   implementation: new Set(['live', 'planned']),
@@ -22,8 +21,7 @@ function stringField(value) {
 }
 
 function safeIdentifier(value) {
-  return typeof value === 'string' && SAFE_NODE_ID.test(value)
-    && !/^[A-Za-z]:/.test(value) && !CREDENTIAL_PREFIX.test(value) && !SECRET_OR_PATH.test(value) ? value : ''
+  return isSafeSyntheticEntityIdentifier(value) ? value : ''
 }
 
 function safeDisplayText(value, limit) {
@@ -31,7 +29,7 @@ function safeDisplayText(value, limit) {
   const text = value.trim()
   return text.length <= limit
     && !/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/.test(text)
-    && !SECRET_OR_PATH.test(text) ? text : ''
+    && !isSensitiveText(text) ? text : ''
 }
 
 function connectorStatus(value) {

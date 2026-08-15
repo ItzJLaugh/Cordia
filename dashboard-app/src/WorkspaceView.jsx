@@ -142,7 +142,7 @@ function WorkspaceCanvas({
     let active = true
     setState({ phase: 'loading' })
     onReadyChange(false)
-    loadWorkspaceTruth(getApi, workspaceId).then(({ workspace, supplemental }) => {
+    loadWorkspaceTruth(getApi, workspaceId, apiErrorKind).then(({ workspace, supplemental }) => {
       if (!active) return
       const model = workspaceRendererModel(workspace, supplemental, workspaceId)
       if (!model) {

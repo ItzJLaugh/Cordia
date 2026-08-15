@@ -212,7 +212,37 @@ test('a failed canonical refresh fails closed for skills without deadlocking ord
   assert.equal(state.busy, false)
   assert.equal(controller.run(action), false)
   assert.equal(state.note,
-    'Cordia or the required connector is unavailable right now. Workspace status is being refreshed before retry.')
+    'Workspace refresh failed. Reload this page before retrying the skill.')
+})
+
+test('a failed post-skill refresh replaces in-progress copy and requires a reload after success too', async () => {
+  const operation = { current: '' }
+  let state = { transcript: [], draft: '', note: '', busy: false, pending: null }
+  const action = {
+    kind: 'skill', id: 'github_repository_review',
+    request: 'Run skill: Review GitHub repositories.', enabled: true, reason: '',
+  }
+  const controller = workspaceView.createSkillInteractionController({
+    executeSkill: () => Promise.resolve({ ok: true }),
+    errorKind: () => 'error',
+    nextId: (() => { let id = 40; return () => ++id })(),
+    operation,
+    updateState: (update) => { state = update(state) },
+    refresh: () => Promise.reject(new Error('authorization=private-refresh-detail')),
+  })
+
+  assert.equal(controller.run(action), true)
+  await new Promise((resolve) => setTimeout(resolve, 0))
+  assert.deepEqual(state.transcript, [
+    { id: 41, who: 'you', text: 'Run skill: Review GitHub repositories.' },
+    { id: 42, who: 'cordia', text: 'Review GitHub repositories completed.' },
+  ])
+  assert.equal(state.note, 'Workspace refresh failed. Reload this page before retrying the skill.')
+  assert.equal(state.busy, false)
+  assert.equal(state.pending, null)
+  assert.equal(operation.current, '')
+  assert.equal(controller.run(action), false)
+  assert.equal(JSON.stringify(state).includes('private-refresh-detail'), false)
 })
 
 test('skill failures use bounded signed-out and offline copy without transport details', async () => {

@@ -1,3 +1,4 @@
+import ArtifactLink from './ArtifactLink.js'
 import SkillAction from './SkillAction.js'
 
 export default function ArtifactCard({ card, actionBusy = false, actionsDisabled = false, onAction }) {
@@ -21,6 +22,7 @@ export default function ArtifactCard({ card, actionBusy = false, actionsDisabled
           ))}
         </ul>
       )}
+      {card.link && <ArtifactLink link={card.link} />}
       {card.action && (
         <SkillAction
           action={card.action}

@@ -119,10 +119,11 @@ test('workspaceRendererModel emits only allow-listed artifact models in stable c
     { id: 'workflow', kind: 'workflow', title: 'Workflow' },
     { id: 'agent:reviewer', kind: 'agent', title: 'Reviewer' },
     { id: 'connector:github', kind: 'connector', title: 'github' },
+    { id: 'github-repository-surface', kind: 'github-repositories', title: 'GitHub repositories' },
     { id: 'derived:notes', kind: 'derived-note', title: 'Evidence notes' },
     { id: 'skill:github_repository_review', kind: 'skill', title: 'Review repositories' },
     { id: 'capability:github.read_repositories', kind: 'capability', title: 'Read repository metadata.' },
-    { id: 'activity:0000', kind: 'activity', title: 'Recent activity' },
+    { id: 'activity:0000', kind: 'activity', title: 'Recent account activity' },
   ])
   assert.deepEqual(model.cards[0].body, 'Verify the launch evidence.')
   assert.deepEqual(model.cards[1].items, [{ label: 'CordiaHQ/product', meta: 'GitHub repository' }])
@@ -133,8 +134,9 @@ test('workspaceRendererModel emits only allow-listed artifact models in stable c
     { label: 'Lifecycle', meta: 'live' },
     { label: 'Runtime', meta: 'live' },
   ])
-  assert.deepEqual(model.cards[6].badge, 'Available now')
-  assert.deepEqual(model.cards[7].badge, 'Can use')
+  const cards = new Map(model.cards.map((card) => [card.id, card]))
+  assert.deepEqual(cards.get('skill:github_repository_review').badge, 'Available now')
+  assert.deepEqual(cards.get('capability:github.read_repositories').badge, 'Allowed by policy')
   assert.equal(JSON.stringify(model).includes('private'), false)
   assert.equal(JSON.stringify(model).includes('secret'), false)
   assert.equal(JSON.stringify(model).includes('prompt'), false)
@@ -151,6 +153,65 @@ test('workspaceRendererModel never projects account-wide approvals into a worksp
 
   assert.equal(model.cards.some((card) => card.kind === 'approval'), false)
   assert.equal(JSON.stringify(model).includes('Cross-workspace private decision'), false)
+})
+
+test('workspaceRendererModel labels the unscoped feed as Recent account activity', () => {
+  const card = workspaceRendererModel(workspaceResponse, supplemental, 'workspace-1').cards
+    .find((candidate) => candidate.kind === 'activity')
+  assert.equal(card.title, 'Recent account activity')
+})
+
+test('workspaceRendererModel restores the declared GitHub repository artifact with one fixed same-origin route', () => {
+  const model = workspaceRendererModel(workspaceResponse, supplemental, 'workspace-1')
+  const card = model.cards.find((candidate) => candidate.id === 'github-repository-surface')
+
+  assert.deepEqual(card, {
+    id: 'github-repository-surface',
+    kind: 'github-repositories',
+    title: 'GitHub repositories',
+    badge: 'Available now',
+    body: 'GitHub is connected. Open the bounded repository view to review its available repositories.',
+    link: { href: '/github.html', label: 'Open GitHub repositories' },
+  })
+
+  const withoutWindow = structuredClone(workspaceResponse)
+  withoutWindow.workspace.windows = withoutWindow.workspace.windows
+    .filter((window) => window.id !== 'github-repositories')
+  assert.equal(workspaceRendererModel(withoutWindow, supplemental, 'workspace-1').cards
+    .some((candidate) => candidate.kind === 'github-repositories'), false)
+})
+
+test('GitHub repository artifact reports setup-required, unavailable, and needs-attention truth', () => {
+  const cases = [
+    {
+      label: 'empty canonical connector state',
+      mutate(workspace) { workspace.connectors = [] },
+      badge: 'Setup required',
+      body: 'Connect GitHub before Cordia can read repositories in this bounded view.',
+    },
+    {
+      label: 'planned adapter',
+      mutate(workspace) { workspace.connectors[0].implementation_status = 'planned' },
+      badge: 'Unavailable',
+      body: 'GitHub repository access is not available on this surface yet.',
+    },
+    {
+      label: 'unhealthy runtime',
+      mutate(workspace) { workspace.connectors[0].runtime_status = 'needs_attention' },
+      badge: 'Needs attention',
+      body: 'GitHub needs attention before Cordia can read repositories.',
+    },
+  ]
+
+  for (const scenario of cases) {
+    const canonical = structuredClone(workspaceResponse)
+    scenario.mutate(canonical.workspace)
+    const card = workspaceRendererModel(canonical, supplemental, 'workspace-1').cards
+      .find((candidate) => candidate.kind === 'github-repositories')
+    assert.equal(card.badge, scenario.badge, scenario.label)
+    assert.equal(card.body, scenario.body, scenario.label)
+    assert.deepEqual(card.link, { href: '/github.html', label: 'Open GitHub repositories' }, scenario.label)
+  }
 })
 
 test('workspaceRendererModel gates skill and capability badges on canonical connector readiness', () => {
@@ -189,15 +250,73 @@ test('workspaceRendererModel gates skill and capability badges on canonical conn
 
   const cards = new Map(workspaceRendererModel(canonical, feeds, 'workspace-1').cards.map((card) => [card.id, card]))
   assert.equal(cards.get('skill:github_repository_review').badge, 'Available now')
-  assert.equal(cards.get('capability:github.read_repositories').badge, 'Can use')
+  assert.equal(cards.get('capability:github.read_repositories').badge, 'Allowed by policy')
+  assert.deepEqual(cards.get('capability:github.read_repositories').items, [
+    { label: 'Connector readiness', meta: 'Available now' },
+  ])
   assert.equal(cards.get('connector:desktop.local_repository').badge, 'Planned')
   assert.equal(cards.get('skill:local_git_status_wait').badge, 'Planned')
-  assert.equal(cards.get('capability:desktop.git.status').badge, 'Planned')
+  assert.equal(cards.get('capability:desktop.git.status').badge, 'Allowed by policy')
+  assert.deepEqual(cards.get('capability:desktop.git.status').items, [
+    { label: 'Connector readiness', meta: 'Planned' },
+  ])
   assert.equal(cards.get('skill:missing_connector_skill').badge, 'Unavailable')
-  assert.equal(cards.get('capability:missing.read').badge, 'Unavailable')
+  assert.equal(cards.get('capability:missing.read').badge, 'Allowed by policy')
+  assert.deepEqual(cards.get('capability:missing.read').items, [
+    { label: 'Connector readiness', meta: 'Missing' },
+  ])
   assert.equal(cards.get('connector:unstable.connector').badge, 'Unavailable')
   assert.equal(cards.get('skill:unstable_connector_skill').badge, 'Unavailable')
-  assert.equal(cards.get('capability:unstable.read').badge, 'Unavailable')
+  assert.equal(cards.get('capability:unstable.read').badge, 'Allowed by policy')
+  assert.deepEqual(cards.get('capability:unstable.read').items, [
+    { label: 'Connector readiness', meta: 'Needs attention' },
+  ])
+})
+
+test('capability cards keep ASK and DENY authoritative across planned, missing, and unhealthy connectors', () => {
+  const canonical = structuredClone(workspaceResponse)
+  canonical.workspace.connectors.push(
+    {
+      id: 'planned.connector', status: 'confirmed', implementation_status: 'planned',
+      lifecycle: 'needs_handoff', runtime_status: 'not_observed',
+    },
+    {
+      id: 'unhealthy.connector', status: 'confirmed', implementation_status: 'live',
+      lifecycle: 'failed', runtime_status: 'needs_attention',
+    },
+  )
+  const feeds = structuredClone(supplemental)
+  feeds.capabilities.capabilities = []
+  const expected = new Map()
+  for (const decision of ['ASK', 'DENY']) {
+    for (const [readiness, connector] of [
+      ['Planned', 'planned.connector'],
+      ['Missing', 'missing.connector'],
+      ['Needs attention', 'unhealthy.connector'],
+    ]) {
+      const suffix = readiness.toLowerCase().replace(' ', '_')
+      const name = `${decision.toLowerCase()}.${suffix}`
+      feeds.capabilities.capabilities.push({
+        name,
+        summary: `${decision} with ${readiness.toLowerCase()} connector.`,
+        decision,
+        connector,
+        reason: 'internal policy detail must not render',
+      })
+      expected.set(`capability:${name}`, {
+        badge: decision === 'ASK' ? 'Approval required' : 'Not allowed',
+        items: [{ label: 'Connector readiness', meta: readiness }],
+      })
+    }
+  }
+
+  const cards = new Map(workspaceRendererModel(canonical, feeds, 'workspace-1').cards
+    .filter((card) => card.kind === 'capability').map((card) => [card.id, card]))
+  for (const [id, truth] of expected) {
+    assert.equal(cards.get(id).badge, truth.badge, id)
+    assert.deepEqual(cards.get(id).items, truth.items, id)
+  }
+  assert.equal(JSON.stringify([...cards.values()]).includes('internal policy detail'), false)
 })
 
 test('workspaceRendererModel is the sole source of bounded skill action and gate truth', () => {
@@ -325,6 +444,34 @@ test('workspaceRendererModel ignores malformed supplemental categories and unsaf
   assert.equal(model.cards.some((card) => card.kind === 'activity'), false)
 })
 
+test('workspaceRendererModel applies the shared sensitive-text boundary to agents and supplemental cards', () => {
+  const unsafeText = [
+    'sk-testvalue',
+    'ghp_testvalue',
+    'github_pat_testvalue',
+    'AKIA1234567890ABCDEF',
+    'token: private',
+    'password=private',
+    'authorization.private',
+    'credential.private',
+    'C:private',
+    'C:\\private\\workspace',
+    '/home/cordia/private',
+  ]
+
+  for (const value of unsafeText) {
+    const canonical = structuredClone(workspaceResponse)
+    canonical.workspace.agents = [{ id: 'reviewer', name: value, description: value }]
+    const feeds = structuredClone(supplemental)
+    feeds.skills.skills[0].name = value
+    feeds.capabilities.capabilities[0].summary = value
+    feeds.activity.activity[0].event_type = value
+    const model = workspaceRendererModel(canonical, feeds, 'workspace-1')
+    assert.equal(JSON.stringify(model).includes(value), false, value)
+    assert.equal(model.cards.some((card) => card.id === 'agent:reviewer'), false, value)
+  }
+})
+
 test('loadWorkspaceTruth refreshes canonical state and every bounded supplemental feed', async () => {
   assert.equal(typeof workspaceView.loadWorkspaceTruth, 'function')
   const requested = []
@@ -349,6 +496,64 @@ test('loadWorkspaceTruth refreshes canonical state and every bounded supplementa
   ])
   assert.equal(truth.workspace, workspaceResponse)
   assert.deepEqual(Object.keys(truth.supplemental), ['artifacts', 'capabilities', 'skills', 'activity'])
+})
+
+test('loadWorkspaceTruth projects bounded rate-limited and partial supplemental-feed status', async () => {
+  const scenarios = [
+    {
+      label: 'rate limited',
+      failures: new Map([
+        ['/surveyor/capabilities', 'rate-limit'],
+        ['/surveyor/activity', 'offline'],
+      ]),
+      expectedStatus: {
+        state: 'rate-limited',
+        unavailable: ['capabilities', 'activity'],
+      },
+      expectedCard: {
+        badge: 'Rate limited',
+        body: 'Some supplemental workspace details are temporarily rate limited. Reload later to refresh the complete view.',
+        items: [
+          { label: 'Capabilities', meta: 'May be incomplete' },
+          { label: 'Recent account activity', meta: 'May be incomplete' },
+        ],
+      },
+    },
+    {
+      label: 'partial',
+      failures: new Map([['/surveyor/skills', 'offline']]),
+      expectedStatus: { state: 'partial', unavailable: ['skills'] },
+      expectedCard: {
+        badge: 'Partial view',
+        body: 'Some supplemental workspace details could not be loaded. Reload to refresh the complete view.',
+        items: [{ label: 'Skills', meta: 'May be incomplete' }],
+      },
+    },
+  ]
+
+  for (const scenario of scenarios) {
+    const responses = new Map([
+      ['/surveyor/workspace?id=workspace-1', workspaceResponse],
+      ['/surveyor/artifacts', supplemental.artifacts],
+      ['/surveyor/capabilities', supplemental.capabilities],
+      ['/surveyor/skills', supplemental.skills],
+      ['/surveyor/activity', supplemental.activity],
+    ])
+    const truth = await workspaceView.loadWorkspaceTruth(async (path) => {
+      const kind = scenario.failures.get(path)
+      if (kind) throw Object.assign(new Error(`authorization=private-${path}`), { kind })
+      return responses.get(path)
+    }, 'workspace-1', (error) => error.kind)
+
+    assert.deepEqual(truth.supplemental.feedStatus, scenario.expectedStatus, scenario.label)
+    const card = workspaceRendererModel(truth.workspace, truth.supplemental, 'workspace-1').cards
+      .find((candidate) => candidate.id === 'supplemental-feed-status')
+    assert.equal(card.badge, scenario.expectedCard.badge, scenario.label)
+    assert.equal(card.body, scenario.expectedCard.body, scenario.label)
+    assert.deepEqual(card.items, scenario.expectedCard.items, scenario.label)
+    assert.equal(JSON.stringify(card).includes('authorization'), false, scenario.label)
+    assert.equal(JSON.stringify(card).includes('/surveyor/'), false, scenario.label)
+  }
 })
 
 test('assistant turn helpers withdraw failed optimistic messages and restore the bounded draft', () => {
@@ -383,6 +588,42 @@ test('assistantReplyModel allow-lists bounded output and truthful limited-mode n
   })
   assert.equal(assistantReplyModel({ ok: true, output: 'Open C:\\private\\workspace with token=secret' }), null)
   assert.equal(assistantReplyModel({ ok: true, output: { arbitrary: true } }), null)
+})
+
+test('assistantReplyModel projects only safe current-run pending approval status and pause copy', () => {
+  const model = assistantReplyModel({
+    ok: true,
+    output: 'The customer message draft is ready.',
+    llm: { live: true },
+    approval: {
+      id: 'approval_private_checkpoint',
+      run_id: 'run_private',
+      step_id: 'publish_private',
+      status: 'pending',
+      summary: 'Private customer message body.',
+      payload: { authorization: 'Bearer private-value' },
+    },
+  })
+
+  assert.deepEqual(model, {
+    text: 'The customer message draft is ready.',
+    limited: false,
+    note: 'Cordia prepared a draft and paused for your approval. No protected continuation occurred.',
+    approvalStatus: 'pending',
+  })
+  const rendered = JSON.stringify(model)
+  for (const privateValue of [
+    'approval_private_checkpoint', 'run_private', 'publish_private',
+    'Private customer message body.', 'Bearer private-value',
+  ]) assert.equal(rendered.includes(privateValue), false, privateValue)
+
+  assert.deepEqual(assistantReplyModel({
+    ok: true,
+    output: 'The review is complete.',
+    approval: { status: 'approved', id: 'must-not-render' },
+  }), {
+    text: 'The review is complete.', limited: false, note: '',
+  })
 })
 
 test('assistantReplyModel preserves ordinary Unicode punctuation as inert text', () => {

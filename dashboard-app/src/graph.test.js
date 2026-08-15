@@ -134,6 +134,33 @@ test('alidoraMapToFlow rejects token-shaped and drive-relative node and edge ide
   assert.equal(JSON.stringify(flow).includes('C:private'), false)
 })
 
+test('alidoraMapToFlow preserves bounded synthetic entity ids without admitting workspace ids or credential prefixes', () => {
+  const flow = alidoraMapToFlow({
+    nodes: [
+      { id: 'agent:review', kind: 'agent', label: 'Reviewer', detail: '' },
+      { id: 'skill:summarize', kind: 'skill', label: 'Summarize', detail: '' },
+      {
+        id: 'connector:github', kind: 'connector', label: 'GitHub', detail: '',
+        connector_status: { consent: 'confirmed', implementation: 'live', lifecycle: 'live', runtime: 'live' },
+      },
+      { id: 'ghp_testvalue', kind: 'agent', label: 'Unsafe', detail: '' },
+      { id: 'AKIA1234567890ABCDEF', kind: 'skill', label: 'Unsafe', detail: '' },
+      { id: 'workspace-1', kind: 'agent', label: 'Wrong boundary', detail: '' },
+    ],
+    edges: [
+      { from: 'agent:review', to: 'skill:summarize' },
+      { from: 'workspace-1', to: 'skill:summarize' },
+    ],
+  })
+
+  assert.deepEqual(flow.nodes.map((node) => node.id), [
+    'agent:review', 'connector:github', 'skill:summarize',
+  ])
+  assert.deepEqual(flow.edges.map(({ source, target }) => ({ source, target })), [
+    { source: 'agent:review', target: 'skill:summarize' },
+  ])
+})
+
 test('getApi bounds secret-bearing transport failures', async () => {
   const originals = new Map()
   function replaceGlobal(name, value) {

@@ -1,3 +1,5 @@
+import { isSafeIdentifier, isSensitiveText } from './identifier.js'
+
 const CONNECTOR_ENUMS = {
   consent: new Set(['confirmed', 'suggested']),
   implementation: new Set(['live', 'planned']),
@@ -13,15 +15,11 @@ const EMPTY_MODEL = () => ({
 })
 
 function safeIdentifier(value) {
-  return typeof value === 'string'
-    && /^[A-Za-z][A-Za-z0-9._:-]{0,79}$/.test(value)
-    && !/^(?:token|authorization|password|secret|credential|api[_-]?key)\s*[:=]/i.test(value)
-    ? value
-    : ''
+  return isSafeIdentifier(value) ? value : ''
 }
 
 function safeLabel(value) {
-  if (typeof value !== 'string' || value.length > 160 || /[\\/]|\b(?:token|secret|password|authorization|bearer)\b\s*[=:]/i.test(value)) {
+  if (typeof value !== 'string' || value.length > 160 || isSensitiveText(value)) {
     return ''
   }
   return /^[\x20-\x7e]+$/.test(value) ? value : ''

@@ -137,6 +137,64 @@ test('workspaceToRendererModel rejects credential-shaped identifiers from every 
   assert.equal(JSON.stringify(model).includes('BearerSecret'), false)
 })
 
+test('workspaceToRendererModel applies one credential and path matrix to every canonical identifier', () => {
+  const unsafeIds = [
+    'sk-testvalue',
+    'ghp_testvalue',
+    'github_pat_testvalue',
+    'AKIA1234567890ABCDEF',
+    'token.private',
+    'password.private',
+    'authorization.private',
+    'credential.private',
+    'C:private',
+    'C:\\private',
+    'C:/private',
+  ]
+  const identifierFields = [
+    ['window id', (workspace, value) => { workspace.windows[0].id = value }],
+    ['window kind', (workspace, value) => { workspace.windows[0].kind = value }],
+    ['window connector', (workspace, value) => { workspace.windows[0].connector_id = value }],
+    ['workflow id', (workspace, value) => { workspace.workflow.steps[0].id = value }],
+    ['workflow agent', (workspace, value) => { workspace.workflow.steps[0].agentId = value }],
+    ['workflow tool', (workspace, value) => { workspace.workflow.steps[0].toolIds = [value] }],
+    ['connector id', (workspace, value) => { workspace.connectors[0].id = value }],
+  ]
+
+  for (const [field, mutate] of identifierFields) {
+    for (const value of unsafeIds) {
+      const response = structuredClone(canonicalResponse)
+      mutate(response.workspace, value)
+      const rendered = JSON.stringify(workspaceToRendererModel(response))
+      assert.equal(rendered.includes(value), false, `${field}: ${value}`)
+    }
+  }
+})
+
+test('workspaceToRendererModel drops secret-shaped window titles through the shared text boundary', () => {
+  const unsafeTitles = [
+    'sk-testvalue',
+    'ghp_testvalue',
+    'github_pat_testvalue',
+    'AKIA1234567890ABCDEF',
+    'token: private',
+    'password=private',
+    'authorization: Bearer private',
+    'credential.private',
+    'C:private',
+    'C:\\private\\workspace',
+    '/home/cordia/private',
+  ]
+
+  for (const title of unsafeTitles) {
+    const response = structuredClone(canonicalResponse)
+    response.workspace.windows[0].title = title
+    const model = workspaceToRendererModel(response)
+    assert.equal(model.artifactCards.some((card) => card.id === 'github-repositories'), false, title)
+    assert.equal(JSON.stringify(model).includes(title), false, title)
+  }
+})
+
 test('workspaceToRendererModel retains canonical connector truth when runtime has not been observed', () => {
   const model = workspaceToRendererModel({ ok: true, workspace: {
     windows: [{ id: 'github-repositories', kind: 'connector', connector_id: 'github', title: 'GitHub repositories' }],
