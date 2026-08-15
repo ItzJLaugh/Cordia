@@ -141,6 +141,7 @@ test('alidoraMapToFlow preserves remote URL text but rejects local and credentia
     'http://localhost:8000/api/v1',
     'ftp://files.example.test/public/readme',
     'custom://host/one/two',
+    'https://[2001:db8::1]/docs/start',
   ]
 
   for (const value of remoteUrls) {
@@ -155,6 +156,11 @@ test('alidoraMapToFlow preserves remote URL text but rejects local and credentia
     'path://server/share',
     'https://user:password@example.test/docs/start',
     'https://example.test/docs/start?token=private',
+    'https://example.test/docs?next=file:///home/cordia/private',
+    'https://example.test/docs?next=path://server/share',
+    'https://example.test/docs?local=path:C:\\private\\workspace',
+    'https://example.test/docs?home=/home/cordia/private',
+    'https://example.test/docs?home=%2Fhome%2Fcordia%2Fprivate',
   ]) {
     const flow = alidoraMapToFlow({
       nodes: [{ id: 'agent:review', kind: 'agent', label: value, detail: value }],

@@ -44,6 +44,7 @@ test('shared renderer text boundary preserves complete remote URLs but rejects r
     'http://localhost:8000/api/v1',
     'ftp://files.example.test/public/readme',
     'custom://host/one/two',
+    'https://[2001:db8::1]/docs/start',
   ]
 
   for (const value of remoteUrls) assert.equal(isSensitiveText(value), false, value)
@@ -52,6 +53,11 @@ test('shared renderer text boundary preserves complete remote URLs but rejects r
     'https://example.test/docs/start?token=private',
     'file:///home/cordia/private',
     'path://server/share',
+    'https://example.test/docs?next=file:///home/cordia/private',
+    'https://example.test/docs?next=path://server/share',
+    'https://example.test/docs?local=path:C:\\private\\workspace',
+    'https://example.test/docs?home=/home/cordia/private',
+    'https://example.test/docs?home=%2Fhome%2Fcordia%2Fprivate',
   ]) assert.equal(isSensitiveText(value), true, value)
 })
 

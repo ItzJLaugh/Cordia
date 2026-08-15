@@ -23,7 +23,7 @@
       "src/workspace.js",
       "vite.config.js"
     ],
-    "sha256": "90ace246a8305b7d90096bb3c84085bf9a5043894780227ede3fda8c4075db62"
+    "sha256": "633fb5c545c125dcbb8463bb7d774615cc14a52575ad24ca7c8e9c430c0a761b"
   },
   "outputs": [
     {
@@ -31,12 +31,12 @@
       "sha256": "b76415d479b5681dcd5af16712535dca375c36ad50b2f03f735fbcc9e2bdff61"
     },
     {
-      "path": "assets/index-CWT8c5yC.js",
-      "sha256": "4e29a71b49018f9422a4833cc186330c321a31bd611da961976424630e5f8e32"
+      "path": "assets/index-D7kF7BQn.js",
+      "sha256": "881475747fb2c8cbe3819f8cf8661149f28902437a0afda4260b5d27d2a9fa74"
     },
     {
       "path": "index.html",
-      "sha256": "6e96309b3b833eb5208fc6892b2fd091e06fa37d42c7e4c4ed872fbe18fccd17"
+      "sha256": "20c92fad4775214c89cc7bbfb6e718302026b4a8bf454680fe23d5ccbdd71f57"
     }
   ]
 }
