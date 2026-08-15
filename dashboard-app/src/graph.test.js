@@ -75,6 +75,42 @@ test('alidoraMapToFlow sorts safe nodes and emits a non-editable graph', () => {
   ])
 })
 
+test('alidoraMapToFlow drops unsafe node identity and strips secret or path-shaped display text', () => {
+  const flow = alidoraMapToFlow({
+    nodes: [
+      { id: 'C:\\private\\agent', kind: 'agent', label: 'Unsafe id', detail: '' },
+      { id: 'agent:wrong-kind', kind: 'runtime_secret', label: 'Unsafe kind', detail: '' },
+      { id: 'agent:review', kind: 'agent', label: 'password=hunter2', detail: 'Checks evidence.' },
+      { id: 'skill:deploy', kind: 'skill', label: 'Deploy', detail: 'Open C:\\private\\workspace' },
+      {
+        id: 'connector:github', kind: 'connector', label: 'token=private-value', detail: '',
+        connector_status: { consent: 'confirmed', implementation: 'live', lifecycle: 'live', runtime: 'live' },
+      },
+    ],
+    edges: [
+      { from: 'C:\\private\\agent', to: 'skill:deploy' },
+      { from: 'agent:review', to: 'skill:deploy' },
+      { from: 'agent:wrong-kind', to: 'skill:deploy' },
+    ],
+  })
+
+  assert.deepEqual(flow.nodes.map((node) => node.id), ['agent:review', 'connector:github', 'skill:deploy'])
+  assert.deepEqual(flow.nodes.map((node) => node.data), [
+    { kind: 'agent', label: '', detail: 'Checks evidence.' },
+    {
+      kind: 'connector', label: '', detail: '',
+      connectorStatus: { consent: 'confirmed', implementation: 'live', lifecycle: 'live', runtime: 'live' },
+    },
+    { kind: 'skill', label: 'Deploy', detail: '' },
+  ])
+  assert.deepEqual(flow.edges.map(({ source, target }) => ({ source, target })), [
+    { source: 'agent:review', target: 'skill:deploy' },
+  ])
+  assert.equal(JSON.stringify(flow).includes('private'), false)
+  assert.equal(JSON.stringify(flow).includes('hunter2'), false)
+  assert.equal(JSON.stringify(flow).includes('runtime_secret'), false)
+})
+
 test('getApi bounds secret-bearing transport failures', async () => {
   const originals = new Map()
   function replaceGlobal(name, value) {

@@ -14,7 +14,6 @@ import {
 
 const SUPPLEMENTAL_ENDPOINTS = {
   artifacts: '/surveyor/artifacts',
-  approvals: '/surveyor/approvals',
   capabilities: '/surveyor/capabilities',
   skills: '/surveyor/skills',
   activity: '/surveyor/activity',

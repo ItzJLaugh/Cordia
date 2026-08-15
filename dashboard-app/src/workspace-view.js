@@ -1,6 +1,6 @@
 import { workspaceToRendererModel } from './workspace.js'
 
-const SAFE_ID = /^[A-Za-z][A-Za-z0-9._:-]{0,79}$/
+const SAFE_ID = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,79}$/
 const CREDENTIAL_PREFIX = /^(?:token|authorization|password|secret|credential|api[_-]?key)\s*[:=]/i
 const SECRET_OR_PATH = /(?:[A-Za-z]:\\|\\\\[^\s]+\\|\/(?:home|root|Users)\/|\b(?:token|secret|password|authorization|bearer|api[_-]?key)\b\s*[:=]|\b(?:ghp_|github_pat_|xox[baprs]-|sk-)[A-Za-z0-9_-]{8,})/i
 const SAFE_TIMESTAMP = /^\d{4}-\d{2}-\d{2}T[0-9:.+-]+Z?$/
@@ -31,6 +31,29 @@ function listFrom(response, key) {
 
 function stable(records) {
   return records.sort((left, right) => left.id.localeCompare(right.id))
+}
+
+function connectorReadiness(connectors, requiredIds) {
+  const byId = new Map(connectors.map((connector) => [connector.id, connector]))
+  const required = requiredIds.map((id) => byId.get(id))
+  if (required.some((connector) => !connector)) return 'unavailable'
+  if (required.some((connector) => connector.implementation === 'planned')) return 'planned'
+  if (required.some((connector) => connector.consent !== 'confirmed')) return 'connect'
+  if (required.some((connector) => connector.lifecycle === 'failed' || connector.runtime === 'needs_attention')) return 'unavailable'
+  return 'ready'
+}
+
+function connectorIds(value) {
+  if (!Array.isArray(value)) return null
+  const ids = [...new Set(value.map(safeId).filter(Boolean))].sort((left, right) => left.localeCompare(right))
+  return ids.length === value.length ? ids : null
+}
+
+function readinessBadge(readiness) {
+  if (readiness === 'planned') return 'Planned'
+  if (readiness === 'connect') return 'Connect first'
+  if (readiness === 'unavailable') return 'Unavailable'
+  return ''
 }
 
 function missionCard(response) {
@@ -76,18 +99,21 @@ function agentCards(workspace) {
 }
 
 function connectorCards(model) {
-  return model.connectors.map((connector) => ({
-    id: `connector:${connector.id}`,
-    kind: 'connector',
-    title: connector.id,
-    badge: connector.implementation === 'live' && connector.consent === 'confirmed' ? 'Available now' : 'Planned',
-    items: [
-      { label: 'Consent', meta: connector.consent },
-      { label: 'Adapter', meta: connector.implementation },
-      { label: 'Lifecycle', meta: connector.lifecycle.replaceAll('_', ' ') },
-      { label: 'Runtime', meta: connector.runtime.replaceAll('_', ' ') },
-    ],
-  }))
+  return model.connectors.map((connector) => {
+    const readiness = connectorReadiness(model.connectors, [connector.id])
+    return {
+      id: `connector:${connector.id}`,
+      kind: 'connector',
+      title: connector.id,
+      badge: readiness === 'ready' ? 'Available now' : readinessBadge(readiness),
+      items: [
+        { label: 'Consent', meta: connector.consent },
+        { label: 'Adapter', meta: connector.implementation },
+        { label: 'Lifecycle', meta: connector.lifecycle.replaceAll('_', ' ') },
+        { label: 'Runtime', meta: connector.runtime.replaceAll('_', ' ') },
+      ],
+    }
+  })
 }
 
 function derivedCards(model) {
@@ -96,44 +122,39 @@ function derivedCards(model) {
     .map((card) => ({ id: `derived:${card.id}`, kind: 'derived-note', title: card.title, badge: 'DashView' }))
 }
 
-function skillCards(response) {
+function skillCards(response, connectors) {
   const cards = listFrom(response, 'skills').map((skill) => {
     if (!skill || typeof skill !== 'object' || Array.isArray(skill)) return null
     const id = safeId(skill.id)
     const title = safeText(skill.name)
     const body = safeText(skill.summary, 320)
     const permission = PERMISSIONS.has(skill.permission) ? skill.permission : ''
-    if (!id || !title || !body || !permission) return null
+    const requiredConnectors = connectorIds(skill.required_connectors)
+    if (!id || !title || !body || !permission || !requiredConnectors) return null
+    const readiness = connectorReadiness(connectors, requiredConnectors)
+    const connectorBadge = readinessBadge(readiness)
     return {
       id: `skill:${id}`, kind: 'skill', title, body,
-      badge: skill.available === true && permission === 'ALLOW' ? 'Available now' : permission === 'ASK' ? 'Approval required' : 'Connect first',
+      badge: connectorBadge || (skill.available === true && permission === 'ALLOW'
+        ? 'Available now' : permission === 'ASK' ? 'Approval required' : 'Unavailable'),
     }
   }).filter(Boolean)
   return stable(cards)
 }
 
-function capabilityCards(response) {
+function capabilityCards(response, connectors) {
   const cards = listFrom(response, 'capabilities').map((capability) => {
     if (!capability || typeof capability !== 'object' || Array.isArray(capability)) return null
     const id = safeId(capability.name)
     const title = safeText(capability.summary, 320)
     const decision = DECISIONS.has(capability.decision) ? capability.decision : ''
-    if (!id || !title || !decision) return null
+    const connectorId = safeId(capability.connector)
+    if (!id || !title || !decision || !connectorId) return null
+    const connectorBadge = readinessBadge(connectorReadiness(connectors, [connectorId]))
     return {
       id: `capability:${id}`, kind: 'capability', title,
-      badge: decision === 'ALLOW' ? 'Can use' : decision === 'ASK' ? 'Will ask' : 'Cannot use',
+      badge: connectorBadge || (decision === 'ALLOW' ? 'Can use' : decision === 'ASK' ? 'Will ask' : 'Cannot use'),
     }
-  }).filter(Boolean)
-  return stable(cards)
-}
-
-function approvalCards(response) {
-  const cards = listFrom(response, 'approvals').map((approval) => {
-    if (!approval || typeof approval !== 'object' || Array.isArray(approval)) return null
-    const id = safeId(approval.id)
-    const body = safeText(approval.summary, 320)
-    if (!id || !body || approval.status !== 'pending') return null
-    return { id: `approval:${id}`, kind: 'approval', title: 'Approval needed', body, badge: 'Pending' }
   }).filter(Boolean)
   return stable(cards)
 }
@@ -182,9 +203,8 @@ export function workspaceRendererModel(response, supplemental = {}, expectedWork
     ...agentCards(workspace),
     ...connectorCards(canonical),
     ...derivedCards(canonical),
-    ...skillCards(supplemental.skills),
-    ...capabilityCards(supplemental.capabilities),
-    ...approvalCards(supplemental.approvals),
+    ...skillCards(supplemental.skills, canonical.connectors),
+    ...capabilityCards(supplemental.capabilities, canonical.connectors),
     ...activityCards(supplemental.activity),
   ].filter(Boolean)
 

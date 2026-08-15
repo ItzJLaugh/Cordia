@@ -6,6 +6,10 @@ export const COL_LEFT = 60
 export const CARD_W = 210
 export const MAX_CARD_H = 180
 const ROW_GAP = 80
+const NODE_KINDS = new Set(['agent', 'skill', 'connector'])
+const SAFE_NODE_ID = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,95}$/
+const CREDENTIAL_PREFIX = /^(?:token|authorization|password|secret|credential|api[_-]?key)\s*[:=]/i
+const SECRET_OR_PATH = /(?:[A-Za-z]:\\|\\\\[^\s]+\\|\/(?:home|root|Users)\/|\b(?:token|secret|password|credential|authorization|bearer|api[_-]?key)\b\s*[:=]|\b(?:ghp_|github_pat_|xox[baprs]-|sk-)[A-Za-z0-9_-]{8,})/i
 const CONNECTOR_ENUMS = {
   consent: new Set(['confirmed', 'suggested']),
   implementation: new Set(['live', 'planned']),
@@ -15,6 +19,18 @@ const CONNECTOR_ENUMS = {
 
 function stringField(value) {
   return typeof value === 'string' ? value : ''
+}
+
+function safeIdentifier(value) {
+  return typeof value === 'string' && SAFE_NODE_ID.test(value) && !CREDENTIAL_PREFIX.test(value) ? value : ''
+}
+
+function safeDisplayText(value, limit) {
+  if (typeof value !== 'string') return ''
+  const text = value.trim()
+  return text.length <= limit
+    && !/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/.test(text)
+    && !SECRET_OR_PATH.test(text) ? text : ''
 }
 
 function connectorStatus(value) {
@@ -37,12 +53,13 @@ function safeNodes(map) {
   return map.nodes
     .filter((node) => node && typeof node === 'object')
     .map((node) => ({
-      id: stringField(node.id),
-      kind: stringField(node.kind),
-      label: stringField(node.label),
-      detail: stringField(node.detail),
+      id: safeIdentifier(node.id),
+      kind: NODE_KINDS.has(node.kind) ? node.kind : '',
+      label: safeDisplayText(node.label, 160),
+      detail: safeDisplayText(node.detail, 400),
       connectorStatus: connectorStatus(node.connector_status),
     }))
+    .filter((node) => node.id && node.kind)
     .filter((node) => node.kind !== 'connector' || node.connectorStatus)
     .filter((node) => node.id && !seen.has(node.id) && (seen.add(node.id), true))
     .sort((left, right) => left.id.localeCompare(right.id))
@@ -75,7 +92,7 @@ export function alidoraMapToFlow(map) {
   const edgeIds = new Set()
   const edges = rawEdges
     .filter((edge) => edge && typeof edge === 'object')
-    .map((edge) => ({ source: stringField(edge.from), target: stringField(edge.to) }))
+    .map((edge) => ({ source: safeIdentifier(edge.from), target: safeIdentifier(edge.to) }))
     .filter(({ source, target }) => {
       const id = `${source}\u0000${target}`
       if (!source || !target || !nodeIds.has(source) || !nodeIds.has(target) || edgeIds.has(id)) {

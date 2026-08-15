@@ -34,8 +34,11 @@ test('postRun exposes only the fixed Surveyor run request with a bounded input',
       credentials: 'include',
       body: JSON.stringify({ id: 'workspace-1', input: 'x'.repeat(6000) }),
     })
+    const storeId = '3b92e3b42cf94d96824322b7e33b07db'
+    await postRun(storeId, 'Review this')
+    assert.equal(JSON.parse(requests[1].options.body).id, storeId)
     await assert.rejects(postRun('C:\\private\\workspace', 'Review this'), /Invalid workspace request/)
-    assert.equal(requests.length, 1)
+    assert.equal(requests.length, 2)
   } finally {
     restoreGlobals(originals)
   }

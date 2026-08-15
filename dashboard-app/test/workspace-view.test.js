@@ -58,7 +58,8 @@ const supplemental = {
     ok: true,
     skills: [{
       id: 'github_repository_review', name: 'Review repositories', summary: 'Collect repository metadata.',
-      permission: 'ALLOW', available: true, required_capabilities: ['private-capability-shape'],
+      permission: 'ALLOW', available: true, required_connectors: ['github'],
+      required_capabilities: ['private-capability-shape'],
     }],
   },
   activity: {
@@ -74,6 +75,12 @@ test('routeFromSearch keeps a valid workspace id and defaults every non-Alidora 
   })
   assert.equal(routeFromSearch('?workspace=workspace-1&view=live').view, 'workspace')
   assert.equal(routeFromSearch('?workspace=workspace-1&view=alidora').view, 'alidora')
+
+  const storeId = '3b92e3b42cf94d96824322b7e33b07db'
+  assert.deepEqual(routeFromSearch(`?workspace=${storeId}`), {
+    phase: 'ready', workspaceId: storeId, view: 'workspace',
+    workspaceHref: `?workspace=${storeId}`, alidoraHref: `?workspace=${storeId}&view=alidora`,
+  })
 })
 
 test('routeFromSearch fails closed for missing or path-shaped workspace ids', () => {
@@ -99,7 +106,6 @@ test('workspaceRendererModel emits only allow-listed artifact models in stable c
     { id: 'derived:notes', kind: 'derived-note', title: 'Evidence notes' },
     { id: 'skill:github_repository_review', kind: 'skill', title: 'Review repositories' },
     { id: 'capability:github.read_repositories', kind: 'capability', title: 'Read repository metadata.' },
-    { id: 'approval:approval-1', kind: 'approval', title: 'Approval needed' },
     { id: 'activity:0000', kind: 'activity', title: 'Recent activity' },
   ])
   assert.deepEqual(model.cards[0].body, 'Verify the launch evidence.')
@@ -116,6 +122,66 @@ test('workspaceRendererModel emits only allow-listed artifact models in stable c
   assert.equal(JSON.stringify(model).includes('private'), false)
   assert.equal(JSON.stringify(model).includes('secret'), false)
   assert.equal(JSON.stringify(model).includes('prompt'), false)
+  assert.equal(JSON.stringify(model).includes('Publish the report?'), false)
+})
+
+test('workspaceRendererModel never projects account-wide approvals into a workspace', () => {
+  const model = workspaceRendererModel(workspaceResponse, {
+    approvals: {
+      ok: true,
+      approvals: [{ id: 'approval-other-workspace', summary: 'Cross-workspace private decision', status: 'pending' }],
+    },
+  }, 'workspace-1')
+
+  assert.equal(model.cards.some((card) => card.kind === 'approval'), false)
+  assert.equal(JSON.stringify(model).includes('Cross-workspace private decision'), false)
+})
+
+test('workspaceRendererModel gates skill and capability badges on canonical connector readiness', () => {
+  const canonical = structuredClone(workspaceResponse)
+  canonical.workspace.connectors.push({
+    id: 'desktop.local_repository', status: 'confirmed', implementation_status: 'planned',
+    lifecycle: 'needs_handoff', runtime_status: 'not_observed',
+  })
+  canonical.workspace.connectors.push({
+    id: 'unstable.connector', status: 'confirmed', implementation_status: 'live',
+    lifecycle: 'failed', runtime_status: 'needs_attention',
+  })
+  const feeds = structuredClone(supplemental)
+  feeds.skills.skills.push({
+    id: 'local_git_status_wait', name: 'Check local Git status', summary: 'Inspect a selected repository.',
+    permission: 'ALLOW', available: true, required_connectors: ['desktop.local_repository'],
+  })
+  feeds.skills.skills.push({
+    id: 'missing_connector_skill', name: 'Missing connector skill', summary: 'Needs an unknown connector.',
+    permission: 'ALLOW', available: true, required_connectors: ['missing.connector'],
+  })
+  feeds.skills.skills.push({
+    id: 'unstable_connector_skill', name: 'Unstable connector skill', summary: 'Needs a healthy connector.',
+    permission: 'ALLOW', available: true, required_connectors: ['unstable.connector'],
+  })
+  feeds.capabilities.capabilities.push({
+    name: 'desktop.git.status', summary: 'Read local Git status.', decision: 'ALLOW',
+    connector: 'desktop.local_repository',
+  })
+  feeds.capabilities.capabilities.push({
+    name: 'missing.read', summary: 'Read a missing system.', decision: 'ALLOW', connector: 'missing.connector',
+  })
+  feeds.capabilities.capabilities.push({
+    name: 'unstable.read', summary: 'Read an unstable system.', decision: 'ALLOW', connector: 'unstable.connector',
+  })
+
+  const cards = new Map(workspaceRendererModel(canonical, feeds, 'workspace-1').cards.map((card) => [card.id, card]))
+  assert.equal(cards.get('skill:github_repository_review').badge, 'Available now')
+  assert.equal(cards.get('capability:github.read_repositories').badge, 'Can use')
+  assert.equal(cards.get('connector:desktop.local_repository').badge, 'Planned')
+  assert.equal(cards.get('skill:local_git_status_wait').badge, 'Planned')
+  assert.equal(cards.get('capability:desktop.git.status').badge, 'Planned')
+  assert.equal(cards.get('skill:missing_connector_skill').badge, 'Unavailable')
+  assert.equal(cards.get('capability:missing.read').badge, 'Unavailable')
+  assert.equal(cards.get('connector:unstable.connector').badge, 'Unavailable')
+  assert.equal(cards.get('skill:unstable_connector_skill').badge, 'Unavailable')
+  assert.equal(cards.get('capability:unstable.read').badge, 'Unavailable')
 })
 
 test('workspaceRendererModel rejects malformed and cross-workspace canonical responses', () => {
@@ -133,7 +199,6 @@ test('workspaceRendererModel ignores malformed supplemental categories and unsaf
 
   const model = workspaceRendererModel(workspaceResponse, unsafe, 'workspace-1')
   assert.equal(model.cards.some((card) => card.kind === 'mission'), false)
-  assert.equal(model.cards.some((card) => card.kind === 'approval'), false)
   assert.equal(model.cards.some((card) => card.kind === 'capability'), false)
   assert.equal(model.cards.some((card) => card.kind === 'skill'), false)
   assert.equal(model.cards.some((card) => card.kind === 'activity'), false)
