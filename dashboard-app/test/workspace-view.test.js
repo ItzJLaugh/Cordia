@@ -472,6 +472,32 @@ test('workspaceRendererModel applies the shared sensitive-text boundary to agent
   }
 })
 
+test('workspaceRendererModel rejects metadata-prefixed local paths in bounded workspace fields', () => {
+  const localPaths = [
+    'path:C:\\private\\workspace',
+    'path:C:private',
+    'path:/home/cordia/private',
+    'file:///home/cordia/private',
+    'path:\\\\server\\private',
+  ]
+  const fields = [
+    ['workspace title', (workspace, value) => { workspace.title = value }],
+    ['workspace description', (workspace, value) => { workspace.description = value }],
+    ['window title', (workspace, value) => { workspace.windows[0].title = value }],
+    ['agent body', (workspace, value) => { workspace.agents[0].description = value }],
+    ['workflow identifier', (workspace, value) => { workspace.workflow.steps[0].id = value }],
+  ]
+
+  for (const [field, update] of fields) {
+    for (const value of localPaths) {
+      const canonical = structuredClone(workspaceResponse)
+      update(canonical.workspace, value)
+      assert.equal(JSON.stringify(workspaceRendererModel(canonical, supplemental, 'workspace-1')).includes(value), false,
+        `${field}: ${value}`)
+    }
+  }
+})
+
 test('loadWorkspaceTruth refreshes canonical state and every bounded supplemental feed', async () => {
   assert.equal(typeof workspaceView.loadWorkspaceTruth, 'function')
   const requested = []

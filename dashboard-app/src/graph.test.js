@@ -111,6 +111,24 @@ test('alidoraMapToFlow drops unsafe node identity and strips secret or path-shap
   assert.equal(JSON.stringify(flow).includes('runtime_secret'), false)
 })
 
+test('alidoraMapToFlow strips metadata-prefixed local paths from node text', () => {
+  const localPaths = [
+    'path:C:\\private\\workspace',
+    'path:C:private',
+    'path:/home/cordia/private',
+    'file:///home/cordia/private',
+    'path:\\\\server\\private',
+  ]
+
+  for (const value of localPaths) {
+    const flow = alidoraMapToFlow({
+      nodes: [{ id: 'agent:review', kind: 'agent', label: value, detail: value }],
+      edges: [],
+    })
+    assert.deepEqual(flow.nodes[0].data, { kind: 'agent', label: '', detail: '' }, value)
+  }
+})
+
 test('alidoraMapToFlow rejects token-shaped and drive-relative node and edge identifiers', () => {
   const flow = alidoraMapToFlow({
     nodes: [
