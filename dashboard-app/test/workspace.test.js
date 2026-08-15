@@ -117,3 +117,49 @@ test('workspaceToRendererModel fails closed for malformed input and unsafe field
     artifactCards: [], workflowRows: [], connectors: [], viewMode: { default: 'dash', liveAvailable: false },
   })
 })
+
+test('workspaceToRendererModel rejects credential-shaped identifiers from every renderer field', () => {
+  const model = workspaceToRendererModel({ ok: true, workspace: {
+    windows: [{ id: 'token:abc', kind: 'derived', title: 'Safe title' }],
+    workflow: {
+      steps: [{
+        id: 'password:foo', agentId: 'authorization:BearerSecret', toolIds: ['token:abc'],
+      }],
+    },
+    connectors: [{
+      id: 'token:abc', status: 'confirmed', implementation_status: 'live', lifecycle: 'live', runtime_status: 'live',
+    }],
+  } })
+
+  assert.deepEqual(model.artifactCards, [])
+  assert.deepEqual(model.workflowRows, [])
+  assert.deepEqual(model.connectors, [])
+  assert.equal(JSON.stringify(model).includes('BearerSecret'), false)
+})
+
+test('workspaceToRendererModel retains canonical connector truth when runtime has not been observed', () => {
+  const model = workspaceToRendererModel({ ok: true, workspace: {
+    windows: [{ id: 'github-repositories', kind: 'connector', connector_id: 'github', title: 'GitHub repositories' }],
+    connectors: [{
+      id: 'github', status: 'confirmed', implementation_status: 'live', lifecycle: 'needs_handoff',
+    }],
+  } })
+
+  const expected = {
+    id: 'github', consent: 'confirmed', implementation: 'live', lifecycle: 'needs_handoff', runtime: 'not_observed',
+  }
+  assert.deepEqual(model.connectors, [expected])
+  assert.deepEqual(model.artifactCards[0].connector, expected)
+})
+
+test('workspaceToRendererModel keeps LiveView unavailable when support is false even if enabled', () => {
+  const model = workspaceToRendererModel({ ok: true, workspace: {
+    windows: [{
+      id: 'research-notes', kind: 'derived', title: 'Research notes',
+      live_view_supported: false, live_view_enabled: true,
+    }],
+  } })
+
+  assert.deepEqual(model.artifactCards[0].viewMode, { default: 'dash', liveAvailable: false })
+  assert.deepEqual(model.viewMode, { default: 'dash', liveAvailable: false })
+})

@@ -13,7 +13,9 @@ const EMPTY_MODEL = () => ({
 })
 
 function safeIdentifier(value) {
-  return typeof value === 'string' && /^[A-Za-z][A-Za-z0-9._:-]{0,79}$/.test(value)
+  return typeof value === 'string'
+    && /^[A-Za-z][A-Za-z0-9._:-]{0,79}$/.test(value)
+    && !/^(?:token|authorization|password|secret|credential|api[_-]?key)\s*[:=]/i.test(value)
     ? value
     : ''
 }
@@ -32,7 +34,7 @@ function connectorRecord(value) {
     consent: typeof value.status === 'string' ? value.status : '',
     implementation: typeof value.implementation_status === 'string' ? value.implementation_status : '',
     lifecycle: typeof value.lifecycle === 'string' ? value.lifecycle : '',
-    runtime: typeof value.runtime_status === 'string' ? value.runtime_status : '',
+    runtime: value.runtime_status === undefined ? 'not_observed' : value.runtime_status,
   }
   return connector.id && Object.entries(CONNECTOR_ENUMS).every(([field, allowed]) => allowed.has(connector[field]))
     ? connector
