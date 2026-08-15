@@ -42,18 +42,28 @@ const LANE_FIRST = 12         // first lane sits this far above a row top
 const RAIL_R_BASE = COL_LEFT + CARD_W + 30
 const RAIL_STEP = 12
 
-export function definitionToFlow(definition) {
+// `overrides` (optional): { [nodeId]: {x, y} } — ephemeral drag positions.
+// An overridden node keeps its dragged spot, and every edge touching it
+// drops its route skeleton (route: null → StepEdge's plain fallback):
+// the skeleton's rails and lanes are proven collision-free ONLY for the
+// derived layout, so a moved node must not keep geometry that now lies.
+// `opts.cardDetail` ('minimal' | 'balanced' | 'detailed') rides into node
+// data for the renderer; layout arithmetic never depends on it because
+// MAX_CARD_H is a ceiling, not a measurement.
+export function definitionToFlow(definition, overrides, opts) {
   const d = definition && typeof definition === 'object' ? definition : {}
   const agents = Array.isArray(d.agents) ? d.agents : []
   const workflow = d.workflow && typeof d.workflow === 'object' ? d.workflow : {}
   const steps = Array.isArray(workflow.steps) ? workflow.steps : []
+  const moved = overrides && typeof overrides === 'object' ? overrides : {}
+  const cardDetail = (opts && opts.cardDetail) || 'detailed'
 
   // ---- pass 1: node order (rows), no y yet -------------------------------
   const rowOf = new Map([[START_ID, 0]])
   const nodeSpecs = [{ id: START_ID, start: true }]
-  for (const a of agents) {
-    if (!a || typeof a !== 'object' || typeof a.id !== 'string' || !a.id) continue
-    if (rowOf.has(a.id)) continue
+  agents.forEach((a, agentIndex) => {
+    if (!a || typeof a !== 'object' || typeof a.id !== 'string' || !a.id) return
+    if (rowOf.has(a.id)) return
     rowOf.set(a.id, nodeSpecs.length)
     nodeSpecs.push({
       id: a.id,
@@ -61,8 +71,9 @@ export function definitionToFlow(definition) {
       role: typeof a.role === 'string' && a.role ? a.role : 'custom',
       instructions: typeof a.instructions === 'string' ? a.instructions : '',
       placeholder: false,
+      agentIndex,
     })
-  }
+  })
   const validSteps = []
   steps.forEach((s, originalIndex) => {
     if (s && typeof s === 'object' && typeof s.agentId === 'string' && s.agentId) {
@@ -74,7 +85,7 @@ export function definitionToFlow(definition) {
     rowOf.set(s.agentId, nodeSpecs.length)
     nodeSpecs.push({
       id: s.agentId, name: s.agentId, role: 'custom',
-      instructions: '', placeholder: true,
+      instructions: '', placeholder: true, agentIndex: -1,
     })
   }
 
@@ -116,10 +127,13 @@ export function definitionToFlow(definition) {
         }
       : {
           id: spec.id, type: 'cordiaAgent',
-          position: { x: COL_LEFT, y: rowTop[r] },
+          position: moved[spec.id]
+            ? { x: moved[spec.id].x, y: moved[spec.id].y }
+            : { x: COL_LEFT, y: rowTop[r] },
           data: {
             name: spec.name, role: spec.role,
             instructions: spec.instructions, placeholder: spec.placeholder,
+            agentIndex: spec.agentIndex, detail: cardDetail,
           },
         },
   )
@@ -148,6 +162,9 @@ export function definitionToFlow(definition) {
           railL: COL_LEFT - 24 - lane * RAIL_STEP,
           crossY,
         }
+    // A moved endpoint invalidates this route's collision proof — the
+    // fallback path is plain but honest about order.
+    const touched = Boolean(moved[source] || moved[target])
     return {
       id: `step-${originalIndex}`,
       source, target,
@@ -160,11 +177,15 @@ export function definitionToFlow(definition) {
         instruction: typeof s.instruction === 'string' ? s.instruction : '',
         toolIds: Array.isArray(s.toolIds) ? s.toolIds : [],
         requiresApproval,
-        route,
+        route: touched ? null : route,
       },
     }
   })
 
-  // The Start marker only earns its place when there is a flow to enter.
-  return { nodes: edges.length ? nodes : nodes.slice(1), edges }
+  // The Start marker earns its place when there is a flow to enter — or
+  // when the canvas is editable (opts.keepStart), because the first
+  // step's gesture is drawn FROM it and hiding it made that gesture
+  // impossible on a zero-step workspace.
+  const keepStart = Boolean(opts && opts.keepStart)
+  return { nodes: edges.length || keepStart ? nodes : nodes.slice(1), edges }
 }

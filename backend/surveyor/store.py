@@ -245,7 +245,31 @@ def messages(conversation_id, limit=200) -> list:
 
 # ------------------------------------------------------------- interfaces
 
-def save_interface(email, iface_id, name, description, definition, theme=None) -> str:
+def save_interface(email, iface_id, name, description, definition, theme=None,
+                   expected_updated=None):
+    """Upsert one interface row. When ``expected_updated`` is given for an
+    edit, the write is a COMPARE-AND-SWAP: it lands only if the row's
+    ``updated`` still equals that stamp, in the same statement — a
+    read-then-write check in the handler is not atomic on a threaded
+    server, and two same-stamp saves could otherwise both win. Returns
+    ``(id, fresh_updated_stamp)`` on success, None when the CAS found the
+    row already moved."""
+    if iface_id and expected_updated is not None:
+        with _conn() as c, c.cursor() as cur:
+            cur.execute("""
+                UPDATE surveyor_interfaces SET
+                    name=%s, description=%s, definition=%s, theme=%s,
+                    updated=(now() AT TIME ZONE 'utc')
+                WHERE id=%s AND email=%s AND updated=%s::timestamptz
+                RETURNING updated
+            """, (name, description, _J(definition), _J(theme or {}),
+                  iface_id, email, expected_updated))
+            row = cur.fetchone()
+            if row is None:
+                return None
+        # RETURNING gives the stamp of THIS write — a separate read-back
+        # could hand the client another writer's stamp for our content.
+        return iface_id, str(row[0])
     iface_id = iface_id or uuid.uuid4().hex
     with _conn() as c, c.cursor() as cur:
         cur.execute("""
@@ -258,8 +282,10 @@ def save_interface(email, iface_id, name, description, definition, theme=None) -
                 theme=EXCLUDED.theme,
                 updated=(now() AT TIME ZONE 'utc')
             WHERE surveyor_interfaces.email = EXCLUDED.email
+            RETURNING updated
         """, (iface_id, email, name, description, _J(definition), _J(theme or {})))
-    return iface_id
+        row = cur.fetchone()
+    return iface_id, (str(row[0]) if row else None)
 
 
 def list_interfaces(email, include_archived=False) -> list:

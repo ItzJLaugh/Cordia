@@ -53,7 +53,28 @@ def save_interface_request(body):
         "description": str(body.get("description", ""))[:_MAX_DESCRIPTION],
         "definition": validated,
         "theme": theme if isinstance(theme, dict) else None,
+        # Optimistic-concurrency token: the `updated` stamp the client
+        # loaded its copy from. None means "no check" (old clients, the
+        # vanilla builder). The handler compares it against the stored
+        # row so two tabs cannot silently clobber each other.
+        "expected_updated": str(body.get("expected_updated") or "").strip() or None,
     }
+
+
+STALE_SAVE_COPY = ("this workspace changed since you loaded it — reload to "
+                   "pick up the newer version before saving")
+
+
+def stale_row_conflict(expected_updated, stored_updated):
+    """Refusal copy when the row changed since the client loaded it —
+    a DIFFERENT conflict from stored_row_conflict: nothing about this row
+    is unrepresentable, it is simply newer than the copy being saved.
+    Returns None when no check was requested or the stamps agree."""
+    if not expected_updated:
+        return None
+    if str(stored_updated or "") == expected_updated:
+        return None
+    return STALE_SAVE_COPY
 
 
 def stored_row_conflict(stored_definition):

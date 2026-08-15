@@ -536,8 +536,8 @@ class H(BaseHTTPRequestHandler):
         existing = str(body.get('id') or '').strip() or None
         if existing and not surveyor.store.get_interface(email, existing):
             self._json({'ok': False, 'error': 'not found'}, 404); return
-        iid = surveyor.store.save_interface(email, existing, name, desc, definition,
-                                            body.get('theme'))
+        iid, _ = surveyor.store.save_interface(email, existing, name, desc, definition,
+                                               body.get('theme'))
         surveyor.store.log_event(email,
                                  'interface_updated' if existing else 'interface_created',
                                  {'id': iid, 'agents': len(definition.get('agents') or []),
@@ -668,10 +668,29 @@ class H(BaseHTTPRequestHandler):
             # surface disagree; nothing was written.
             conflict = dashboard.api.stored_row_conflict(stored.get('definition'))
             if conflict:
-                self._json({'ok': False, 'error': conflict}, 409); return
-        iid = surveyor.store.save_interface(email, existing, cleaned['name'],
-                                            cleaned['description'],
-                                            cleaned['definition'], cleaned['theme'])
+                self._json({'ok': False, 'error': conflict, 'kind': 'row'}, 409); return
+            # And guard AGAINST TIME: if the client sent the stamp it
+            # loaded from and the row has moved on, refuse rather than
+            # let two tabs silently clobber each other. kind='stale' so
+            # the client can tell "reload" apart from "use the builder".
+            # This pre-check is the fast path and the copy source; the
+            # authoritative check is the CAS inside save_interface —
+            # check-then-act across two connections is not atomic here.
+            stale = dashboard.api.stale_row_conflict(cleaned['expected_updated'],
+                                                     stored.get('updated'))
+            if stale:
+                self._json({'ok': False, 'error': stale, 'kind': 'stale'}, 409); return
+        saved = surveyor.store.save_interface(email, existing, cleaned['name'],
+                                              cleaned['description'],
+                                              cleaned['definition'], cleaned['theme'],
+                                              expected_updated=(cleaned['expected_updated']
+                                                                if existing else None))
+        if saved is None:
+            # The CAS lost the race window the pre-check could not see.
+            self._json({'ok': False, 'error': dashboard.api.STALE_SAVE_COPY,
+                        'kind': 'stale'}, 409)
+            return
+        iid, fresh_stamp = saved
         surveyor.store.log_event(
             email,
             'dashboard_interface_updated' if existing else 'dashboard_interface_created',
@@ -681,7 +700,10 @@ class H(BaseHTTPRequestHandler):
             # Same outcome hook as the surveyor save path: record what was
             # recommended so "did this help?" has something to land on.
             self._surv_record_outcome(email, cleaned['definition'], iid)
-        self._json({'ok': True, 'id': iid, 'definition': cleaned['definition']})
+        # The stamp comes from the write itself (RETURNING) — a separate
+        # read-back could hand the client another writer's stamp.
+        self._json({'ok': True, 'id': iid, 'definition': cleaned['definition'],
+                    'updated': fresh_stamp})
 
     def _dash_skills_search(self, body):
         """Deterministic skill retrieval. No model, no rate cap — the same
