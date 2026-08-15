@@ -1,7 +1,4 @@
-import { useMemo } from 'react'
 import { Background, Controls, Handle, Position, ReactFlow } from '@xyflow/react'
-
-import { alidoraMapToFlow } from './graph.js'
 
 function AlidoraNode({ data }) {
   return (
@@ -25,8 +22,8 @@ function AlidoraNode({ data }) {
 
 const NODE_TYPES = { alidoraNode: AlidoraNode }
 
-export default function DefinitionGraph({ map }) {
-  const { nodes, edges } = useMemo(() => alidoraMapToFlow(map), [map])
+export default function DefinitionGraph({ flow }) {
+  const { nodes, edges } = flow
 
   if (nodes.length === 0) {
     return <div className="canvas-empty">No system map is available for this workspace.</div>
