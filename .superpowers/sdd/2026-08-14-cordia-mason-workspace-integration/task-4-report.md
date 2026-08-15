@@ -183,3 +183,34 @@ The production-target test independently recomputes the source hash from Git ind
 ### Fix-round commit and concerns
 
 The exact fix-round commit hash is reported in the handoff because a commit cannot contain its own stable hash. No fix-round blocker remains. Deployment and public service verification remain Task 5 work.
+
+## Fix round 2: HEAD-bound release derivation
+
+### Finding addressed
+
+The production-target checks now use `git show HEAD:<path>` for every dashboard source, config, lockfile, manifest, index, CSS, and JavaScript blob. Each HEAD blob must match the Git index exactly, so staged-but-uncommitted content fails the release test. Generated release files must also match worktree bytes exactly; source/config/lock worktree comparisons apply the manifest's declared LF normalization so platform checkout line endings do not create a false release difference.
+
+An explicit committed release command, `npm.cmd run verify:dashboard-release` from `desktop/`, constructs a temporary isolated tree from only the exact HEAD dashboard input blobs. It runs fixed `npm ci` and `npm run build` commands with an isolated npm cache and secret-shaped/Vite/Cordia environment variables removed, then byte-compares the rebuilt index, CSS, JavaScript, and provenance manifest with their HEAD blobs. The verifier validates the temporary target before recursively removing it in a `finally` block.
+
+### TDD and staged-content evidence
+
+The first HEAD-bound production-target RED run executed 4 tests: 2 passed and 2 failed. One failure exposed Windows CRLF checkout bytes in `package-lock.json`; the comparison was corrected to use the provenance contract's LF normalization for text worktree inputs while retaining exact HEAD-to-index equality. The other failure showed the new verifier did not exist in HEAD. Before the implementation commit, the corrected focused suite remained 3/4 with the staged verifier rejected because it was absent from HEAD. This is the intended fail-closed result for staged-but-uncommitted release content.
+
+Implementation commit:
+
+```text
+5f8cbdf  test(dashboard): verify release from HEAD blobs
+```
+
+### Post-commit verification
+
+- Desktop full suite — 46 passed, 0 failed, including all 4 HEAD/index/worktree production-target tests.
+- Focused dashboard route/API/credential contract — 18 passed, 0 failed.
+- Explicit clean HEAD rebuild — 137 packages installed from the HEAD lockfile; Vite 7.3.6 transformed 199 modules; every rebuilt release file matched HEAD byte-for-byte.
+- Source-input SHA-256 — `4dd46ad02383032584d8858429b19d68397e1880b484a77d46ddccf1f3adc860`.
+- CSS SHA-256 — `df1cb77ac8658b97fc9bc5bf54e2ace0e649b0a3f957076a0d59504c1e92d887`.
+- JavaScript SHA-256 — `b010d57c53f925b0aa824ee8e70497855523a0b36d4ac1ecb3035e568013e10e`.
+- Provenance SHA-256 — `5abc35fc9e04b2a9c71915676cbf24eb89d99bd2650d8bb1a103c8ff0c2426a9`.
+- Index SHA-256 — `8b58ead2b806d2164537a8c0f6be7effc336dad564ac6dcff3dcded287a8427a`.
+
+Dashboard implementation sources and backend behavior did not change in this round, so the focused dashboard credential suite and full desktop suite were the relevant regression scope. No fix-round blocker remains; deployment and public service verification remain Task 5 work.
