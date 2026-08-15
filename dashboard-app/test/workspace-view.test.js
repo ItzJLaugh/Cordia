@@ -92,6 +92,19 @@ test('routeFromSearch fails closed for missing or path-shaped workspace ids', ()
   assert.equal(routeFromSearch('?workspace=C%3A%5Cprivate%5Cworkspace').phase, 'missing')
   assert.equal(routeFromSearch('?workspace=C%3Adrive-relative').phase, 'missing')
   assert.equal(routeFromSearch('?workspace=token%3Asecret-value').phase, 'missing')
+
+  for (const credentialId of [
+    'sk-abcdefghijk',
+    'ghp_abcdefghijklmnopqrstuvwxyz',
+    'github_pat_abcdefghijklmnopqrstuvwxyz0123456789',
+    'AKIA1234567890ABCDEF',
+    'token.secret-value',
+  ]) {
+    const route = routeFromSearch(`?workspace=${encodeURIComponent(credentialId)}`)
+    assert.deepEqual(route, {
+      phase: 'missing', workspaceId: '', view: 'workspace', workspaceHref: '', alidoraHref: '',
+    }, credentialId)
+  }
 })
 
 test('workspaceRendererModel emits only allow-listed artifact models in stable category order', () => {

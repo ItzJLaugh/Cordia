@@ -39,6 +39,15 @@ test('postRun exposes only the fixed Surveyor run request with a bounded input',
     assert.equal(JSON.parse(requests[1].options.body).id, storeId)
     await assert.rejects(postRun('C:\\private\\workspace', 'Review this'), /Invalid workspace request/)
     await assert.rejects(postRun('C:drive-relative', 'Review this'), /Invalid workspace request/)
+    for (const credentialId of [
+      'sk-abcdefghijk',
+      'ghp_abcdefghijklmnopqrstuvwxyz',
+      'github_pat_abcdefghijklmnopqrstuvwxyz0123456789',
+      'AKIA1234567890ABCDEF',
+      'token.secret-value',
+    ]) {
+      await assert.rejects(postRun(credentialId, 'Review this'), /Invalid workspace request/, credentialId)
+    }
     assert.equal(requests.length, 2)
   } finally {
     restoreGlobals(originals)
@@ -75,6 +84,15 @@ test('postSkillExecute exposes only the fixed skill route with one registered-lo
     await assert.rejects(api.postSkillExecute('C:\\private\\skill'), /Invalid skill request/)
     await assert.rejects(api.postSkillExecute('token:secret'), /Invalid skill request/)
     await assert.rejects(api.postSkillExecute('GitHub_Repository_Review'), /Invalid skill request/)
+    for (const credentialId of [
+      'sk-abcdefghijk',
+      'ghp_abcdefghijklmnopqrstuvwxyz',
+      'github_pat_abcdefghijklmnopqrstuvwxyz0123456789',
+      'AKIA1234567890ABCDEF',
+      'token.secret-value',
+    ]) {
+      await assert.rejects(api.postSkillExecute(credentialId), /Invalid skill request/, credentialId)
+    }
     assert.equal(requests.length, 1)
   } finally {
     restoreGlobals(originals)

@@ -1,0 +1,41 @@
+{
+  "schema": 1,
+  "algorithm": "sha256",
+  "source": {
+    "normalization": "lf",
+    "files": [
+      "package-lock.json",
+      "package.json",
+      "src/App.jsx",
+      "src/ArtifactCard.jsx",
+      "src/DefinitionGraph.jsx",
+      "src/SkillAction.js",
+      "src/WorkspaceView.jsx",
+      "src/api.js",
+      "src/app.css",
+      "src/graph.js",
+      "src/graph.test.js",
+      "src/identifier.js",
+      "src/index.html",
+      "src/main.jsx",
+      "src/workspace-view.js",
+      "src/workspace.js",
+      "vite.config.js"
+    ],
+    "sha256": "4dd46ad02383032584d8858429b19d68397e1880b484a77d46ddccf1f3adc860"
+  },
+  "outputs": [
+    {
+      "path": "assets/index-CAVEeD60.css",
+      "sha256": "df1cb77ac8658b97fc9bc5bf54e2ace0e649b0a3f957076a0d59504c1e92d887"
+    },
+    {
+      "path": "assets/index-DpLf8F_q.js",
+      "sha256": "b010d57c53f925b0aa824ee8e70497855523a0b36d4ac1ecb3035e568013e10e"
+    },
+    {
+      "path": "index.html",
+      "sha256": "8b58ead2b806d2164537a8c0f6be7effc336dad564ac6dcff3dcded287a8427a"
+    }
+  ]
+}

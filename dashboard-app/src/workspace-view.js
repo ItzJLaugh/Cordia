@@ -1,7 +1,6 @@
 import { workspaceToRendererModel } from './workspace.js'
+import { isSafeIdentifier } from './identifier.js'
 
-const SAFE_ID = /^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$/
-const CREDENTIAL_PREFIX = /^(?:token|authorization|password|secret|credential|api[_-]?key)\s*[:=]/i
 const SECRET_OR_PATH = /(?:[A-Za-z]:\\|\\\\[^\s]+\\|\/(?:home|root|Users)\/|\b(?:token|secret|password|authorization|bearer|api[_-]?key)\b\s*[:=]|\b(?:ghp_|github_pat_|xox[baprs]-|sk-)[A-Za-z0-9_-]{8,})/i
 const SAFE_TIMESTAMP = /^\d{4}-\d{2}-\d{2}T[0-9:.+-]+Z?$/
 const DECISIONS = new Set(['ALLOW', 'ASK', 'DENY'])
@@ -14,7 +13,7 @@ const SUPPLEMENTAL_ENDPOINTS = {
 }
 
 function safeId(value) {
-  return typeof value === 'string' && SAFE_ID.test(value) && !CREDENTIAL_PREFIX.test(value) ? value : ''
+  return isSafeIdentifier(value) ? value : ''
 }
 
 function safeText(value, limit = 160) {

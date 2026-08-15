@@ -1,3 +1,5 @@
+import { isSafeIdentifier, isSafeSkillIdentifier } from './identifier.js'
+
 const API = (location.hostname === 'localhost' || location.hostname === '127.0.0.1')
   ? 'http://127.0.0.1:9995'
   : ''
@@ -64,8 +66,7 @@ export async function getApi(path) {
 // Ordinary assistant submission has one fixed transport contract. It cannot
 // select another method, URL, or header surface.
 export async function postRun(workspaceId, input) {
-  if (typeof workspaceId !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$/.test(workspaceId)
-      || /^(?:token|authorization|password|secret|credential|api[_-]?key)\s*[:=]/i.test(workspaceId)) {
+  if (!isSafeIdentifier(workspaceId)) {
     throw new ApiResponseError('Invalid workspace request', 'error')
   }
   const headers = { 'Content-Type': 'application/json' }
@@ -83,7 +84,7 @@ export async function postRun(workspaceId, input) {
 // Skill execution has one fixed mutation contract. The caller can select only
 // a registered-looking identifier; the server remains the execution authority.
 export async function postSkillExecute(skillId) {
-  if (typeof skillId !== 'string' || !/^[a-z][a-z0-9_]{0,79}$/.test(skillId)) {
+  if (!isSafeSkillIdentifier(skillId)) {
     throw new ApiResponseError('Invalid skill request', 'error')
   }
   const headers = { 'Content-Type': 'application/json' }

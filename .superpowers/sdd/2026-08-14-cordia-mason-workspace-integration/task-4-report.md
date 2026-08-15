@@ -129,3 +129,57 @@ This report is included in the Task 4 commit. Its exact immutable hash is report
 ## Concerns
 
 No Task 4 blocker remains. Public browser smoke testing, service-health verification, exact deployed-hash verification, and production rollout remain Task 5 work and are not claimed here.
+
+## Fix round 1: identifier boundary and committed provenance
+
+### Findings addressed
+
+1. The dashboard route, run API, and skill-execution API now share one identifier contract with the legacy navigation helper. All reject credential-shaped ids, including `sk-...`, `ghp_...`, `github_pat_...`, `AKIA...`, and `token.secret-value`, before constructing a query string or issuing a fetch.
+2. The production-target test now validates Git index blobs rather than trusting worktree filenames. A deterministic build-provenance manifest binds the reviewed dashboard inputs to the exact emitted HTML, CSS, and JavaScript bytes.
+
+### TDD evidence
+
+The focused dashboard RED run executed 18 tests: 14 passed and 4 failed. The failures proved that run execution accepted `sk-...`, skill execution accepted `ghp_...`, the dashboard/legacy contracts disagreed for credential-shaped values, and dashboard route construction produced a URL for `sk-...`. After the shared validator and regressions were added, the same focused suite passed 18/18.
+
+The production-target RED run executed 3 tests: 2 passed and the provenance test failed because `web/dashboard/build-provenance.json` did not exist. After the Vite provenance plugin, manifest, and committed-blob assertions were added, the focused suite passed 3/3.
+
+### Identifier contract
+
+`dashboard-app/src/identifier.js` is the single dashboard boundary used by route construction, workspace loading, run submission, and skill execution. The cross-contract regression loads the legacy navigation helper and verifies that both contracts agree over accepted canonical ids and every rejected credential family. Invalid values produce no workspace href, no query string, and no fetch.
+
+### Reproducible reviewed-source provenance
+
+The Vite build hashes a bounded, sorted input set: `package-lock.json`, `package.json`, `vite.config.js`, and every file under `src/`. Text line endings are normalized to LF before hashing so the same reviewed source produces the same manifest on supported development hosts. The manifest contains no timestamp, absolute path, environment value, or secret.
+
+The clean build produced this source-input SHA-256:
+
+```text
+4dd46ad02383032584d8858429b19d68397e1880b484a77d46ddccf1f3adc860
+```
+
+Exact emitted-file SHA-256 values:
+
+```text
+8b58ead2b806d2164537a8c0f6be7effc336dad564ac6dcff3dcded287a8427a  web/dashboard/index.html
+df1cb77ac8658b97fc9bc5bf54e2ace0e649b0a3f957076a0d59504c1e92d887  web/dashboard/assets/index-CAVEeD60.css
+b010d57c53f925b0aa824ee8e70497855523a0b36d4ac1ecb3035e568013e10e  web/dashboard/assets/index-DpLf8F_q.js
+5abc35fc9e04b2a9c71915676cbf24eb89d99bd2650d8bb1a103c8ff0c2426a9  web/dashboard/build-provenance.json
+```
+
+The production-target test independently recomputes the source hash from Git index blobs, resolves the output list from the committed index HTML, verifies every declared output hash against both its index blob and worktree bytes, and rejects provenance containing absolute paths, timestamps, or secret-bearing fields. With a clean index after commit, these index blobs are the exact HEAD blobs.
+
+### Clean install, build, and verification
+
+- `npm.cmd ci` — 137 packages installed, 138 audited, 0 vulnerabilities.
+- `npm.cmd run build` — Vite 7.3.6 transformed 199 modules successfully.
+- A second clean build reproduced the identical output paths and SHA-256 values (`REPRODUCIBLE_BUILD=clean`).
+- Dashboard full suite — 37 passed, 0 failed.
+- Desktop full suite — 45 passed, 0 failed.
+- Backend Python 3.12 suite — 143 passed, 0 failed; only the previously documented optional NumPy and unreachable test-database notices were emitted.
+- Standalone JavaScript syntax checks — clean for `identifier.js`, `api.js`, `workspace-view.js`, and `vite.config.js`.
+- Worktree and staged diff checks — clean.
+- Backend dashboard-route scan, unsafe generic-surface scan, and built credential-literal scan — clean.
+
+### Fix-round commit and concerns
+
+The exact fix-round commit hash is reported in the handoff because a commit cannot contain its own stable hash. No fix-round blocker remains. Deployment and public service verification remain Task 5 work.
