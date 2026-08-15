@@ -38,6 +38,7 @@ test('postRun exposes only the fixed Surveyor run request with a bounded input',
     await postRun(storeId, 'Review this')
     assert.equal(JSON.parse(requests[1].options.body).id, storeId)
     await assert.rejects(postRun('C:\\private\\workspace', 'Review this'), /Invalid workspace request/)
+    await assert.rejects(postRun('C:drive-relative', 'Review this'), /Invalid workspace request/)
     assert.equal(requests.length, 2)
   } finally {
     restoreGlobals(originals)

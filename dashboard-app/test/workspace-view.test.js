@@ -90,6 +90,7 @@ test('routeFromSearch fails closed for missing or path-shaped workspace ids', ()
     phase: 'missing', workspaceId: '', view: 'workspace', workspaceHref: '', alidoraHref: '',
   })
   assert.equal(routeFromSearch('?workspace=C%3A%5Cprivate%5Cworkspace').phase, 'missing')
+  assert.equal(routeFromSearch('?workspace=C%3Adrive-relative').phase, 'missing')
   assert.equal(routeFromSearch('?workspace=token%3Asecret-value').phase, 'missing')
 })
 

@@ -3,6 +3,7 @@ const test = require('node:test');
 
 const {
   buildAlidoraNavigation,
+  buildWorkspaceNavigation,
   renderAlidoraNavigation,
 } = require('../../web/assets/workspace-navigation.js');
 
@@ -18,6 +19,20 @@ function element(tagName) {
   };
 }
 
+test('builds primary and advanced destinations for the same canonical workspace id', () => {
+  const workspaceId = '0f1234567890abcdef1234567890abcd';
+
+  assert.deepEqual(buildWorkspaceNavigation(workspaceId), {
+    label: 'Workspace',
+    href: '/dashboard/?workspace=0f1234567890abcdef1234567890abcd',
+  });
+  assert.deepEqual(buildAlidoraNavigation(workspaceId), {
+    label: 'Alidora',
+    subtitle: 'Agentic System Builder',
+    href: '/dashboard/?workspace=0f1234567890abcdef1234567890abcd&view=alidora',
+  });
+});
+
 test('renders a non-primary Alidora link for one safe authenticated workspace id', () => {
   const host = element('nav');
   const document = { createElement: element };
@@ -27,11 +42,11 @@ test('renders a non-primary Alidora link for one safe authenticated workspace id
   assert.deepEqual(model, {
     label: 'Alidora',
     subtitle: 'Agentic System Builder',
-    href: 'dashboard/?workspace=w-1_A.2',
+    href: '/dashboard/?workspace=w-1_A.2&view=alidora',
   });
   assert.equal(host.children.length, 1);
   assert.equal(host.children[0].tagName, 'a');
-  assert.equal(host.children[0].attributes.href, 'dashboard/?workspace=w-1_A.2');
+  assert.equal(host.children[0].attributes.href, '/dashboard/?workspace=w-1_A.2&view=alidora');
   assert.equal(host.children[0].attributes['data-surface'], 'non-primary');
   assert.equal(host.children[0].children[0].textContent, 'Alidora');
   assert.equal(host.children[0].children[1].textContent, 'Agentic System Builder');
@@ -47,6 +62,9 @@ test('does not construct or render a link for unsafe workspace ids', () => {
     'api_key=must-not-leak',
     'w-1&workspace=someone-else',
     'profile: raw artifact text',
+    'token.secret-value',
+    'C:drive-relative',
+    'a'.repeat(81),
     '',
   ];
 
@@ -55,6 +73,7 @@ test('does not construct or render a link for unsafe workspace ids', () => {
     const document = { createElement: element };
 
     assert.equal(buildAlidoraNavigation(workspaceId), null, workspaceId);
+    assert.equal(buildWorkspaceNavigation(workspaceId), null, workspaceId);
     assert.equal(renderAlidoraNavigation(host, workspaceId, document), null, workspaceId);
     assert.deepEqual(host.children, [], workspaceId);
   });

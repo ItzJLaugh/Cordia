@@ -64,7 +64,7 @@ export async function getApi(path) {
 // Ordinary assistant submission has one fixed transport contract. It cannot
 // select another method, URL, or header surface.
 export async function postRun(workspaceId, input) {
-  if (typeof workspaceId !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9._:-]{0,79}$/.test(workspaceId)
+  if (typeof workspaceId !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$/.test(workspaceId)
       || /^(?:token|authorization|password|secret|credential|api[_-]?key)\s*[:=]/i.test(workspaceId)) {
     throw new ApiResponseError('Invalid workspace request', 'error')
   }

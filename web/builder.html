@@ -138,6 +138,7 @@
 </main>
 
 <script src="assets/cordia-shell.js?v=93dc4041" data-nav="workspace"></script>
+<script src="assets/workspace-navigation.js?v=2"></script>
 <script>
 (function () {
   'use strict';
@@ -361,7 +362,9 @@
         if (r.code !== 200 || !r.data.ok) { say((r.data && r.data.error) || 'Could not save.', true); return; }
         state.id = r.data.id;
         say('Saved. Opening it…');
-        setTimeout(function () { location.href = 'interface.html?id=' + encodeURIComponent(r.data.id); }, 500);
+        var workspace = window.CordiaWorkspaceNavigation.buildWorkspaceNavigation(r.data.id);
+        if (!workspace) { say('Saved, but the workspace id was invalid.', true); return; }
+        setTimeout(function () { location.href = workspace.href; }, 500);
       });
   });
 
