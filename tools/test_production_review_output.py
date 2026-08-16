@@ -112,6 +112,8 @@ class ValidateAiResultTests(unittest.TestCase):
             "Inspect /srv/app before the next review.",
             "Send the result to mailto:ops@example.com.",
             "Read www.example.com for more details.",
+            "Read example.com for more details.",
+            "Read docs.example.com/start for more details.",
         ]
         for field in ("summary", "title"):
             for text in unsafe_text:
@@ -128,6 +130,8 @@ class ValidateAiResultTests(unittest.TestCase):
                 "Inspect the service configuration before merging.",
                 "A www directory can hold static assets.",
                 "Email the team after human validation.",
+                "Review backend/surveyor/permissions.py before merging.",
+                "Version 1.2.3 is ready for human validation.",
             ):
                 with self.subTest(field=field, text=text):
                     value = json.loads(valid_ai_result())

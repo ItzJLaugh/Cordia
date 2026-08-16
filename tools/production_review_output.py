@@ -20,8 +20,12 @@ LOCAL_PATH_PATTERN = re.compile(
 POSIX_ABSOLUTE_PATH_PATTERN = re.compile(r"(?<![A-Za-z0-9])/(?=$|[^\s])")
 URL_PATTERN = re.compile(
     r"(?:\b[A-Za-z][A-Za-z0-9+.-]*:/{1,2}|"
-    r"\b(?:mailto|tel|data|javascript|vbscript):\S+|"
-    r"\bwww\.[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b)",
+    r"\b(?:mailto|tel|data|javascript|vbscript):\S+)",
+    re.IGNORECASE,
+)
+HOST_FORM_PATTERN = re.compile(
+    r"\b(?![A-Za-z0-9_.-]+\.(?:d\.ts|py|js|jsx|ts|tsx|json|md|yaml|yml|toml|txt|"
+    r"html|css|scss|sql|sh|bat|ps1)\b)(?:[A-Za-z0-9-]+\.)+[A-Za-z]{2,63}\b(?:/[^\s]*)?",
     re.IGNORECASE,
 )
 COMMIT_PATTERN = re.compile(r"[0-9a-f]{40}")
@@ -37,6 +41,7 @@ def _is_safe_text(value, *, limit):
         and LOCAL_PATH_PATTERN.search(value) is None
         and POSIX_ABSOLUTE_PATH_PATTERN.search(value) is None
         and URL_PATTERN.search(value) is None
+        and HOST_FORM_PATTERN.search(value) is None
     )
 
 
