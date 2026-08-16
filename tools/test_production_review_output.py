@@ -2,6 +2,7 @@ import importlib.util
 import json
 from pathlib import Path
 import sys
+import tempfile
 import unittest
 
 
@@ -244,6 +245,45 @@ class AssembleReviewTests(unittest.TestCase):
         self.assertNotIn("xoxb-private", slack_json)
         self.assertNotIn("C:\\private", slack_json)
         self.assertNotIn("SLACK_WEBHOOK_URL", slack_json)
+
+    def test_cli_writes_all_artifacts_without_copying_an_invalid_ai_result(self):
+        invalid_marker = "sk-ant-invalid-result-must-not-be-copied"
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            repo_root = Path(temporary_directory)
+            artifact_dir = repo_root / ".production-review"
+            artifact_dir.mkdir()
+            (artifact_dir / "deterministic.json").write_text(
+                json.dumps(self.deterministic()), encoding="utf-8"
+            )
+
+            exit_code = self.output.main(
+                ["assemble"],
+                repo_root=repo_root,
+                environ={
+                    "AI_REVIEW_JSON": json.dumps(
+                        {"summary": invalid_marker, "findings": [], "unknown": True}
+                    ),
+                    "ANTHROPIC_CONFIGURED": "true",
+                    "GITHUB_RUN_ID": "123",
+                },
+            )
+
+            final_path = artifact_dir / "final.json"
+            slack_path = artifact_dir / "slack.json"
+            markdown_path = artifact_dir / "review.md"
+            self.assertEqual(exit_code, 0)
+            self.assertTrue(final_path.is_file())
+            self.assertTrue(slack_path.is_file())
+            self.assertTrue(markdown_path.is_file())
+
+            final = json.loads(final_path.read_text(encoding="utf-8"))
+            artifacts = "\n".join(
+                path.read_text(encoding="utf-8")
+                for path in (final_path, slack_path, markdown_path)
+            )
+            self.assertEqual(final["state"], "REVIEW UNAVAILABLE")
+            self.assertIsNone(final["ai"])
+            self.assertNotIn(invalid_marker, artifacts)
 
 
 if __name__ == "__main__":
