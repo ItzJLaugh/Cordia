@@ -68,18 +68,22 @@ schedule:
 
 It also supports `workflow_dispatch` so an authorized repository contributor can rerun the same review manually.
 
-The AI job is report-only and fail-closed:
+The deterministic and AI jobs are separate. The AI job is report-only and fail-closed:
 
-- repository permissions default to `contents: read`;
+- top-level workflow permissions are empty and the jobs that check out `main` receive only `contents: read`;
 - no pull-request write, issue write, Actions write, deployment, package, identity-token, or environment permission is granted;
 - no production or deployment environment is selected;
 - only `ANTHROPIC_API_KEY` is passed to the Claude step;
-- the AI may read files, search text, inspect Git history/diffs, and run the fixed review runner;
-- it may not edit files, commit, push, open or merge pull requests, create releases, trigger deployments, or call arbitrary network services;
+- the scheduled job uses a fixed workflow-owned prompt, never the mutable project skill;
+- the AI may read files and search text through an explicit read-only tool allow-list, but it receives no shell, package-script, file-write, GitHub-write, or arbitrary network tool;
+- the fixed deterministic runner executes before the AI and passes only its bounded result model, never raw logs;
+- the AI may not edit files, commit, push, open or merge pull requests, create releases, trigger deployments, or call arbitrary network services;
 - its report follows a fixed schema and is stored as a GitHub Actions artifact before Slack delivery;
 - a failed AI call produces `REVIEW UNAVAILABLE`; deterministic failures remain visible and are never converted to success.
 
 Repository files and diffs are untrusted review subjects. `CLAUDE.md` explicitly tells the reviewer not to follow instructions embedded in source, documentation, comments, test fixtures, generated assets, pull-request text, or commit messages. The workflow reviews `main`, never fork code with secrets.
+
+The workflow does not use `pull_request_target` or a secret-bearing `workflow_run`, and manual dispatch fails closed unless `github.ref` is exactly `refs/heads/main`. Every third-party action is pinned to a reviewed full commit SHA. Action updates are intentional code changes, not automatic floating upgrades.
 
 ### 3. Slack Delivery
 
@@ -155,6 +159,7 @@ Mason/Alidora changes continue through the separate adopt/adapt/compose/reject m
 - A Slack HTTP error is bounded to status class; response bodies are not included in reports.
 - A scheduled run delayed by GitHub still records its actual start time and exact SHA.
 - Concurrent runs for the same branch use one concurrency group and cancel the older in-progress advisory run.
+- A manual dispatch from any ref other than `main` performs no review and receives no secrets.
 
 ## Verification and Acceptance
 
@@ -163,13 +168,15 @@ The slice is accepted when automated tests prove:
 1. The schedule is exactly 7:30 AM weekdays in `Asia/Kolkata`.
 2. The workflow can also run manually.
 3. Workflow permissions are read-only and no production environment or deployment command exists.
-4. The deterministic runner invokes only the fixed allow-list and emits bounded output.
-5. Missing keys fail closed without leaking secret material.
-6. Slack payloads contain only bounded report fields and fixed HTTPS GitHub links.
-7. Raw test output, local paths, tokens, and credentials cannot reach Slack.
-8. AI output that does not match the report schema is rejected.
-9. The project skill directs fixes to a review branch and forbids direct `main` changes and deployment.
-10. Existing backend, dashboard, desktop, production-build, and release-provenance suites remain green in the GitHub Linux runner.
+4. Every third-party Action reference is a full immutable commit SHA.
+5. The deterministic runner invokes only the fixed allow-list and emits bounded output.
+6. Missing keys fail closed without leaking secret material.
+7. Slack payloads contain only bounded report fields and fixed HTTPS GitHub links.
+8. Raw test output, local paths, tokens, and credentials cannot reach Slack.
+9. AI output that does not match the report schema is rejected.
+10. The scheduled AI has no shell, file-write, GitHub-write, or mutable project-skill authority.
+11. The project skill directs fixes to a review branch and forbids direct `main` changes and deployment.
+12. Existing backend, dashboard, desktop, production-build, and release-provenance suites remain green in the GitHub Linux runner.
 
 A manual activation check then proves:
 
