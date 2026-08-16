@@ -4,6 +4,7 @@ from pathlib import Path
 import sys
 import tempfile
 import unittest
+from unittest.mock import patch
 
 
 MODULE_PATH = Path(__file__).with_name("production_review_output.py")
@@ -284,6 +285,46 @@ class AssembleReviewTests(unittest.TestCase):
             self.assertEqual(final["state"], "REVIEW UNAVAILABLE")
             self.assertIsNone(final["ai"])
             self.assertNotIn(invalid_marker, artifacts)
+
+    def test_cli_failure_removes_stale_and_partially_published_artifacts(self):
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            repo_root = Path(temporary_directory)
+            artifact_dir = repo_root / ".production-review"
+            artifact_dir.mkdir()
+            (artifact_dir / "deterministic.json").write_text(
+                json.dumps(self.deterministic()), encoding="utf-8"
+            )
+            public_paths = tuple(
+                artifact_dir / name
+                for name in ("final.json", "slack.json", "review.md")
+            )
+            for path in public_paths:
+                path.write_text("stale artifact", encoding="utf-8")
+
+            original_replace = Path.replace
+
+            def fail_slack_publish(source, target):
+                if Path(target) == artifact_dir / "slack.json":
+                    raise OSError("simulated publish failure")
+                return original_replace(source, target)
+
+            with patch.object(Path, "replace", new=fail_slack_publish):
+                exit_code = self.output.main(
+                    ["assemble"],
+                    repo_root=repo_root,
+                    environ={
+                        "AI_REVIEW_JSON": valid_ai_result(),
+                        "ANTHROPIC_CONFIGURED": "true",
+                        "GITHUB_RUN_ID": "123",
+                    },
+                )
+
+            self.assertEqual(exit_code, 2)
+            self.assertTrue((artifact_dir / "deterministic.json").is_file())
+            for path in public_paths:
+                with self.subTest(path=path.name):
+                    self.assertFalse(path.exists())
+                    self.assertFalse(path.with_name(path.name + ".tmp").exists())
 
 
 if __name__ == "__main__":

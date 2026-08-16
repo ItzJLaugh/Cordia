@@ -31,6 +31,7 @@ HOST_FORM_PATTERN = re.compile(
 COMMIT_PATTERN = re.compile(r"[0-9a-f]{40}")
 RUN_ID_PATTERN = re.compile(r"[1-9][0-9]{0,19}")
 REPOSITORY_URL = "https://github.com/ItzJLaugh/Cordia"
+PUBLIC_ARTIFACT_NAMES = ("final.json", "slack.json", "review.md")
 
 
 def _is_safe_text(value, *, limit):
@@ -259,6 +260,13 @@ def _write_text_atomically(path: Path, value: str) -> None:
     temporary_path.replace(path)
 
 
+def _remove_public_artifacts(artifact_dir: Path) -> None:
+    for name in PUBLIC_ARTIFACT_NAMES:
+        path = artifact_dir / name
+        path.unlink(missing_ok=True)
+        path.with_name(path.name + ".tmp").unlink(missing_ok=True)
+
+
 def main(argv=None, *, repo_root=None, environ=None) -> int:
     arguments = sys.argv[1:] if argv is None else argv
     if arguments != ["assemble"]:
@@ -267,6 +275,7 @@ def main(argv=None, *, repo_root=None, environ=None) -> int:
     root = Path.cwd() if repo_root is None else Path(repo_root)
     artifact_dir = root / ".production-review"
     try:
+        _remove_public_artifacts(artifact_dir)
         with (artifact_dir / "deterministic.json").open("r", encoding="utf-8") as handle:
             deterministic = json.load(handle)
         ai_result = validate_ai_result(environment.get("AI_REVIEW_JSON"))
@@ -280,6 +289,10 @@ def main(argv=None, *, repo_root=None, environ=None) -> int:
         _write_json_atomically(artifact_dir / "slack.json", slack)
         _write_text_atomically(artifact_dir / "review.md", markdown)
     except (OSError, TypeError, ValueError, json.JSONDecodeError):
+        try:
+            _remove_public_artifacts(artifact_dir)
+        except OSError:
+            pass
         return 2
     return 0
 
