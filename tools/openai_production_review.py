@@ -142,7 +142,9 @@ def _bounded_text(value: str, limit: int) -> str:
     marker = "\n[TRUNCATED]\n"
     if len(value) <= limit:
         return value
-    return value[: max(0, limit - len(marker))] + marker
+    if limit <= len(marker):
+        return marker[:limit]
+    return value[: limit - len(marker)] + marker
 
 
 def _ensure_clean_worktree(root: Path, run_git) -> None:
@@ -180,6 +182,16 @@ def build_review_context(
     _ensure_clean_worktree(root, run_git)
     names = _git(run_git, ("git", "diff", "--name-only", "HEAD^", "HEAD", "--"), root)
     paths = _safe_changed_paths(root, names)
+    deleted_names = _git(
+        run_git,
+        ("git", "diff", "--diff-filter=D", "--name-only", "HEAD^", "HEAD", "--"),
+        root,
+    )
+    deleted_paths = {
+        path
+        for line in deleted_names.splitlines()
+        if (path := _safe_relative_path(line)) is not None
+    }
     diff = _git(
         run_git,
         ("git", "diff", "--no-ext-diff", "--unified=3", "HEAD^", "HEAD", "--"),
@@ -202,6 +214,8 @@ def build_review_context(
     parts = [prefix]
     remaining = MAX_CONTEXT_CHARS - len(prefix) - len(suffix)
     for relative_path in paths:
+        if relative_path in deleted_paths:
+            continue
         text = _read_committed_text(root, expected_sha, relative_path, run_git)
         if text is not None:
             opener = f"FILE: {relative_path}\n"

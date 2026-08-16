@@ -81,6 +81,8 @@ class OpenAiProductionReviewTests(unittest.TestCase):
             )
         if command == ("git", "diff", "--name-only", "HEAD^", "HEAD", "--"):
             return subprocess.CompletedProcess(argv, 0, "src/safe.py\nignored.bin\n", "")
+        if command == ("git", "diff", "--diff-filter=D", "--name-only", "HEAD^", "HEAD", "--"):
+            return subprocess.CompletedProcess(argv, 0, "", "")
         if command == ("git", "show", f"{SHA}:src/safe.py"):
             return subprocess.CompletedProcess(argv, 0, b"def safe():\n    return 'ok'\n", b"")
         if command == ("git", "show", f"{SHA}:ignored.bin"):
@@ -150,6 +152,39 @@ class OpenAiProductionReviewTests(unittest.TestCase):
         self.assertNotIn("ignored binary bytes", context)
         self.assertNotIn("Binary files differ", context)
         self.assertIn("UNTRUSTED REPOSITORY CONTENT", context)
+
+    def test_truncation_never_exceeds_every_small_residual_capacity(self):
+        for remaining in range(13):
+            with self.subTest(remaining=remaining):
+                bounded = self.module._bounded_text("x" * 100, remaining)
+                self.assertLessEqual(len(bounded), remaining)
+
+    def test_deleted_head_path_keeps_its_patch_without_a_file_section(self):
+        def deleted_file_git(argv, **kwargs):
+            command = tuple(argv)
+            if command == ("git", "diff", "--name-only", "HEAD^", "HEAD", "--"):
+                return subprocess.CompletedProcess(argv, 0, "src/deleted.py\nsrc/safe.py\n", "")
+            if command == ("git", "diff", "--diff-filter=D", "--name-only", "HEAD^", "HEAD", "--"):
+                return subprocess.CompletedProcess(argv, 0, "src/deleted.py\n", "")
+            if command == ("git", "diff", "--no-ext-diff", "--unified=3", "HEAD^", "HEAD", "--"):
+                return subprocess.CompletedProcess(
+                    argv,
+                    0,
+                    "diff --git a/src/deleted.py b/src/deleted.py\ndeleted file mode 100644\n"
+                    "diff --git a/src/safe.py b/src/safe.py\n+new\n",
+                    "",
+                )
+            if command == ("git", "show", f"{SHA}:src/deleted.py"):
+                return subprocess.CompletedProcess(argv, 128, b"", b"missing at HEAD")
+            return self.fake_git(argv, **kwargs)
+
+        context = self.module.build_review_context(
+            self.root, self.artifact_dir / "deterministic.json", SHA, run_git=deleted_file_git
+        )
+
+        self.assertIn("diff --git a/src/deleted.py b/src/deleted.py", context)
+        self.assertNotIn("FILE: src/deleted.py", context)
+        self.assertIn("FILE: src/safe.py", context)
 
     def test_context_excludes_private_paths_caps_files_and_handles_malformed_text(self):
         (self.root / ".env").write_text("OPENAI_API_KEY=never-copy", encoding="utf-8")
