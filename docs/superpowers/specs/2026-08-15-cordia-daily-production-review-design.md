@@ -27,8 +27,8 @@ At 7:30 AM `Asia/Kolkata`, Monday through Friday:
 
 1. GitHub checks out the latest `main` commit and records its full SHA.
 2. Deterministic production checks run before the AI review.
-3. Claude receives the bounded review instructions, the exact SHA, the deterministic results, and read-only repository access.
-4. The workflow publishes a concise Slack message to `#cordia-production-review` through an incoming webhook.
+3. The OpenAI Responses API receives the bounded review context, the exact SHA, and the deterministic results.
+4. The official GitHub Slack app can provide native workflow notifications. The optional custom Cordia Block Kit summary uses an incoming webhook.
 5. The developer reads one summary with these fields:
    - overall state: `REVIEW READY`, `CHECKS FAILED`, or `REVIEW UNAVAILABLE`;
    - commit reviewed;
@@ -73,7 +73,7 @@ The deterministic and AI jobs are separate. The AI job is report-only and fail-c
 - top-level workflow permissions are empty and the jobs that check out `main` receive only `contents: read`;
 - no pull-request write, issue write, Actions write, deployment, package, identity-token, or environment permission is granted;
 - no production or deployment environment is selected;
-- only `ANTHROPIC_API_KEY` is passed to the Claude step;
+- only `OPENAI_API_KEY` is passed to the OpenAI Responses API adapter step;
 - the scheduled job uses a fixed workflow-owned prompt, never the mutable project skill;
 - the AI may read files and search text through an explicit read-only tool allow-list, but it receives no shell, package-script, file-write, GitHub-write, or arbitrary network tool;
 - the fixed deterministic runner executes before the AI and passes only its bounded result model, never raw logs;
@@ -87,7 +87,7 @@ The workflow does not use `pull_request_target` or a secret-bearing `workflow_ru
 
 ### 3. Slack Delivery
 
-GitHub sends one Block Kit message through `SLACK_WEBHOOK_URL`. The webhook is scoped to one chosen channel and stored only as a GitHub Actions secret. The payload is constructed from the bounded report model, not raw command output or raw AI text.
+The official GitHub Slack app is sufficient for native workflow notifications without a repository secret. GitHub sends the optional custom Cordia Block Kit message through `SLACK_WEBHOOK_URL`; that webhook is scoped to one chosen channel and stored only as a GitHub Actions secret. The optional payload is constructed from the bounded report model, not raw command output or raw AI text.
 
 The Slack message contains URL buttons only:
 
@@ -132,8 +132,8 @@ Every daily record identifies the exact commit and timestamp. Findings use `Crit
 
 Implementation can be merged without live secret values. Activation requires the repository owner to add:
 
-- `ANTHROPIC_API_KEY`: used only by the report-only Claude job;
-- `SLACK_WEBHOOK_URL`: an incoming webhook bound to the selected Slack channel.
+- `OPENAI_API_KEY`: used only by the report-only OpenAI Responses API adapter job with pinned model `gpt-5.4-mini-2026-03-17`;
+- `SLACK_WEBHOOK_URL`: optional incoming webhook bound to the selected Slack channel for the custom Cordia Block Kit summary only.
 
 The workflow must check for missing secrets without echoing them. When either is absent:
 
@@ -154,7 +154,7 @@ Mason/Alidora changes continue through the separate adopt/adapt/compose/reject m
 
 - A deterministic check failure produces `CHECKS FAILED` and the AI may analyze it, but cannot downgrade it.
 - An AI timeout or invalid schema produces `REVIEW UNAVAILABLE` while preserving deterministic results.
-- A missing Anthropic key produces setup instructions and no AI call.
+- A missing OpenAI key produces setup instructions and no AI call.
 - A missing Slack webhook retains the GitHub report and produces a setup-required notification status.
 - A Slack HTTP error is bounded to status class; response bodies are not included in reports.
 - A scheduled run delayed by GitHub still records its actual start time and exact SHA.

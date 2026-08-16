@@ -206,13 +206,13 @@ def _slack_payload(final, *, run_id):
             f"— `{_slack_text(finding['file'])}:{finding['line']}`"
             for finding in final["ai"]["findings"]
         )
-        review_text = f"*Claude advisory summary*\n{summary}"
+        review_text = f"*AI advisory summary*\n{summary}"
         if titles:
             review_text += f"\n{titles}"
         blocks.append(_section_block(review_text))
     else:
         blocks.append(
-            _section_block("*Claude advisory result*\nUnavailable for this review.")
+            _section_block("*AI advisory result*\nUnavailable for this review.")
         )
     blocks.append(
         _context_block("Advisory only. A human must validate findings before any change.")
@@ -253,18 +253,18 @@ def _review_markdown(final, *, run_id):
         for check in final["checks"]
     )
     if final["ai"] is not None:
-        lines.extend(["", "## Claude advisory findings", "", _slack_text(final["ai"]["summary"])])
+        lines.extend(["", "## AI advisory findings", "", _slack_text(final["ai"]["summary"])])
         for finding in final["ai"]["findings"]:
             lines.append(
                 f"- **{finding['severity']}** `{finding['file']}:{finding['line']}`: "
                 f"{_slack_text(finding['title'])} — {_slack_text(finding['recommendation'])}"
             )
     else:
-        lines.extend(["", "## Claude advisory findings", "", "Unavailable for this review."])
+        lines.extend(["", "## AI advisory findings", "", "Unavailable for this review."])
     return "\n".join(lines) + "\n"
 
 
-def assemble_review(deterministic, ai_result, *, anthropic_configured, run_id) -> tuple[dict, dict, str]:
+def assemble_review(deterministic, ai_result, *, model_configured, run_id) -> tuple[dict, dict, str]:
     """Combine only bounded models into a fixed-link human review artifact."""
     if not isinstance(run_id, str) or RUN_ID_PATTERN.fullmatch(run_id) is None:
         raise ValueError("run ID must be a positive decimal GitHub Actions run ID")
@@ -275,7 +275,7 @@ def assemble_review(deterministic, ai_result, *, anthropic_configured, run_id) -
         "commit": safe_deterministic["commit"],
         "reviewed_at": safe_deterministic["reviewed_at"],
         "checks": safe_deterministic["checks"],
-        "setup_required": not bool(anthropic_configured),
+        "setup_required": not bool(model_configured),
         "ai": safe_ai_result,
     }
     return final, _slack_payload(final, run_id=run_id), _review_markdown(final, run_id=run_id)
@@ -311,6 +311,23 @@ def _remove_public_artifacts(artifact_dir: Path) -> None:
         raise first_error
 
 
+def _load_ai_review(root: Path, configured_path: str | None) -> dict | None:
+    """Load only a repository-local bounded model file, never raw model output."""
+    if not isinstance(configured_path, str) or not configured_path:
+        return None
+    candidate = Path(configured_path)
+    if candidate.is_absolute():
+        return None
+    try:
+        path = (root / candidate).resolve(strict=False)
+        path.relative_to(root.resolve())
+        if path.is_symlink():
+            return None
+        return validate_ai_result(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError, UnicodeError):
+        return None
+
+
 def main(argv=None, *, repo_root=None, environ=None) -> int:
     arguments = sys.argv[1:] if argv is None else argv
     if arguments != ["assemble"]:
@@ -322,11 +339,11 @@ def main(argv=None, *, repo_root=None, environ=None) -> int:
         _remove_public_artifacts(artifact_dir)
         with (artifact_dir / "deterministic.json").open("r", encoding="utf-8") as handle:
             deterministic = json.load(handle)
-        ai_result = validate_ai_result(environment.get("AI_REVIEW_JSON"))
+        ai_result = _load_ai_review(root, environment.get("AI_REVIEW_PATH"))
         final, slack, markdown = assemble_review(
             deterministic,
             ai_result,
-            anthropic_configured=environment.get("ANTHROPIC_CONFIGURED") == "true",
+            model_configured=environment.get("MODEL_REVIEW_CONFIGURED") == "true",
             run_id=environment.get("GITHUB_RUN_ID"),
         )
         _write_json_atomically(artifact_dir / "final.json", final)

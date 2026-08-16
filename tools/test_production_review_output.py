@@ -177,7 +177,7 @@ class AssembleReviewTests(unittest.TestCase):
         final, slack, markdown = self.output.assemble_review(
             self.deterministic("failed"),
             self.output.validate_ai_result(valid_ai_result()),
-            anthropic_configured=True,
+            model_configured=True,
             run_id="123",
         )
 
@@ -190,7 +190,7 @@ class AssembleReviewTests(unittest.TestCase):
         final, slack, markdown = self.output.assemble_review(
             self.deterministic(),
             self.output.validate_ai_result(valid_ai_result()),
-            anthropic_configured=True,
+            model_configured=True,
             run_id="123",
         )
 
@@ -199,6 +199,10 @@ class AssembleReviewTests(unittest.TestCase):
         self.assertEqual(final["ai"]["findings"][0]["severity"], "Important")
         self.assertIn("REVIEW READY", json.dumps(slack))
         self.assertIn("REVIEW READY", markdown)
+        self.assertIn("AI advisory", json.dumps(slack))
+        self.assertIn("AI advisory", markdown)
+        self.assertNotIn("Claude advisory", json.dumps(slack))
+        self.assertNotIn("Claude advisory", markdown)
         self.assertNotIn("View failed checks", self.button_urls(slack))
 
     def test_absent_or_invalid_ai_produces_unavailable_review_and_setup_signal(self):
@@ -207,7 +211,7 @@ class AssembleReviewTests(unittest.TestCase):
                 final, _, _ = self.output.assemble_review(
                     self.deterministic(),
                     ai_result,
-                    anthropic_configured=False,
+                    model_configured=False,
                     run_id="123",
                 )
                 self.assertEqual(final["state"], "REVIEW UNAVAILABLE")
@@ -221,7 +225,7 @@ class AssembleReviewTests(unittest.TestCase):
         _, slack, _ = self.output.assemble_review(
             self.deterministic("failed"),
             escaped_ai,
-            anthropic_configured=True,
+            model_configured=True,
             run_id="123",
         )
 
@@ -289,7 +293,7 @@ class AssembleReviewTests(unittest.TestCase):
         _, slack, _ = self.output.assemble_review(
             deterministic,
             ai_result,
-            anthropic_configured=True,
+            model_configured=True,
             run_id="123",
         )
 
@@ -321,12 +325,12 @@ class AssembleReviewTests(unittest.TestCase):
                     self.output.assemble_review(
                         deterministic,
                         None,
-                        anthropic_configured=False,
+                        model_configured=False,
                         run_id="123",
                     )
 
-    def test_cli_writes_all_artifacts_without_copying_an_invalid_ai_result(self):
-        invalid_marker = "sk-ant-invalid-result-must-not-be-copied"
+    def test_cli_writes_unavailable_artifacts_without_copying_an_invalid_ai_file(self):
+        invalid_marker = "invalid-openai-result-must-not-be-copied"
         with tempfile.TemporaryDirectory() as temporary_directory:
             repo_root = Path(temporary_directory)
             artifact_dir = repo_root / ".production-review"
@@ -334,15 +338,17 @@ class AssembleReviewTests(unittest.TestCase):
             (artifact_dir / "deterministic.json").write_text(
                 json.dumps(self.deterministic()), encoding="utf-8"
             )
+            (artifact_dir / "openai-review.json").write_text(
+                json.dumps({"summary": invalid_marker, "findings": [], "unknown": True}),
+                encoding="utf-8",
+            )
 
             exit_code = self.output.main(
                 ["assemble"],
                 repo_root=repo_root,
                 environ={
-                    "AI_REVIEW_JSON": json.dumps(
-                        {"summary": invalid_marker, "findings": [], "unknown": True}
-                    ),
-                    "ANTHROPIC_CONFIGURED": "true",
+                    "AI_REVIEW_PATH": ".production-review/openai-review.json",
+                    "MODEL_REVIEW_CONFIGURED": "true",
                     "GITHUB_RUN_ID": "123",
                 },
             )
@@ -363,6 +369,57 @@ class AssembleReviewTests(unittest.TestCase):
             self.assertEqual(final["state"], "REVIEW UNAVAILABLE")
             self.assertIsNone(final["ai"])
             self.assertNotIn(invalid_marker, artifacts)
+
+    def test_cli_treats_an_absent_ai_file_as_an_unavailable_review(self):
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            repo_root = Path(temporary_directory)
+            artifact_dir = repo_root / ".production-review"
+            artifact_dir.mkdir()
+            (artifact_dir / "deterministic.json").write_text(
+                json.dumps(self.deterministic()), encoding="utf-8"
+            )
+
+            exit_code = self.output.main(
+                ["assemble"],
+                repo_root=repo_root,
+                environ={
+                    "AI_REVIEW_PATH": ".production-review/openai-review.json",
+                    "MODEL_REVIEW_CONFIGURED": "true",
+                    "GITHUB_RUN_ID": "123",
+                },
+            )
+
+            final = json.loads((artifact_dir / "final.json").read_text(encoding="utf-8"))
+            self.assertEqual(exit_code, 0)
+            self.assertEqual(final["state"], "REVIEW UNAVAILABLE")
+            self.assertIsNone(final["ai"])
+
+    def test_cli_loads_a_valid_bounded_ai_file_when_the_model_ran(self):
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            repo_root = Path(temporary_directory)
+            artifact_dir = repo_root / ".production-review"
+            artifact_dir.mkdir()
+            (artifact_dir / "deterministic.json").write_text(
+                json.dumps(self.deterministic()), encoding="utf-8"
+            )
+            (artifact_dir / "openai-review.json").write_text(
+                valid_ai_result(), encoding="utf-8"
+            )
+
+            exit_code = self.output.main(
+                ["assemble"],
+                repo_root=repo_root,
+                environ={
+                    "AI_REVIEW_PATH": ".production-review/openai-review.json",
+                    "MODEL_REVIEW_CONFIGURED": "true",
+                    "GITHUB_RUN_ID": "123",
+                },
+            )
+
+            final = json.loads((artifact_dir / "final.json").read_text(encoding="utf-8"))
+            self.assertEqual(exit_code, 0)
+            self.assertEqual(final["state"], "REVIEW READY")
+            self.assertEqual(final["ai"]["summary"], "One permission issue needs human validation.")
 
     def test_cli_failure_removes_stale_and_partially_published_artifacts(self):
         with tempfile.TemporaryDirectory() as temporary_directory:
@@ -391,8 +448,8 @@ class AssembleReviewTests(unittest.TestCase):
                     ["assemble"],
                     repo_root=repo_root,
                     environ={
-                        "AI_REVIEW_JSON": valid_ai_result(),
-                        "ANTHROPIC_CONFIGURED": "true",
+                        "AI_REVIEW_PATH": ".production-review/openai-review.json",
+                        "MODEL_REVIEW_CONFIGURED": "true",
                         "GITHUB_RUN_ID": "123",
                     },
                 )
@@ -437,8 +494,8 @@ class AssembleReviewTests(unittest.TestCase):
                     ["assemble"],
                     repo_root=repo_root,
                     environ={
-                        "AI_REVIEW_JSON": valid_ai_result(),
-                        "ANTHROPIC_CONFIGURED": "true",
+                        "AI_REVIEW_PATH": ".production-review/openai-review.json",
+                        "MODEL_REVIEW_CONFIGURED": "true",
                         "GITHUB_RUN_ID": "123",
                     },
                 )
