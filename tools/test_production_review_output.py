@@ -107,6 +107,36 @@ class ValidateAiResultTests(unittest.TestCase):
         )
         self.assertIsNone(self.output.validate_ai_result(overlong_summary))
 
+    def test_rejects_unsafe_paths_and_urls_in_ai_text_but_keeps_ordinary_prose(self):
+        unsafe_text = [
+            "Inspect /srv/app before the next review.",
+            "Send the result to mailto:ops@example.com.",
+            "Read www.example.com for more details.",
+        ]
+        for field in ("summary", "title"):
+            for text in unsafe_text:
+                with self.subTest(field=field, text=text):
+                    value = json.loads(valid_ai_result())
+                    if field == "summary":
+                        value["summary"] = text
+                    else:
+                        value["findings"][0][field] = text
+                    self.assertIsNone(self.output.validate_ai_result(json.dumps(value)))
+
+        for field in ("summary", "title"):
+            for text in (
+                "Inspect the service configuration before merging.",
+                "A www directory can hold static assets.",
+                "Email the team after human validation.",
+            ):
+                with self.subTest(field=field, text=text):
+                    value = json.loads(valid_ai_result())
+                    if field == "summary":
+                        value["summary"] = text
+                    else:
+                        value["findings"][0][field] = text
+                    self.assertIsNotNone(self.output.validate_ai_result(json.dumps(value)))
+
 
 class AssembleReviewTests(unittest.TestCase):
     COMMIT = "a" * 40

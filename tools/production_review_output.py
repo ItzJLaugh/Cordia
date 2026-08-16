@@ -14,10 +14,16 @@ TOKEN_PATTERN = re.compile(
     r"(?:github_pat_|gh[pousr]_|sk-ant-|xox[baprs]-|xapp-)", re.IGNORECASE
 )
 LOCAL_PATH_PATTERN = re.compile(
-    r"(?:[A-Za-z]:[\\/]|\\\\|file://|/(?:Users|home|var|etc|tmp|private|opt|mnt|root)/)",
+    r"(?:[A-Za-z]:[\\/]|\\\\)",
     re.IGNORECASE,
 )
-URL_PATTERN = re.compile(r"(?:https?|ftp)://", re.IGNORECASE)
+POSIX_ABSOLUTE_PATH_PATTERN = re.compile(r"(?<![A-Za-z0-9])/(?=$|[^\s])")
+URL_PATTERN = re.compile(
+    r"(?:\b[A-Za-z][A-Za-z0-9+.-]*:/{1,2}|"
+    r"\b(?:mailto|tel|data|javascript|vbscript):\S+|"
+    r"\bwww\.[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b)",
+    re.IGNORECASE,
+)
 COMMIT_PATTERN = re.compile(r"[0-9a-f]{40}")
 RUN_ID_PATTERN = re.compile(r"[1-9][0-9]{0,19}")
 REPOSITORY_URL = "https://github.com/ItzJLaugh/Cordia"
@@ -29,6 +35,7 @@ def _is_safe_text(value, *, limit):
         and 0 < len(value) <= limit
         and TOKEN_PATTERN.search(value) is None
         and LOCAL_PATH_PATTERN.search(value) is None
+        and POSIX_ABSOLUTE_PATH_PATTERN.search(value) is None
         and URL_PATTERN.search(value) is None
     )
 
