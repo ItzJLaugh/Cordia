@@ -17,6 +17,13 @@ EXPECTED_ACTIONS = {
     "actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093",
     "slackapi/slack-github-action@dcb1066f776dd043e64d0e8ba94ca15cc7e1875d",
 }
+EXPECTED_TRIGGER_BLOCK = (
+    "on:\n"
+    "  schedule:\n"
+    "    - cron: \"30 7 * * 1-5\"\n"
+    "      timezone: \"Asia/Kolkata\"\n"
+    "  workflow_dispatch:\n"
+)
 
 
 def extract_job(workflow, job_name):
@@ -37,15 +44,24 @@ class DailyProductionReviewWorkflowTests(unittest.TestCase):
     def test_schedule_manual_trigger_and_fail_closed_workflow_boundary(self):
         workflow = self.workflow
 
-        self.assertIn('cron: "30 7 * * 1-5"', workflow)
-        self.assertIn('timezone: "Asia/Kolkata"', workflow)
-        self.assertRegex(workflow, r"(?m)^  workflow_dispatch:\s*$")
+        trigger_block = re.search(r"(?ms)^on:\n.*?(?=^permissions:)", workflow)
+        self.assertIsNotNone(trigger_block)
+        self.assertEqual(trigger_block.group(0), EXPECTED_TRIGGER_BLOCK)
         self.assertRegex(workflow, r"(?m)^permissions: \{\}\s*$")
         self.assertIn("group: cordia-daily-production-review-main", workflow)
         self.assertIn("cancel-in-progress: true", workflow)
-        self.assertGreaterEqual(
-            workflow.count("if: github.ref == 'refs/heads/main'"), 3
-        )
+        expected_guards = {
+            "deterministic": "github.ref == 'refs/heads/main'",
+            "ai_review": "github.ref == 'refs/heads/main'",
+            "slack_notify": "github.ref == 'refs/heads/main'",
+            "final_status": "always() && github.ref == 'refs/heads/main'",
+        }
+        for job_name, guard in expected_guards.items():
+            with self.subTest(job_name=job_name):
+                self.assertRegex(
+                    workflow,
+                    rf"(?m)^  {job_name}:\n    if: {re.escape(guard)}$",
+                )
 
         lowered = workflow.lower()
         for forbidden in (
@@ -97,9 +113,6 @@ class DailyProductionReviewWorkflowTests(unittest.TestCase):
             r"      CORDIA_OPENAI_API_KEY: \$\{\{ secrets\.OPENAI_API_KEY \}\}$",
         )
         self.assertIn("if: env.CORDIA_OPENAI_API_KEY != ''", job)
-        self.assertGreaterEqual(
-            job.count('CORDIA_OPENAI_API_KEY: ""'), 5
-        )
         self.assertIn('python-version: "3.12"', job)
         self.assertIn("fetch-depth: 2", job)
         self.assertRegex(
@@ -115,6 +128,37 @@ class DailyProductionReviewWorkflowTests(unittest.TestCase):
         )
         self.assertIn("AI_REVIEW_PATH: .production-review/openai-review.json", job)
         self.assertIn("MODEL_REVIEW_CONFIGURED: ${{ steps.openai.outcome != 'skipped' && 'true' || 'false' }}", job)
+        steps = {
+            match.group("name"): match.group(0)
+            for match in re.finditer(
+                r"(?ms)^      - name: (?P<name>[^\n]+)\n.*?(?=^      - name:|\Z)",
+                job,
+            )
+        }
+        self.assertEqual(
+            set(steps),
+            {
+                "Check out the same reviewed commit",
+                "Set up Python",
+                "Download the bounded deterministic result",
+                "Run the report-only OpenAI review when configured",
+                "Assemble bounded review artifacts without integration secrets",
+                "Add the validated review to the run summary",
+                "Retain the bounded final review",
+            },
+        )
+        adapter_name = "Run the report-only OpenAI review when configured"
+        for step_name, step in steps.items():
+            with self.subTest(step_name=step_name):
+                if step_name == adapter_name:
+                    self.assertRegex(step, r"(?m)^          OPENAI_API_KEY: ")
+                    self.assertRegex(step, r"(?m)^          EXPECTED_SHA: ")
+                else:
+                    self.assertRegex(
+                        step,
+                        r"(?m)^          CORDIA_OPENAI_API_KEY: \"\"$",
+                    )
+                    self.assertNotRegex(step, r"(?m)^          OPENAI_API_KEY: ")
         for forbidden in ("/cordia-production-review", "Bash", "Write", "Edit", "github_token"):
             with self.subTest(forbidden=forbidden):
                 self.assertNotIn(forbidden, job)
