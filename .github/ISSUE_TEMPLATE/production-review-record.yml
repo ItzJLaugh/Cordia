@@ -1,0 +1,38 @@
+name: Daily production-review record
+description: Persist the one human outcome for a completed daily production review.
+title: "Production review record: "
+labels: ["production-review"]
+body:
+  - type: input
+    id: reviewed_sha
+    attributes:
+      label: Reviewed SHA
+      description: The full verified `main` commit reviewed.
+    validations:
+      required: true
+  - type: input
+    id: review_run
+    attributes:
+      label: GitHub Actions review run
+      description: Link to the Daily Production Review run for this SHA.
+    validations:
+      required: true
+  - type: dropdown
+    id: outcome
+    attributes:
+      label: Human outcome
+      description: Select exactly one outcome for this daily review.
+      options:
+        - Reviewed clean
+        - Fix PR opened
+        - Follow-up issue opened
+        - Blocked
+    validations:
+      required: true
+  - type: textarea
+    id: human_record
+    attributes:
+      label: Human review record
+      description: Summarize validation evidence and link any fix PR or follow-up issue. Do not include secrets.
+    validations:
+      required: true

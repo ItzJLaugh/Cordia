@@ -1,0 +1,43 @@
+name: Production-review finding
+description: Record a human-validated finding that needs follow-up.
+title: "Production review: "
+labels: ["production-review"]
+body:
+  - type: dropdown
+    id: severity
+    attributes:
+      label: Severity
+      options:
+        - Critical
+        - Important
+        - Minor
+    validations:
+      required: true
+  - type: input
+    id: reviewed_sha
+    attributes:
+      label: Reviewed SHA
+      description: The verified `main` commit reviewed.
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Evidence
+      description: Source location, context, and observed impact. Do not include secrets.
+    validations:
+      required: true
+  - type: textarea
+    id: human_validation
+    attributes:
+      label: Human validation
+      description: Explain how a human checked the finding at the reviewed SHA.
+    validations:
+      required: true
+  - type: textarea
+    id: follow_up
+    attributes:
+      label: Follow-up
+      description: State the next owner and bounded next action.
+    validations:
+      required: true
