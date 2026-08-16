@@ -94,6 +94,7 @@ class ValidateAiResultTests(unittest.TestCase):
             {"evidence": "sk-ant-secret"},
             {"line": "42"},
             {"line": True},
+            {"line": 2_147_483_648},
             {"title": "x" * 121},
             {"evidence": "x" * 301},
             {"file": "a" * 201},
@@ -241,11 +242,88 @@ class AssembleReviewTests(unittest.TestCase):
         )
         slack_json = json.dumps(slack)
         self.assertIn("Use &lt;recheck&gt; &amp; human review", slack_json)
+        self.assertIn("`backend-tests`: failed", slack_json)
+        self.assertIn("`backend/surveyor/permissions.py:42`", slack_json)
+        self.assertNotIn("Exited with code 1", slack_json)
         self.assertNotIn("action_id", slack_json)
         self.assertNotIn("https://example.invalid", slack_json)
         self.assertNotIn("xoxb-private", slack_json)
         self.assertNotIn("C:\\private", slack_json)
         self.assertNotIn("SLACK_WEBHOOK_URL", slack_json)
+
+    def test_slack_details_stay_within_block_limits_at_the_schema_maximum(self):
+        finding = json.loads(valid_ai_result())['findings'][0]
+        finding.update(
+            {
+                "title": "t" * 120,
+                "evidence": "e" * 300,
+                "file": "f" * 200,
+                "line": 2_147_483_647,
+                "recommendation": "r" * 300,
+            }
+        )
+        ai_result = self.output.validate_ai_result(
+            json.dumps({"summary": "s" * 600, "findings": [finding] * 5})
+        )
+        deterministic = self.deterministic()
+        deterministic["checks"] = [
+            {
+                "id": check_id,
+                "status": "passed",
+                "duration_ms": 1,
+                "diagnostic": "Passed",
+            }
+            for check_id in (
+                "backend-tests",
+                "dashboard-install",
+                "dashboard-tests",
+                "dashboard-build",
+                "desktop-install",
+                "desktop-tests",
+                "dashboard-release",
+                "commit-diff-check",
+            )
+        ]
+
+        self.assertIsNotNone(ai_result)
+        _, slack, _ = self.output.assemble_review(
+            deterministic,
+            ai_result,
+            anthropic_configured=True,
+            run_id="123",
+        )
+
+        for block in slack["blocks"]:
+            if block["type"] == "section":
+                self.assertLessEqual(len(block["text"]["text"]), 3000)
+            if block["type"] == "context":
+                for element in block["elements"]:
+                    self.assertLessEqual(len(element["text"]), 2000)
+
+    def test_deterministic_check_details_reject_unknown_duplicate_or_unsafe_values(self):
+        invalid_checks = []
+        for invalid_id in ("unknown-check", "C:\\private", "xoxb-private"):
+            deterministic = self.deterministic()
+            deterministic["checks"][0]["id"] = invalid_id
+            invalid_checks.append(deterministic)
+
+        duplicate = self.deterministic()
+        duplicate["checks"] = duplicate["checks"] * 2
+        invalid_checks.append(duplicate)
+
+        unsafe_diagnostic = self.deterministic()
+        unsafe_diagnostic["checks"][0]["diagnostic"] = "raw log xoxb-private"
+        invalid_checks.append(unsafe_diagnostic)
+
+        for deterministic in invalid_checks:
+            with self.subTest(checks=deterministic["checks"]):
+                with self.assertRaises(ValueError):
+                    self.output.assemble_review(
+                        deterministic,
+                        None,
+                        anthropic_configured=False,
+                        run_id="123",
+                    )
 
     def test_cli_writes_all_artifacts_without_copying_an_invalid_ai_result(self):
         invalid_marker = "sk-ant-invalid-result-must-not-be-copied"
@@ -325,6 +403,57 @@ class AssembleReviewTests(unittest.TestCase):
                 with self.subTest(path=path.name):
                     self.assertFalse(path.exists())
                     self.assertFalse(path.with_name(path.name + ".tmp").exists())
+
+    def test_cli_cleanup_attempts_every_public_path_after_one_unlink_error(self):
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            repo_root = Path(temporary_directory)
+            artifact_dir = repo_root / ".production-review"
+            artifact_dir.mkdir()
+            (artifact_dir / "deterministic.json").write_text(
+                json.dumps(self.deterministic()), encoding="utf-8"
+            )
+            public_paths = tuple(
+                artifact_dir / name
+                for name in ("final.json", "slack.json", "review.md")
+            )
+            for path in public_paths:
+                path.write_text("stale artifact", encoding="utf-8")
+                path.with_name(path.name + ".tmp").write_text(
+                    "stale temporary artifact", encoding="utf-8"
+                )
+
+            locked_path = public_paths[0]
+            attempted = []
+            original_unlink = Path.unlink
+
+            def fail_one_unlink(path, *, missing_ok=False):
+                attempted.append(Path(path))
+                if Path(path) == locked_path:
+                    raise OSError("simulated locked artifact")
+                return original_unlink(path, missing_ok=missing_ok)
+
+            with patch.object(Path, "unlink", new=fail_one_unlink):
+                exit_code = self.output.main(
+                    ["assemble"],
+                    repo_root=repo_root,
+                    environ={
+                        "AI_REVIEW_JSON": valid_ai_result(),
+                        "ANTHROPIC_CONFIGURED": "true",
+                        "GITHUB_RUN_ID": "123",
+                    },
+                )
+
+            expected_attempts = {
+                candidate
+                for path in public_paths
+                for candidate in (path, path.with_name(path.name + ".tmp"))
+            }
+            self.assertEqual(exit_code, 2)
+            self.assertTrue(expected_attempts.issubset(set(attempted)))
+            self.assertTrue(locked_path.exists())
+            for path in expected_attempts - {locked_path}:
+                with self.subTest(path=path.name):
+                    self.assertFalse(path.exists())
 
 
 if __name__ == "__main__":

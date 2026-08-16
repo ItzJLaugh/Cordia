@@ -9,9 +9,8 @@ body:
       label: Severity
       options:
         - Critical
-        - High
-        - Medium
-        - Low
+        - Important
+        - Minor
     validations:
       required: true
   - type: input

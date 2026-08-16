@@ -105,7 +105,7 @@ jobs:
             --no-session-persistence
             --tools "Read,Grep,Glob"
             --max-turns 4
-            --json-schema '{"type":"object","additionalProperties":false,"required":["summary","findings"],"properties":{"summary":{"type":"string","minLength":1,"maxLength":600},"findings":{"type":"array","maxItems":5,"items":{"type":"object","additionalProperties":false,"required":["severity","title","evidence","file","line","recommendation"],"properties":{"severity":{"type":"string","enum":["Critical","Important","Minor"]},"title":{"type":"string","minLength":1,"maxLength":120},"evidence":{"type":"string","minLength":1,"maxLength":300},"file":{"type":"string","minLength":1,"maxLength":200,"pattern":"^[A-Za-z0-9_.-]+(?:/[A-Za-z0-9_.-]+)*$"},"line":{"type":"integer","minimum":1},"recommendation":{"type":"string","minLength":1,"maxLength":300}}}}}}'
+            --json-schema '{"type":"object","additionalProperties":false,"required":["summary","findings"],"properties":{"summary":{"type":"string","minLength":1,"maxLength":600},"findings":{"type":"array","maxItems":5,"items":{"type":"object","additionalProperties":false,"required":["severity","title","evidence","file","line","recommendation"],"properties":{"severity":{"type":"string","enum":["Critical","Important","Minor"]},"title":{"type":"string","minLength":1,"maxLength":120},"evidence":{"type":"string","minLength":1,"maxLength":300},"file":{"type":"string","minLength":1,"maxLength":200,"pattern":"^[A-Za-z0-9_.-]+(?:/[A-Za-z0-9_.-]+)*$"},"line":{"type":"integer","minimum":1,"maximum":2147483647},"recommendation":{"type":"string","minLength":1,"maxLength":300}}}}}}'
       - name: Assemble bounded review artifacts without integration secrets
         env:
           CORDIA_ANTHROPIC_API_KEY: ""
@@ -146,6 +146,7 @@ jobs:
           name: cordia-production-review
           path: .production-review
       - name: Send the validated payload when configured
+        id: slack_delivery
         if: env.CORDIA_SLACK_WEBHOOK_URL != ''
         continue-on-error: true
         uses: slackapi/slack-github-action@dcb1066f776dd043e64d0e8ba94ca15cc7e1875d
@@ -153,9 +154,39 @@ jobs:
           webhook: ${{ env.CORDIA_SLACK_WEBHOOK_URL }}
           webhook-type: incoming-webhook
           payload-file-path: .production-review/slack.json
+      - name: Record Slack setup required
+        if: steps.slack_delivery.outcome == 'skipped'
+        env:
+          CORDIA_SLACK_WEBHOOK_URL: ""
+        shell: bash
+        run: |
+          printf '%s\n' '{"status":"SETUP REQUIRED","setup_required":true}' > .production-review/slack-notification.json
+      - name: Record successful Slack notification
+        if: steps.slack_delivery.outcome == 'success'
+        env:
+          CORDIA_SLACK_WEBHOOK_URL: ""
+        shell: bash
+        run: |
+          printf '%s\n' '{"status":"NOTIFICATION SENT","setup_required":false}' > .production-review/slack-notification.json
+      - name: Record failed Slack notification
+        if: steps.slack_delivery.outcome == 'failure'
+        env:
+          CORDIA_SLACK_WEBHOOK_URL: ""
+        shell: bash
+        run: |
+          printf '%s\n' '{"status":"NOTIFICATION FAILED","setup_required":false}' > .production-review/slack-notification.json
+      - name: Retain the bounded Slack notification status
+        env:
+          CORDIA_SLACK_WEBHOOK_URL: ""
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: cordia-slack-notification-status
+          path: .production-review/slack-notification.json
+          if-no-files-found: error
+          retention-days: 14
 
   final_status:
-    if: github.ref == 'refs/heads/main'
+    if: always() && github.ref == 'refs/heads/main'
     needs:
       - ai_review
       - slack_notify
@@ -163,15 +194,28 @@ jobs:
     timeout-minutes: 5
     steps:
       - name: Download the validated final review
+        continue-on-error: true
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
         with:
           name: cordia-production-review
           path: .production-review
+      - name: Download the bounded Slack notification status
+        continue-on-error: true
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: cordia-slack-notification-status
+          path: .production-review
       - name: Preserve advisory states and fail deterministic failures
         shell: bash
         run: |
-          state="$(node -e "try { const value = JSON.parse(require('fs').readFileSync('.production-review/final.json', 'utf8')); process.stdout.write(typeof value.state === 'string' ? value.state : 'REVIEW UNAVAILABLE'); } catch { process.stdout.write('REVIEW UNAVAILABLE'); }")"
-          echo "Production review state: $state"
-          if [ "$state" = "CHECKS FAILED" ]; then
+          review_state="$(node -e 'const fs = require("fs"); let review_state = "REVIEW UNAVAILABLE"; try { const value = JSON.parse(fs.readFileSync(".production-review/final.json", "utf8")); if (["REVIEW READY", "CHECKS FAILED", "REVIEW UNAVAILABLE"].includes(value.state)) review_state = value.state; } catch {} process.stdout.write(review_state);')"
+          slack_status="$(node -e 'const fs = require("fs"); let slack_status = "NOTIFICATION UNAVAILABLE"; try { const value = JSON.parse(fs.readFileSync(".production-review/slack-notification.json", "utf8")); if (["SETUP REQUIRED", "NOTIFICATION SENT", "NOTIFICATION FAILED"].includes(value.status)) slack_status = value.status; } catch {} process.stdout.write(slack_status);')"
+          echo "Production review state: $review_state"
+          echo "Slack notification status: $slack_status"
+          {
+            echo "Production review state: $review_state"
+            echo "Slack notification status: $slack_status"
+          } >> "$GITHUB_STEP_SUMMARY"
+          if [ "$review_state" = "CHECKS FAILED" ]; then
             exit 1
           fi

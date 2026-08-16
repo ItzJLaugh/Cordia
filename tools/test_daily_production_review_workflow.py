@@ -124,12 +124,56 @@ class DailyProductionReviewWorkflowTests(unittest.TestCase):
             r"      CORDIA_SLACK_WEBHOOK_URL: \$\{\{ secrets\.SLACK_WEBHOOK_URL \}\}$",
         )
         self.assertIn("if: env.CORDIA_SLACK_WEBHOOK_URL != ''", job)
+        self.assertIn("id: slack_delivery", job)
         self.assertIn('CORDIA_SLACK_WEBHOOK_URL: ""', job)
         self.assertIn(".production-review/slack.json", job)
         self.assertIn("webhook-type: incoming-webhook", job)
         self.assertNotIn("actions/checkout@", job)
         self.assertNotIn("tools/", job)
-        self.assertNotRegex(job, r"(?m)^\s*run:")
+        self.assertNotRegex(job, r"(?mi)^\s*run:\s*(?:python|node|npm|git)\b")
+
+    def test_slack_job_records_one_bounded_notification_status_without_repository_code(self):
+        job = extract_job(self.workflow, "slack_notify")
+
+        expected_statuses = {
+            "SETUP REQUIRED": "true",
+            "NOTIFICATION SENT": "false",
+            "NOTIFICATION FAILED": "false",
+        }
+        for status, setup_required in expected_statuses.items():
+            with self.subTest(status=status):
+                self.assertIn(
+                    f'{{"status":"{status}","setup_required":{setup_required}}}',
+                    job,
+                )
+        for outcome in ("skipped", "success", "failure"):
+            with self.subTest(outcome=outcome):
+                self.assertIn(
+                    f"steps.slack_delivery.outcome == '{outcome}'",
+                    job,
+                )
+        self.assertIn("name: cordia-slack-notification-status", job)
+        self.assertIn(".production-review/slack-notification.json", job)
+        self.assertEqual(self.workflow.count("secrets.SLACK_WEBHOOK_URL"), 1)
+        for forbidden in ("actions/checkout@", "tools/", "python ", "node ", "npm ", "git "):
+            with self.subTest(forbidden=forbidden):
+                self.assertNotIn(forbidden, job)
+
+    def test_final_status_depends_on_review_and_notification_and_only_checks_fail(self):
+        job = extract_job(self.workflow, "final_status")
+
+        self.assertRegex(
+            job,
+            r"(?m)^    needs:\n      - ai_review\n      - slack_notify$",
+        )
+        self.assertIn("name: cordia-slack-notification-status", job)
+        self.assertIn(".production-review/slack-notification.json", job)
+        self.assertIn('review_state = "REVIEW UNAVAILABLE"', job)
+        self.assertIn('slack_status = "NOTIFICATION UNAVAILABLE"', job)
+        self.assertIn("if [ \"$review_state\" = \"CHECKS FAILED\" ]; then", job)
+        self.assertEqual(job.count("exit 1"), 1)
+        self.assertNotRegex(job, r"REVIEW UNAVAILABLE[^\n]*exit")
+        self.assertNotIn("exit 2", job)
 
 
 if __name__ == "__main__":

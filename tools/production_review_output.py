@@ -9,6 +9,16 @@ import sys
 FINDING_KEYS = {"severity", "title", "evidence", "file", "line", "recommendation"}
 AI_KEYS = {"summary", "findings"}
 SEVERITIES = {"Critical", "Important", "Minor"}
+DETERMINISTIC_CHECK_IDS = {
+    "backend-tests",
+    "dashboard-install",
+    "dashboard-tests",
+    "dashboard-build",
+    "desktop-install",
+    "desktop-tests",
+    "dashboard-release",
+    "commit-diff-check",
+}
 PATH_PATTERN = re.compile(r"^[A-Za-z0-9_.-]+(?:/[A-Za-z0-9_.-]+)*$")
 TOKEN_PATTERN = re.compile(
     r"(?:github_pat_|gh[pousr]_|sk-ant-|xox[baprs]-|xapp-)", re.IGNORECASE
@@ -30,8 +40,13 @@ HOST_FORM_PATTERN = re.compile(
 )
 COMMIT_PATTERN = re.compile(r"[0-9a-f]{40}")
 RUN_ID_PATTERN = re.compile(r"[1-9][0-9]{0,19}")
+FAILED_DIAGNOSTIC_PATTERN = re.compile(r"Exited with code -?[0-9]{1,10}")
 REPOSITORY_URL = "https://github.com/ItzJLaugh/Cordia"
 PUBLIC_ARTIFACT_NAMES = ("final.json", "slack.json", "review.md")
+MAX_FINDING_LINE = 2_147_483_647
+MAX_CHECK_DURATION_MS = 3_600_000
+SLACK_SECTION_LIMIT = 3000
+SLACK_CONTEXT_LIMIT = 2000
 
 
 def _is_safe_text(value, *, limit):
@@ -83,7 +98,7 @@ def validate_ai_result(value: str | None) -> dict | None:
             return None
         if isinstance(finding["line"], bool) or not isinstance(finding["line"], int):
             return None
-        if finding["line"] < 1:
+        if finding["line"] < 1 or finding["line"] > MAX_FINDING_LINE:
             return None
         if not _is_safe_text(finding["recommendation"], limit=300):
             return None
@@ -106,20 +121,39 @@ def _safe_deterministic_result(value):
         raise ValueError("deterministic result has an invalid commit")
     if not isinstance(value["reviewed_at"], str) or not value["reviewed_at"]:
         raise ValueError("deterministic result has an invalid timestamp")
-    if not isinstance(value["checks"], list) or not value["checks"]:
+    if (
+        not isinstance(value["checks"], list)
+        or not value["checks"]
+        or len(value["checks"]) > len(DETERMINISTIC_CHECK_IDS)
+    ):
         raise ValueError("deterministic result has invalid checks")
 
     safe_checks = []
+    observed_ids = set()
     for check in value["checks"]:
         if not isinstance(check, dict) or set(check) != {"id", "status", "duration_ms", "diagnostic"}:
             raise ValueError("deterministic result has an invalid check")
-        if not isinstance(check["id"], str) or not check["id"]:
+        if check["id"] not in DETERMINISTIC_CHECK_IDS or check["id"] in observed_ids:
             raise ValueError("deterministic result has an invalid check")
+        observed_ids.add(check["id"])
         if check["status"] not in {"passed", "failed", "timed_out"}:
             raise ValueError("deterministic result has an invalid check status")
-        if isinstance(check["duration_ms"], bool) or not isinstance(check["duration_ms"], int):
+        if (
+            isinstance(check["duration_ms"], bool)
+            or not isinstance(check["duration_ms"], int)
+            or not 0 <= check["duration_ms"] <= MAX_CHECK_DURATION_MS
+        ):
             raise ValueError("deterministic result has an invalid check duration")
-        if not isinstance(check["diagnostic"], str) or not check["diagnostic"]:
+        valid_diagnostic = (
+            (check["status"] == "passed" and check["diagnostic"] == "Passed")
+            or (check["status"] == "timed_out" and check["diagnostic"] == "Timed out")
+            or (
+                check["status"] == "failed"
+                and isinstance(check["diagnostic"], str)
+                and FAILED_DIAGNOSTIC_PATTERN.fullmatch(check["diagnostic"]) is not None
+            )
+        )
+        if not valid_diagnostic:
             raise ValueError("deterministic result has an invalid check diagnostic")
         safe_checks.append(dict(check))
     return {
@@ -139,6 +173,18 @@ def _slack_text(value):
     return escape(value, quote=False)
 
 
+def _section_block(text):
+    if len(text) > SLACK_SECTION_LIMIT:
+        raise ValueError("Slack section exceeds the bounded text limit")
+    return {"type": "section", "text": {"type": "mrkdwn", "text": text}}
+
+
+def _context_block(text):
+    if len(text) > SLACK_CONTEXT_LIMIT:
+        raise ValueError("Slack context exceeds the bounded text limit")
+    return {"type": "context", "elements": [{"type": "mrkdwn", "text": text}]}
+
+
 def _slack_payload(final, *, run_id):
     commit = final["commit"]
     run_url = f"{REPOSITORY_URL}/actions/runs/{run_id}"
@@ -148,37 +194,28 @@ def _slack_payload(final, *, run_id):
     status_text = f"*{final['state']}*\nCommit `{commit}` · {len(final['checks'])} checks"
     if failed_checks:
         status_text += f" · {failed_checks} failed or timed out"
-    blocks = [{"type": "section", "text": {"type": "mrkdwn", "text": status_text}}]
+    blocks = [_section_block(status_text)]
+    check_lines = "\n".join(
+        f"• `{check['id']}`: {check['status']}" for check in final["checks"]
+    )
+    blocks.append(_section_block(f"*Deterministic checks*\n{check_lines}"))
     if final["ai"] is not None:
         summary = _slack_text(final["ai"]["summary"])
         titles = "\n".join(
-            f"• *{finding['severity']}*: {_slack_text(finding['title'])}"
+            f"• *{finding['severity']}*: {_slack_text(finding['title'])} "
+            f"— `{_slack_text(finding['file'])}:{finding['line']}`"
             for finding in final["ai"]["findings"]
         )
         review_text = f"*Claude advisory summary*\n{summary}"
         if titles:
             review_text += f"\n{titles}"
-        blocks.append({"type": "section", "text": {"type": "mrkdwn", "text": review_text}})
+        blocks.append(_section_block(review_text))
     else:
         blocks.append(
-            {
-                "type": "section",
-                "text": {
-                    "type": "mrkdwn",
-                    "text": "*Claude advisory result*\nUnavailable for this review.",
-                },
-            }
+            _section_block("*Claude advisory result*\nUnavailable for this review.")
         )
     blocks.append(
-        {
-            "type": "context",
-            "elements": [
-                {
-                    "type": "mrkdwn",
-                    "text": "Advisory only. A human must validate findings before any change.",
-                }
-            ],
-        }
+        _context_block("Advisory only. A human must validate findings before any change.")
     )
     buttons = [
         ("Open full review", run_url),
@@ -261,10 +298,17 @@ def _write_text_atomically(path: Path, value: str) -> None:
 
 
 def _remove_public_artifacts(artifact_dir: Path) -> None:
+    first_error = None
     for name in PUBLIC_ARTIFACT_NAMES:
         path = artifact_dir / name
-        path.unlink(missing_ok=True)
-        path.with_name(path.name + ".tmp").unlink(missing_ok=True)
+        for candidate in (path, path.with_name(path.name + ".tmp")):
+            try:
+                candidate.unlink(missing_ok=True)
+            except OSError as error:
+                if first_error is None:
+                    first_error = error
+    if first_error is not None:
+        raise first_error
 
 
 def main(argv=None, *, repo_root=None, environ=None) -> int:
