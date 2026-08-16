@@ -69,6 +69,8 @@ class OpenAiProductionReviewTests(unittest.TestCase):
         command = tuple(argv)
         if command == ("git", "rev-parse", "HEAD"):
             return subprocess.CompletedProcess(argv, 0, SHA + "\n", "")
+        if command == ("git", "status", "--porcelain", "--untracked-files=no"):
+            return subprocess.CompletedProcess(argv, 0, "", "")
         if command == ("git", "diff", "--no-ext-diff", "--unified=3", "HEAD^", "HEAD", "--"):
             return subprocess.CompletedProcess(
                 argv,
@@ -79,7 +81,17 @@ class OpenAiProductionReviewTests(unittest.TestCase):
             )
         if command == ("git", "diff", "--name-only", "HEAD^", "HEAD", "--"):
             return subprocess.CompletedProcess(argv, 0, "src/safe.py\nignored.bin\n", "")
+        if command == ("git", "show", f"{SHA}:src/safe.py"):
+            return subprocess.CompletedProcess(argv, 0, b"def safe():\n    return 'ok'\n", b"")
+        if command == ("git", "show", f"{SHA}:ignored.bin"):
+            return subprocess.CompletedProcess(argv, 0, b"\x00binary", b"")
         raise AssertionError(f"unexpected Git command: {argv!r}")
+
+    def make_symlink(self, path, target):
+        try:
+            path.symlink_to(target)
+        except OSError as error:
+            self.skipTest(f"symbolic links are unavailable: {error}")
 
     def completed_opener(self, request, timeout=None):
         self.assertEqual(request.full_url, self.module.RESPONSES_URL)
@@ -157,6 +169,10 @@ class OpenAiProductionReviewTests(unittest.TestCase):
                 return subprocess.CompletedProcess(argv, 0, "\n".join(names) + "\n", "")
             if tuple(argv) == ("git", "diff", "--no-ext-diff", "--unified=3", "HEAD^", "HEAD", "--"):
                 return subprocess.CompletedProcess(argv, 0, "", "")
+            if tuple(argv) == ("git", "show", f"{SHA}:src/invalid.py"):
+                return subprocess.CompletedProcess(argv, 0, b"text before\xff text after", b"")
+            if tuple(argv)[:2] == ("git", "show"):
+                return subprocess.CompletedProcess(argv, 0, b"x" * (self.module.MAX_FILE_CHARS + 100), b"")
             return self.fake_git(argv, **kwargs)
 
         context = self.module.build_review_context(
@@ -179,6 +195,106 @@ class OpenAiProductionReviewTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             self.module.build_review_context(
                 self.root, self.artifact_dir / "deterministic.json", "not-a-sha", run_git=self.fake_git
+            )
+
+    def test_context_reads_changed_content_from_the_verified_commit_not_worktree(self):
+        (self.root / "src" / "safe.py").write_text("OPENAI_API_KEY=dirty-secret", encoding="utf-8")
+
+        def committed_blob_git(argv, **kwargs):
+            if tuple(argv) == ("git", "show", f"{SHA}:src/safe.py"):
+                return subprocess.CompletedProcess(argv, 0, b"def committed():\n    return 'safe'\n", b"")
+            return self.fake_git(argv, **kwargs)
+
+        context = self.module.build_review_context(
+            self.root, self.artifact_dir / "deterministic.json", SHA, run_git=committed_blob_git
+        )
+
+        self.assertIn("def committed()", context)
+        self.assertNotIn("dirty-secret", context)
+
+    def test_context_fails_closed_for_a_dirty_worktree_or_changed_symlink(self):
+        def dirty_git(argv, **kwargs):
+            if tuple(argv) == ("git", "status", "--porcelain", "--untracked-files=no"):
+                return subprocess.CompletedProcess(argv, 0, " M src/safe.py\n", "")
+            return self.fake_git(argv, **kwargs)
+
+        with self.assertRaises(ValueError):
+            self.module.build_review_context(
+                self.root, self.artifact_dir / "deterministic.json", SHA, run_git=dirty_git
+            )
+
+        (self.root / ".env").write_text("OPENAI_API_KEY=symlink-secret", encoding="utf-8")
+        linked_path = self.root / "src" / "linked.py"
+        self.make_symlink(linked_path, self.root / ".env")
+
+        def symlink_git(argv, **kwargs):
+            if tuple(argv) == ("git", "diff", "--name-only", "HEAD^", "HEAD", "--"):
+                return subprocess.CompletedProcess(argv, 0, "src/linked.py\n", "")
+            if tuple(argv) == ("git", "show", f"{SHA}:src/linked.py"):
+                return subprocess.CompletedProcess(argv, 0, b".env\n", b"")
+            return self.fake_git(argv, **kwargs)
+
+        with self.assertRaises(ValueError):
+            self.module.build_review_context(
+                self.root, self.artifact_dir / "deterministic.json", SHA, run_git=symlink_git
+            )
+
+    def test_context_bounds_each_section_and_preserves_delimiters(self):
+        (self.artifact_dir / "deterministic.json").write_text(
+            json.dumps({"commit": SHA, "padding": "d" * 200_000}), encoding="utf-8"
+        )
+
+        def oversized_git(argv, **kwargs):
+            if tuple(argv) == ("git", "diff", "--no-ext-diff", "--unified=3", "HEAD^", "HEAD", "--"):
+                return subprocess.CompletedProcess(
+                    argv,
+                    0,
+                    "diff --git a/src/safe.py b/src/safe.py\n" + "+d" * 40_000,
+                    "",
+                )
+            if tuple(argv) == ("git", "show", f"{SHA}:src/safe.py"):
+                return subprocess.CompletedProcess(argv, 0, b"x" * 50_000, b"")
+            return self.fake_git(argv, **kwargs)
+
+        context = self.module.build_review_context(
+            self.root, self.artifact_dir / "deterministic.json", SHA, run_git=oversized_git
+        )
+
+        self.assertLessEqual(len(context), self.module.MAX_CONTEXT_CHARS)
+        self.assertIn(f"EXPECTED_SHA: {SHA}", context)
+        self.assertIn("<DIFF>", context)
+        self.assertIn("</DIFF>", context)
+        self.assertIn("</DETERMINISTIC_REVIEW>", context)
+        self.assertTrue(context.endswith("</UNTRUSTED_REPOSITORY_CONTENT>\n"))
+
+    def test_context_rejects_traversal_and_safely_handles_percent_and_unicode_names(self):
+        def unusual_name_git(argv, **kwargs):
+            if tuple(argv) == ("git", "diff", "--name-only", "HEAD^", "HEAD", "--"):
+                return subprocess.CompletedProcess(
+                    argv, 0, "src/safe.py\nsrc/../.env\nsrc/100%name.py\nsrc/unicode-☃.py\n", ""
+                )
+            if tuple(argv) == ("git", "show", f"{SHA}:src/safe.py"):
+                return subprocess.CompletedProcess(argv, 0, "snowman ☃ and 100% text".encode("utf-8"), b"")
+            return self.fake_git(argv, **kwargs)
+
+        context = self.module.build_review_context(
+            self.root, self.artifact_dir / "deterministic.json", SHA, run_git=unusual_name_git
+        )
+
+        self.assertIn("snowman ☃ and 100% text", context)
+        self.assertNotIn("src/../.env", context)
+        self.assertNotIn("src/100%name.py", context)
+        self.assertNotIn("src/unicode-☃.py", context)
+
+    def test_context_rejects_an_isolated_checked_out_head_mismatch(self):
+        def mismatched_head_git(argv, **kwargs):
+            if tuple(argv) == ("git", "rev-parse", "HEAD"):
+                return subprocess.CompletedProcess(argv, 0, "b" * 40 + "\n", "")
+            return self.fake_git(argv, **kwargs)
+
+        with self.assertRaises(ValueError):
+            self.module.build_review_context(
+                self.root, self.artifact_dir / "deterministic.json", SHA, run_git=mismatched_head_git
             )
 
     def test_completed_response_writes_only_validated_result(self):
@@ -293,6 +409,85 @@ class OpenAiProductionReviewTests(unittest.TestCase):
         for response in cases:
             with self.subTest(response=response):
                 self.assertIsNone(self.module.extract_output_text(response))
+
+    def test_mixed_refusal_and_output_text_is_rejected(self):
+        response = {
+            "status": "completed",
+            "output": [
+                {
+                    "type": "message",
+                    "role": "assistant",
+                    "content": [
+                        {"type": "refusal", "refusal": "No."},
+                        {"type": "output_text", "text": json.dumps(valid_ai_object())},
+                    ],
+                }
+            ],
+        }
+
+        self.assertIsNone(self.module.extract_output_text(response))
+
+    def test_refusal_in_any_response_message_is_rejected(self):
+        response = {
+            "status": "completed",
+            "output": [
+                {
+                    "type": "refusal",
+                    "refusal": "No.",
+                },
+                {
+                    "type": "message",
+                    "role": "assistant",
+                    "content": [{"type": "output_text", "text": json.dumps(valid_ai_object())}],
+                },
+            ],
+        }
+
+        self.assertIsNone(self.module.extract_output_text(response))
+
+    def test_artifact_directory_symlink_fails_closed_without_touching_external_output(self):
+        external_directory = self.root / "external"
+        external_directory.mkdir()
+        external_output = external_directory / "openai-review.json"
+        external_output.write_text("keep external output", encoding="utf-8")
+        (self.artifact_dir / "deterministic.json").unlink()
+        self.artifact_dir.rmdir()
+        self.make_symlink(self.artifact_dir, external_directory)
+
+        self.assertEqual(
+            self.module.main(
+                ["run"], repo_root=self.root, environ=self.environment(), opener=self.completed_opener, run_git=self.fake_git
+            ),
+            2,
+        )
+        self.assertEqual(external_output.read_text(encoding="utf-8"), "keep external output")
+
+    def test_output_and_legacy_temp_symlinks_fail_closed_without_external_writes(self):
+        external_output = self.root / "external-output.json"
+        external_output.write_text("keep external output", encoding="utf-8")
+        output_path = self.artifact_dir / "openai-review.json"
+        self.make_symlink(output_path, external_output)
+
+        self.assertEqual(
+            self.module.main(
+                ["run"], repo_root=self.root, environ=self.environment(), opener=self.completed_opener, run_git=self.fake_git
+            ),
+            2,
+        )
+        self.assertTrue(output_path.is_symlink())
+        self.assertEqual(external_output.read_text(encoding="utf-8"), "keep external output")
+
+        output_path.unlink()
+        legacy_temp = output_path.with_name(output_path.name + ".tmp")
+        self.make_symlink(legacy_temp, external_output)
+        self.assertEqual(
+            self.module.main(
+                ["run"], repo_root=self.root, environ=self.environment(), opener=self.completed_opener, run_git=self.fake_git
+            ),
+            2,
+        )
+        self.assertTrue(legacy_temp.is_symlink())
+        self.assertEqual(external_output.read_text(encoding="utf-8"), "keep external output")
 
     def test_request_review_rejects_malformed_response_json(self):
         class Response:
