@@ -168,12 +168,12 @@ Acceptance criteria:
 
 # Phase 6 — Connector-Native Window Registry
 
-**Current evidence boundary:** The tested GitHub adapter and separate `web/github.html` page can show repository data, but the workspace artifact links to that page; it is not yet a connector-native workspace window.
+**Current evidence boundary:** The primary React Workspace conditionally reads the existing authenticated `GET /surveyor/github/repositories` endpoint only for canonical confirmed/live GitHub state, then renders a bounded native DashView repository artifact. `dashboard-app/test/workspace-view.test.js` proves fetch gating, first-read behavior, 30-item bounding, safe deterministic projection, and truthful unavailable/needs-attention states; `dashboard-app/test/artifact-card.test.js` proves the projected summary detail renders. The fixed `web/github.html` route remains setup/detail/recovery. Public deployment verification is still pending.
 
 - [ ] Create or reconcile a window renderer registry keyed by connector/view/skill.
 - [ ] Implement one fake/mock connector renderer first.
-- [ ] Implement one real cloud connector renderer.
-- [ ] Prefer Cordia-native data surfaces over iframes.
+- [x] Implement one real cloud connector renderer.
+- [x] Prefer Cordia-native data surfaces over iframes.
 - [ ] Allow derived windows backed by skills rather than a single connector.
 
 Suggested first real cloud connector:
@@ -182,7 +182,7 @@ Suggested first real cloud connector:
 
 Acceptance criteria:
 
-- [ ] A live connector can render real data in a Cordia-native window.
+- [x] A live connector can render real data in a Cordia-native window.
 
 ---
 

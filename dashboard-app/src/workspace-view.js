@@ -16,6 +16,7 @@ const SUPPLEMENTAL_FEED_LABELS = {
   skills: 'Skills',
   activity: 'Recent account activity',
 }
+const GITHUB_REPOSITORIES_ENDPOINT = '/surveyor/github/repositories'
 
 function safeId(value) {
   return isSafeIdentifier(value) ? value : ''
@@ -30,8 +31,22 @@ function safeText(value, limit = 160) {
 
 function safeRepositoryLabel(source) {
   if (!source || typeof source !== 'object' || Array.isArray(source) || source.kind !== 'github_repository') return ''
-  const label = typeof source.label === 'string' ? source.label.trim() : ''
-  return /^[A-Za-z0-9_.-]{1,100}\/[A-Za-z0-9_.-]{1,100}$/.test(label) ? label : ''
+  return safeRepositoryName(source.label)
+}
+
+function safeRepositoryName(value) {
+  const name = typeof value === 'string' ? value.trim() : ''
+  return /^[A-Za-z0-9_.-]{1,100}\/[A-Za-z0-9_.-]{1,100}$/.test(name) ? name : ''
+}
+
+function safeRepositoryDescription(value) {
+  const description = safeText(value, 320)
+  return description && !/[A-Za-z][A-Za-z0-9+.-]*:\/\//.test(description) ? description : ''
+}
+
+function safeRepositoryBranch(value) {
+  const branch = safeText(value, 100)
+  return /^[A-Za-z0-9][A-Za-z0-9._/-]{0,99}$/.test(branch) ? branch : ''
 }
 
 function listFrom(response, key) {
@@ -51,6 +66,17 @@ function connectorReadiness(connectors, requiredIds) {
   if (required.some((connector) => connector.consent !== 'confirmed')) return 'connect'
   if (required.some((connector) => connector.lifecycle !== 'live' || connector.runtime !== 'live')) return 'unhealthy'
   return 'ready'
+}
+
+function shouldReadGithub(response) {
+  const model = workspaceToRendererModel(response)
+  const declared = model.artifactCards.some((card) => (
+    card.id === 'github-repositories' && card.kind === 'connector'
+      && card.connector && card.connector.id === 'github'
+  ))
+  const connector = model.connectors.find((candidate) => candidate.id === 'github')
+  return declared && connector && connector.consent === 'confirmed'
+    && connector.implementation === 'live' && connector.runtime !== 'needs_attention'
 }
 
 function connectorIds(value) {
@@ -176,13 +202,46 @@ function connectorCards(model) {
   })
 }
 
-function githubRepositoryCard(model) {
+function githubRepositorySummary(response) {
+  if (!response || typeof response !== 'object' || Array.isArray(response) || response.ok !== true
+      || response.capability !== 'github.read_repositories' || response.permission !== 'ALLOW'
+      || !Number.isInteger(response.repository_limit) || response.repository_limit < 1
+      || response.repository_limit > 30 || !Array.isArray(response.repositories)) return null
+
+  const rows = response.repositories.map((repository) => {
+    if (!repository || typeof repository !== 'object' || Array.isArray(repository)
+        || typeof repository.private !== 'boolean') return null
+    const label = safeRepositoryName(repository.name)
+    if (!label) return null
+    const branch = safeRepositoryBranch(repository.default_branch)
+    const updated = typeof repository.updated_at === 'string' && SAFE_TIMESTAMP.test(repository.updated_at)
+      ? repository.updated_at.slice(0, 10) : ''
+    const detail = safeRepositoryDescription(repository.description)
+    const meta = [repository.private ? 'Private' : 'Public', branch, updated ? `Updated ${updated}` : '']
+      .filter(Boolean).join(' · ')
+    return { label, meta, ...(detail ? { detail } : {}) }
+  }).filter(Boolean)
+    .sort((left, right) => JSON.stringify(left).localeCompare(JSON.stringify(right)))
+  const unique = new Map()
+  for (const row of rows) if (!unique.has(row.label)) unique.set(row.label, row)
+  return {
+    limit: response.repository_limit,
+    items: [...unique.values()]
+      .sort((left, right) => left.label.localeCompare(right.label))
+      .slice(0, response.repository_limit),
+  }
+}
+
+function githubRepositoryCard(model, response) {
   const declared = model.artifactCards.find((card) => (
     card.id === 'github-repositories' && card.kind === 'connector'
   ))
   if (!declared || (declared.connector && declared.connector.id !== 'github')) return null
 
   const readiness = connectorReadiness(model.connectors, ['github'])
+  const connector = model.connectors.find((candidate) => candidate.id === 'github')
+  const readEligible = connector && connector.consent === 'confirmed'
+    && connector.implementation === 'live' && connector.runtime !== 'needs_attention'
   let badge = 'Needs attention'
   let body = 'GitHub needs attention before Cordia can read repositories.'
   if (readiness === 'ready') {
@@ -195,12 +254,28 @@ function githubRepositoryCard(model) {
     badge = 'Unavailable'
     body = 'GitHub repository access is not available on this surface yet.'
   }
+  const repositories = readEligible ? githubRepositorySummary(response) : null
+  const readFailed = response && typeof response === 'object' && !Array.isArray(response)
+    && Object.keys(response).join('|') === 'state' && response.state === 'needs-attention'
+  if (readEligible && readFailed) {
+    badge = 'Needs attention'
+    body = 'GitHub needs attention before Cordia can read repositories. Use the setup page to review or reconnect it.'
+  } else if (repositories) {
+    badge = 'Live data'
+    body = repositories.items.length
+      ? `Showing ${repositories.items.length} of up to ${repositories.limit} recently updated repositories.`
+      : 'GitHub is connected. No repositories were returned for this bounded view.'
+  } else if (readEligible) {
+    badge = 'Unavailable'
+    body = 'GitHub repository data is unavailable right now. Use the setup page to review or reconnect it.'
+  }
   return {
     id: 'github-repository-surface',
     kind: 'github-repositories',
     title: 'GitHub repositories',
     badge,
     body,
+    ...(repositories && repositories.items.length ? { items: repositories.items } : {}),
     link: { href: '/github.html', label: 'Open GitHub repositories' },
   }
 }
@@ -301,7 +376,7 @@ export function workspaceRendererModel(response, supplemental = {}, expectedWork
     workflowCard(canonical),
     ...agentCards(workspace),
     ...connectorCards(canonical),
-    githubRepositoryCard(canonical),
+    githubRepositoryCard(canonical, supplemental.github),
     ...derivedCards(canonical),
     ...skillCards(supplemental.skills, canonical.connectors),
     ...capabilityCards(supplemental.capabilities, canonical.connectors),
@@ -321,7 +396,10 @@ export async function loadWorkspaceTruth(get, workspaceId, errorKind = () => 'er
   if (!id || typeof get !== 'function') throw new Error('Invalid workspace request')
   const workspace = await get(`/surveyor/workspace?id=${encodeURIComponent(id)}`)
   const entries = Object.entries(SUPPLEMENTAL_ENDPOINTS)
-  const settled = await Promise.allSettled(entries.map(([, path]) => get(path)))
+  const requests = entries.map(([, path]) => get(path))
+  const githubRequest = shouldReadGithub(workspace) ? get(GITHUB_REPOSITORIES_ENDPOINT) : null
+  const githubSettled = githubRequest ? Promise.allSettled([githubRequest]) : null
+  const settled = await Promise.allSettled(requests)
   const supplemental = {}
   const unavailable = []
   let rateLimited = false
@@ -340,6 +418,11 @@ export async function loadWorkspaceTruth(get, workspaceId, errorKind = () => 'er
   if (unavailable.length) supplemental.feedStatus = {
     state: rateLimited ? 'rate-limited' : 'partial',
     unavailable,
+  }
+  if (githubSettled) {
+    const github = await githubSettled
+    if (github[0].status === 'fulfilled') supplemental.github = github[0].value
+    else supplemental.github = { state: 'needs-attention' }
   }
   return { workspace, supplemental }
 }
