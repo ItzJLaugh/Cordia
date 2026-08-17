@@ -12,8 +12,8 @@ The goal is not to implement every connector or every long-term feature at once.
 
 ## Status and evidence legend
 
-- `[x]` means the behavior is present in the repository and has direct source-and-test evidence. It does **not** by itself mean the complete public-host user journey has been re-verified.
-- `[ ]` means the behavior is missing, partial, documentation-only, or still needs direct automated or end-to-end proof.
+- `[x]` means the exact product behavior or contract has both implementation and a direct automated test for that same claim. Adjacent foundations and separately tested components do not establish integration or end-to-end completion.
+- `[ ]` means the behavior is missing, partial, documentation-only, supported only by an adjacent component, or still needs direct automated or end-to-end proof.
 - Current boundaries remain deliberate: GitHub is the only live cloud connector; an `ASK` checkpoint does not yet resume a protected external write; desktop installer/cloud-sync E2E is incomplete; and Alidora is an authenticated read-only foundation.
 
 Compact evidence index:
@@ -23,24 +23,24 @@ Compact evidence index:
 - Alidora read-only projection: `backend/surveyor/alidora.py`, `dashboard-app/src/graph.js`, `backend/tests/test_alidora.py`, `dashboard-app/src/graph.test.js`.
 - Connector, skill, and permission boundaries: `backend/surveyor/{capability_gateway,skills,permissions,github_connector}.py` and their matching `backend/tests/test_*.py` files.
 - Secret handling: `backend/surveyor/vault.py`, the GitHub execution boundary in `backend/training_backend.py`, and `backend/tests/test_vault.py`.
-- Desktop foundations: `desktop/{main,local_repository,git_adapter,git_skills,local_approvals}.js` and `desktop/test/*.test.js`.
+- Desktop foundations: `desktop/{main,local_repository,git_adapter,git_skills,local_approvals}.js` and `desktop/test/*.test.js`. These components do not yet prove install, account/workspace sync, or canonical product integration.
 
 ---
 
 # Phase 0 — Inspect Before Changing
 
-- [x] Inspect the current repository structure.
-- [x] Locate existing Surveyor implementation.
-- [x] Locate existing profile/assessment implementation.
-- [x] Locate workspace/workspace-builder implementation.
-- [x] Locate existing connector catalog/manifests.
-- [x] Locate existing tool/MCP/runtime code.
-- [x] Locate existing permission/scope logic.
-- [x] Locate existing frontend design system.
-- [x] Locate existing desktop/local/runtime code, if any.
-- [x] Produce a current-state architecture map before broad refactoring.
-- [x] Identify which existing contracts can be reused.
-- [x] Identify any conflicts with the current canonical context docs.
+- [ ] Inspect the current repository structure.
+- [ ] Locate existing Surveyor implementation.
+- [ ] Locate existing profile/assessment implementation.
+- [ ] Locate workspace/workspace-builder implementation.
+- [ ] Locate existing connector catalog/manifests.
+- [ ] Locate existing tool/MCP/runtime code.
+- [ ] Locate existing permission/scope logic.
+- [ ] Locate existing frontend design system.
+- [ ] Locate existing desktop/local/runtime code, if any.
+- [ ] Produce a current-state architecture map before broad refactoring.
+- [ ] Identify which existing contracts can be reused.
+- [ ] Identify any conflicts with the current canonical context docs.
 
 ---
 
@@ -51,7 +51,7 @@ Compact evidence index:
 - [x] Generate/update `operator.md` from Surveyor evidence.
 - [x] Generate/update `connectors.md` from Surveyor evidence and user confirmation.
 - [x] Create `intent-misses.md` as structured appendable memory.
-- [x] Store evidence and confidence for inferred profile signals.
+- [ ] Store evidence and confidence for inferred profile signals.
 - [x] Keep raw transcript/history separate from compiled runtime context where practical.
 
 Acceptance criteria:
@@ -65,7 +65,7 @@ Acceptance criteria:
 
 # Phase 2 — Compile FDE Runtime Artifacts
 
-- [x] Create compiler/process that combines `operator.md` + `connectors.md` + `intent-misses.md` + current workspace goals.
+- [ ] Create compiler/process that combines `operator.md` + `connectors.md` + `intent-misses.md` + current workspace goals.
 - [x] Generate/update `fde-tasks.md` as the living mission brief.
 - [x] Generate/update `permissions.md`.
 - [x] Generate/update `workspace-plan.md`.
@@ -84,10 +84,10 @@ Acceptance criteria:
 
 - [ ] Build Surveyor assessment page from artifact/profile data.
 - [ ] Remove overall score/percentile/pass-fail framing.
-- [x] Show “What Cordia understands.”
-- [x] Show profile signals using descriptive levels such as High / Medium / Emerging.
-- [x] Show evidence snippets.
-- [x] Show inferred/confirmed applications/connectors.
+- [ ] Show “What Cordia understands.”
+- [ ] Show profile signals using descriptive levels such as High / Medium / Emerging.
+- [ ] Show evidence snippets.
+- [ ] Show inferred/confirmed applications/connectors.
 - [ ] Show what Cordia is still learning.
 - [ ] Allow user to reopen Surveyor and refine the profile.
 - [ ] Provide a clear next action to build/open the workspace.
@@ -111,12 +111,12 @@ Acceptance criteria:
 - [x] Include mutations.
 - [x] Include provenance.
 - [x] Include connector/runtime status.
-- [x] Include future desktop/local capability status.
-- [x] Ensure both user edits and Cordia-agent edits mutate the same state.
+- [ ] Include future desktop/local capability status.
+- [ ] Ensure both user edits and Cordia-agent edits mutate the same state.
 
 Acceptance criteria:
 
-- [x] Workspace UI can be reconstructed entirely from canonical workspace state.
+- [ ] Workspace UI can be reconstructed entirely from canonical workspace state.
 - [ ] No separate hidden “AI layout” state is required.
 
 ---
@@ -126,18 +126,18 @@ Acceptance criteria:
 - [ ] Match Cordia visual theme: warm ivory/soft white, dark olive, restrained borders, floating panels, clean modern research-lab feel.
 - [ ] Use actual Cordia logo/wordmark assets available in the repository.
 - [ ] Create full-height Cordia Agent panel on the left.
-- [x] Create visual workspace surface on the right.
+- [ ] Create visual workspace surface on the right.
 - [ ] Create bottom inspection dock.
 - [ ] Dock tabs: Connected / Skills / Access / Context / Automations / Activity.
-- [x] Avoid node-graph edges between application windows.
+- [ ] Avoid node-graph edges between application windows.
 - [x] Render windows from canonical workspace state.
 - [ ] Support window move/resize if already aligned with existing contracts.
 - [ ] Make builder and runtime the same surface.
 
 Acceptance criteria:
 
-- [x] User can see Cordia Agent and workspace simultaneously.
-- [x] Workspace changes appear immediately after state mutations.
+- [ ] User can see Cordia Agent and workspace simultaneously.
+- [ ] Workspace changes appear immediately after state mutations.
 
 ---
 
@@ -155,23 +155,25 @@ Alidora is the advanced Cordia module for building and operating company agentic
 - [x] Keep Cordia's conversational cockpit as the default surface.
 - [ ] Route from Alidora actions through the same typed capability gateway and ALLOW / ASK / DENY enforcement.
 - [ ] Surface run status, approval checkpoints, provenance, and safe traces without exposing secrets or local paths.
-- [x] Reuse/adapt verified graph and workflow components only after contract review.
-- [x] Do not add a second skill registry, connector catalog, outcome loop, or execution path.
+- [ ] Reuse/adapt verified graph and workflow components only after contract review.
+- [ ] Do not add a second skill registry, connector catalog, outcome loop, or execution path.
 
 Acceptance criteria:
 
 - [x] A workspace has one visible, read-only topology projection derived from canonical state.
 - [ ] An Alidora action cannot bypass Cordia permissions, approvals, audit, or capability confirmation.
-- [x] A user can return from Alidora to the Cordia workspace without losing shared state.
+- [ ] A user can return from Alidora to the Cordia workspace without losing shared state.
 
 ---
 
 # Phase 6 — Connector-Native Window Registry
 
+**Current evidence boundary:** The tested GitHub adapter and separate `web/github.html` page can show repository data, but the workspace artifact links to that page; it is not yet a connector-native workspace window.
+
 - [ ] Create or reconcile a window renderer registry keyed by connector/view/skill.
 - [ ] Implement one fake/mock connector renderer first.
-- [x] Implement one real cloud connector renderer.
-- [x] Prefer Cordia-native data surfaces over iframes.
+- [ ] Implement one real cloud connector renderer.
+- [ ] Prefer Cordia-native data surfaces over iframes.
 - [ ] Allow derived windows backed by skills rather than a single connector.
 
 Suggested first real cloud connector:
@@ -180,7 +182,7 @@ Suggested first real cloud connector:
 
 Acceptance criteria:
 
-- [x] A live connector can render real data in a Cordia-native window.
+- [ ] A live connector can render real data in a Cordia-native window.
 
 ---
 
@@ -196,16 +198,16 @@ Acceptance criteria:
 
 Acceptance criteria:
 
-- [x] Cordia Agent can choose a meaningful skill rather than a sequence of arbitrary UI actions.
+- [ ] Cordia Agent can choose a meaningful skill rather than a sequence of arbitrary UI actions.
 
 ---
 
 # Phase 8 — Cordia MCP Gateway
 
 - [ ] Make the Cordia MCP server/gateway the unified capability layer.
-- [x] Ensure the dashboard is not conflated with the MCP server.
-- [x] Expose typed tools to the Cordia Agent.
-- [x] Route typed tools to connector-specific implementations.
+- [ ] Ensure the dashboard is not conflated with the MCP server.
+- [ ] Expose typed tools to the Cordia Agent.
+- [ ] Route typed tools to connector-specific implementations.
 - [ ] Hide whether the backend uses REST, curl, browser automation, CLI, local script, or another MCP server.
 - [ ] Add audit/provenance around tool calls.
 - [x] Enforce permission checks before execution.
@@ -218,17 +220,19 @@ Acceptance criteria:
 
 # Phase 9 — Permissions Runtime
 
+**Current evidence boundary:** ALLOW / ASK / DENY decisions, execution gates, and checkpoint primitives have component tests. No user-accessible ASK action with protected external-write continuation or resume has been proven.
+
 - [x] Implement ALLOW / ASK / DENY.
 - [x] Bind tool/skill execution to required permissions.
-- [x] Add approval pause for ASK.
+- [ ] Add approval pause for ASK.
 - [x] Add hard block for DENY.
 - [ ] Expose permission state in the Access UI.
-- [x] Ensure permission behavior is for the Cordia agent, not human RBAC roles.
+- [ ] Ensure permission behavior is for the Cordia agent, not human RBAC roles.
 
 Acceptance criteria:
 
-- [x] One real action is allowed automatically.
-- [x] One real action pauses for approval.
+- [ ] One real action is allowed automatically.
+- [ ] One real action pauses for approval.
 - [ ] One real action is denied.
 
 ---
@@ -240,7 +244,7 @@ Acceptance criteria:
 - [x] Capture user correction.
 - [x] Append/update `intent-misses.md`.
 - [x] Recompile relevant `fde-tasks.md` guidance.
-- [x] Keep MVP weighting simple and inspectable.
+- [ ] Keep MVP weighting simple and inspectable.
 
 Possible miss categories:
 
@@ -262,15 +266,15 @@ Acceptance criteria:
 # Phase 11 — Guided Connector Setup
 
 - [x] Add connector setup strategy to connector manifest/schema.
-- [x] Support at least one setup mode such as OAuth or guided browser API-key setup.
+- [ ] Support at least one setup mode such as OAuth or guided browser API-key setup.
 - [ ] Add Lightpanda/browser setup adapter if appropriate for the chosen connector.
 - [ ] Allow Cordia to prefill known email only if allowed.
 - [ ] Require user to enter password/2FA directly.
 - [ ] Ensure agent cannot read/store password values.
 - [ ] Pause before sensitive token generation if the flow requires human confirmation.
 - [ ] Capture generated token directly into encrypted secret storage.
-- [x] Return `secret_ref`/status to the agent instead of raw secret.
-- [x] Validate connector using direct API/curl after setup.
+- [ ] Return `secret_ref`/status to the agent instead of raw secret.
+- [ ] Validate connector using direct API/curl after setup.
 - [ ] Prefer direct runtime after browser-assisted setup.
 - [ ] Destroy/expire setup browser session after completion.
 
@@ -282,16 +286,18 @@ Acceptance criteria:
 
 # Phase 12 — Secret Handling
 
+**Current evidence boundary:** The vault and opaque reference contracts have direct tests. The complete token-store-to-agent-execution path does not, so broader prompt, network, logging, and runtime acceptance claims remain open.
+
 - [x] Add encrypted secret store/vault abstraction.
-- [x] Never inject raw secrets into normal LLM prompt context.
+- [ ] Never inject raw secrets into normal LLM prompt context.
 - [x] Use `secret_ref` handles.
-- [x] Resolve secrets only at execution boundary.
-- [x] Restrict arbitrary token-bearing network calls.
+- [ ] Resolve secrets only at execution boundary.
+- [ ] Restrict arbitrary token-bearing network calls.
 - [ ] Log secret usage without logging secret values.
 
 Acceptance criteria:
 
-- [x] Agent runtime can successfully execute a connector tool without ever receiving the raw API key in its visible context.
+- [ ] Agent runtime can successfully execute a connector tool without ever receiving the raw API key in its visible context.
 
 ---
 
@@ -300,7 +306,7 @@ Acceptance criteria:
 - [ ] Document and enforce browser-first only where setup requires it.
 - [ ] Use Lightpanda/browser for login/setup/navigation/fallback.
 - [x] Use direct API/curl/MCP for repeatable runtime actions whenever possible.
-- [x] Avoid browser automation for durable operations when a stable API exists.
+- [ ] Avoid browser automation for durable operations when a stable API exists.
 
 Acceptance criteria:
 
@@ -340,13 +346,15 @@ Acceptance criteria:
 
 # Phase 16 — Cordia Desktop App
 
+**Current evidence boundary:** Tested Electron shell, repository inspection, Git command, and local approval components exist. A packaged install, same-account cloud-workspace load, canonical state sync, and user-accessible local capability path remain unproven and therefore stay open below.
+
 - [ ] Install desktop shell/app.
 - [ ] User signs in with same Cordia email/account.
 - [ ] Desktop app downloads/pulls the same saved workspace.
-- [x] Same Cordia Agent remains embedded.
-- [x] Same windows/configuration appear.
+- [ ] Same Cordia Agent remains embedded.
+- [ ] Same windows/configuration appear.
 - [ ] User can continue modifying the workspace.
-- [x] Cloud workspace state remains authoritative/synchronized unless a future local-first design explicitly changes this.
+- [ ] Cloud workspace state remains authoritative/synchronized unless a future local-first design explicitly changes this.
 
 Acceptance criteria:
 
@@ -357,19 +365,19 @@ Acceptance criteria:
 # Phase 17 — Desktop Local Bridge
 
 - [ ] Register desktop device.
-- [x] Start local bridge/runtime.
-- [x] Discover supported local capabilities.
+- [ ] Start local bridge/runtime.
+- [ ] Discover supported local capabilities.
 - [ ] Report local capability availability to Cordia workspace.
-- [x] Add one local capability first.
+- [ ] Add one local capability first.
 
 Suggested first local capability:
 
-- [x] local project/repo read access OR Claude Code adapter, depending on current repo support.
+- [ ] local project/repo read access OR Claude Code adapter, depending on current repo support.
 
 Potential future local capabilities:
 
 - [ ] Claude Code
-- [x] local repo
+- [ ] local repo
 - [ ] local filesystem
 - [ ] PowerShell
 - [ ] Python scripts
@@ -378,7 +386,7 @@ Potential future local capabilities:
 - [ ] terminal
 - [ ] local MCP servers
 
-- [x] Enforce ALLOW / ASK / DENY locally.
+- [ ] Enforce ALLOW / ASK / DENY locally.
 
 Acceptance criteria:
 
