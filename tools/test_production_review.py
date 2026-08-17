@@ -1,5 +1,6 @@
 import importlib.util
 import json
+import os
 from pathlib import Path
 import subprocess
 import sys
@@ -58,6 +59,19 @@ class RunReviewTests(unittest.TestCase):
 
     def tearDown(self):
         self.tempdir.cleanup()
+
+    def successful_executor(self, argv, **kwargs):
+        if tuple(argv) == ("git", "rev-parse", "HEAD"):
+            return subprocess.CompletedProcess(
+                argv, 0, stdout=self.EXPECTED_SHA + "\n", stderr=""
+            )
+        return subprocess.CompletedProcess(argv, 0, stdout="", stderr="")
+
+    def make_symlink(self, path, target, *, target_is_directory=False):
+        try:
+            path.symlink_to(target, target_is_directory=target_is_directory)
+        except OSError as error:
+            self.skipTest(f"symbolic links are unavailable: {error}")
 
     def test_run_review_records_bounded_results_for_the_fixed_checks(self):
         calls = []
@@ -173,6 +187,161 @@ class RunReviewTests(unittest.TestCase):
         self.assertEqual(len(replacements), 1)
         self.assertEqual(replacements[0][0].parent, target.parent)
         self.assertEqual(replacements[0][1], target)
+        self.assertNotEqual(replacements[0][0].name, target.name + ".tmp")
+
+    def test_cli_fails_closed_for_symlinked_artifact_directory_file_and_legacy_temp(self):
+        external_directory = self.repo_root / "external"
+        external_directory.mkdir()
+        external_result = external_directory / "deterministic.json"
+        external_result.write_text("keep external result", encoding="utf-8")
+        artifact_dir = self.repo_root / ".production-review"
+        self.make_symlink(artifact_dir, external_directory, target_is_directory=True)
+
+        self.assertEqual(
+            self.review.main(
+                ["run"],
+                repo_root=self.repo_root,
+                environ={"EXPECTED_SHA": self.EXPECTED_SHA},
+                executor=self.successful_executor,
+                now="2026-08-15T12:00:00Z",
+            ),
+            2,
+        )
+        self.assertTrue(artifact_dir.is_symlink())
+        self.assertEqual(
+            external_result.read_text(encoding="utf-8"), "keep external result"
+        )
+
+        artifact_dir.unlink()
+        artifact_dir.mkdir()
+        external_file = self.repo_root / "external-file"
+        external_file.write_text("keep external file", encoding="utf-8")
+        result_path = artifact_dir / "deterministic.json"
+        self.make_symlink(result_path, external_file)
+
+        self.assertEqual(
+            self.review.main(
+                ["run"],
+                repo_root=self.repo_root,
+                environ={"EXPECTED_SHA": self.EXPECTED_SHA},
+                executor=self.successful_executor,
+                now="2026-08-15T12:00:00Z",
+            ),
+            2,
+        )
+        self.assertTrue(result_path.is_symlink())
+        self.assertEqual(external_file.read_text(encoding="utf-8"), "keep external file")
+
+        result_path.unlink()
+        legacy_temp = artifact_dir / "deterministic.json.tmp"
+        self.make_symlink(legacy_temp, external_file)
+        self.assertEqual(
+            self.review.main(
+                ["run"],
+                repo_root=self.repo_root,
+                environ={"EXPECTED_SHA": self.EXPECTED_SHA},
+                executor=self.successful_executor,
+                now="2026-08-15T12:00:00Z",
+            ),
+            2,
+        )
+        self.assertTrue(legacy_temp.is_symlink())
+        self.assertEqual(external_file.read_text(encoding="utf-8"), "keep external file")
+
+    def test_private_log_directory_symlink_fails_closed_without_external_log_writes(self):
+        artifact_dir = self.repo_root / ".production-review"
+        artifact_dir.mkdir()
+        external_logs = self.repo_root / "external-logs"
+        external_logs.mkdir()
+        external_log = external_logs / "backend-tests.log"
+        external_log.write_text("keep external log", encoding="utf-8")
+        self.make_symlink(
+            artifact_dir / "logs", external_logs, target_is_directory=True
+        )
+
+        exit_code = self.review.main(
+            ["run"],
+            repo_root=self.repo_root,
+            environ={"EXPECTED_SHA": self.EXPECTED_SHA},
+            executor=self.successful_executor,
+            now="2026-08-15T12:00:00Z",
+        )
+
+        self.assertEqual(exit_code, 2)
+        self.assertEqual(external_log.read_text(encoding="utf-8"), "keep external log")
+
+    def test_cli_rejects_outside_or_symlinked_atomic_temp_paths(self):
+        outside_path = self.repo_root / "outside-temp"
+        outside_path.write_text("keep outside temp", encoding="utf-8")
+
+        def outside_temp(*args, **kwargs):
+            return os.open(outside_path, os.O_RDWR), str(outside_path)
+
+        with patch("tempfile.mkstemp", side_effect=outside_temp):
+            exit_code = self.review.main(
+                ["run"],
+                repo_root=self.repo_root,
+                environ={"EXPECTED_SHA": self.EXPECTED_SHA},
+                executor=self.successful_executor,
+                now="2026-08-15T12:00:00Z",
+            )
+
+        self.assertEqual(exit_code, 2)
+        self.assertEqual(outside_path.read_text(encoding="utf-8"), "keep outside temp")
+
+        artifact_dir = self.repo_root / ".production-review"
+        artifact_dir.mkdir(exist_ok=True)
+        external_path = self.repo_root / "external-temp-target"
+        external_path.write_text("keep external target", encoding="utf-8")
+        descriptor_path = self.repo_root / "descriptor-file"
+        descriptor_path.write_text("keep descriptor", encoding="utf-8")
+        symlink_temp = artifact_dir / ".forced-temp"
+        self.make_symlink(symlink_temp, external_path)
+
+        def symlinked_temp(*args, **kwargs):
+            return os.open(descriptor_path, os.O_RDWR), str(symlink_temp)
+
+        with patch("tempfile.mkstemp", side_effect=symlinked_temp):
+            exit_code = self.review.main(
+                ["run"],
+                repo_root=self.repo_root,
+                environ={"EXPECTED_SHA": self.EXPECTED_SHA},
+                executor=self.successful_executor,
+                now="2026-08-15T12:00:00Z",
+            )
+
+        self.assertEqual(exit_code, 2)
+        self.assertTrue(symlink_temp.is_symlink())
+        self.assertEqual(external_path.read_text(encoding="utf-8"), "keep external target")
+
+    def test_cli_removes_stale_result_and_temp_files_before_an_integrity_failure(self):
+        artifact_dir = self.repo_root / ".production-review"
+        artifact_dir.mkdir()
+        stale_paths = (
+            artifact_dir / "deterministic.json",
+            artifact_dir / "deterministic.json.tmp",
+            artifact_dir / ".deterministic.json-stale.tmp",
+        )
+        for path in stale_paths:
+            path.write_text("stale public data", encoding="utf-8")
+
+        def mismatched_head(argv, **kwargs):
+            return subprocess.CompletedProcess(
+                argv, 0, stdout="b" * 40 + "\n", stderr=""
+            )
+
+        exit_code = self.review.main(
+            ["run"],
+            repo_root=self.repo_root,
+            environ={"EXPECTED_SHA": self.EXPECTED_SHA},
+            executor=mismatched_head,
+            now="2026-08-15T12:00:00Z",
+        )
+
+        self.assertEqual(exit_code, 2)
+        for path in stale_paths:
+            with self.subTest(path=path.name):
+                self.assertFalse(path.exists())
 
 
 if __name__ == "__main__":

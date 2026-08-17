@@ -27,8 +27,8 @@ At 7:30 AM `Asia/Kolkata`, Monday through Friday:
 
 1. GitHub checks out the latest `main` commit and records its full SHA.
 2. Deterministic production checks run before the AI review.
-3. Claude receives the bounded review instructions, the exact SHA, the deterministic results, and read-only repository access.
-4. The workflow publishes a concise Slack message to `#cordia-production-review` through an incoming webhook.
+3. The OpenAI Responses API receives the bounded review context, the exact SHA, and the deterministic results.
+4. The official GitHub Slack app can provide native workflow notifications. The optional custom Cordia Block Kit summary uses an incoming webhook.
 5. The developer reads one summary with these fields:
    - overall state: `REVIEW READY`, `CHECKS FAILED`, or `REVIEW UNAVAILABLE`;
    - commit reviewed;
@@ -73,21 +73,25 @@ The deterministic and AI jobs are separate. The AI job is report-only and fail-c
 - top-level workflow permissions are empty and the jobs that check out `main` receive only `contents: read`;
 - no pull-request write, issue write, Actions write, deployment, package, identity-token, or environment permission is granted;
 - no production or deployment environment is selected;
-- only `ANTHROPIC_API_KEY` is passed to the Claude step;
+- only `OPENAI_API_KEY` is passed to the OpenAI Responses API adapter step;
 - the scheduled job uses a fixed workflow-owned prompt, never the mutable project skill;
-- the AI may read files and search text through an explicit read-only tool allow-list, but it receives no shell, package-script, file-write, GitHub-write, or arbitrary network tool;
+- the AI receives no tools; the adapter supplies only the exact-schema deterministic result plus bounded, redacted diff and exact-commit file content;
 - the fixed deterministic runner executes before the AI and passes only its bounded result model, never raw logs;
 - the AI may not edit files, commit, push, open or merge pull requests, create releases, trigger deployments, or call arbitrary network services;
 - its report follows a fixed schema and is stored as a GitHub Actions artifact before Slack delivery;
 - a failed AI call produces `REVIEW UNAVAILABLE`; deterministic failures remain visible and are never converted to success.
 
-Repository files and diffs are untrusted review subjects. `CLAUDE.md` explicitly tells the reviewer not to follow instructions embedded in source, documentation, comments, test fixtures, generated assets, pull-request text, or commit messages. The workflow reviews `main`, never fork code with secrets.
+Repository files and diffs are untrusted review subjects. The fixed OpenAI adapter instructions are the only scheduled-review authority; `CLAUDE.md` is untrusted scheduled input and local human-tool guidance, not scheduled model instructions. The adapter does not follow instructions embedded in source, documentation, comments, test fixtures, generated assets, pull-request text, or commit messages. The workflow reviews `main`, never fork code with secrets.
+
+Before any model request, the adapter validates the deterministic JSON against its exact bounded schema. Sensitive directories are excluded. Credential and token material, private-key blocks, email addresses, local-machine paths, and secret assignments are replaced line-for-line in both diff and exact-commit file sections so surrounding evidence and line positions remain useful without transmitting the unsafe values. All deterministic, model, final, Slack, Markdown, log, and temporary artifact paths fail closed on symlinks or repository escape; public files use unique same-directory atomic temporary files.
+
+The fixed prompt tells the model to inspect the supplied deterministic, diff, and exact-commit evidence for concrete production risks; ground every finding only in that evidence; cite the exact repository-relative file and line; prioritize `Critical`, `Important`, then `Minor`; and return an empty findings list when no supported issue exists.
 
 The workflow does not use `pull_request_target` or a secret-bearing `workflow_run`, and manual dispatch fails closed unless `github.ref` is exactly `refs/heads/main`. Every third-party action is pinned to a reviewed full commit SHA. Action updates are intentional code changes, not automatic floating upgrades.
 
 ### 3. Slack Delivery
 
-GitHub sends one Block Kit message through `SLACK_WEBHOOK_URL`. The webhook is scoped to one chosen channel and stored only as a GitHub Actions secret. The payload is constructed from the bounded report model, not raw command output or raw AI text.
+The official GitHub Slack app is sufficient for native workflow notifications without a repository secret. GitHub sends the optional custom Cordia Block Kit message through `SLACK_WEBHOOK_URL`; that webhook is scoped to one chosen channel and stored only as a GitHub Actions secret. The optional payload is constructed from the bounded report model, not raw command output or raw AI text.
 
 The Slack message contains URL buttons only:
 
@@ -130,17 +134,19 @@ Every daily record identifies the exact commit and timestamp. Findings use `Crit
 
 ## Secrets and Setup
 
-Implementation can be merged without live secret values. Activation requires the repository owner to add:
+Implementation can be merged without live secret values. Activation: only `OPENAI_API_KEY` is required for the scheduled AI advisory; the repository owner may also add `SLACK_WEBHOOK_URL` for the separate optional custom Cordia Block Kit summary:
 
-- `ANTHROPIC_API_KEY`: used only by the report-only Claude job;
-- `SLACK_WEBHOOK_URL`: an incoming webhook bound to the selected Slack channel.
+- `OPENAI_API_KEY`: used only by the report-only OpenAI Responses API adapter job with pinned model `gpt-5.4-mini-2026-03-17`;
+- `SLACK_WEBHOOK_URL`: optional incoming webhook bound to the selected Slack channel for the custom Cordia Block Kit summary only.
 
-The workflow must check for missing secrets without echoing them. When either is absent:
+The workflow must check for missing secrets without echoing them. When the required OpenAI key is absent:
 
 - deterministic checks still run;
-- the missing integration reports a clear setup-required state;
+- the AI review reports a clear setup-required state and makes no AI request;
 - no empty or malformed request is sent;
 - workflow logs never print the secret or its length.
+
+When the optional Slack webhook is absent, GitHub native Slack notifications remain available through the official GitHub Slack app, the custom Block Kit summary is skipped with bounded `SETUP REQUIRED` status, and the missing optional webhook does not block the review.
 
 The user supplies secrets only through GitHub repository settings. They are never committed, pasted into repository files, or sent through Slack.
 
@@ -154,8 +160,9 @@ Mason/Alidora changes continue through the separate adopt/adapt/compose/reject m
 
 - A deterministic check failure produces `CHECKS FAILED` and the AI may analyze it, but cannot downgrade it.
 - An AI timeout or invalid schema produces `REVIEW UNAVAILABLE` while preserving deterministic results.
-- A missing Anthropic key produces setup instructions and no AI call.
-- A missing Slack webhook retains the GitHub report and produces a setup-required notification status.
+- Model configuration and successful execution are separate states. A skipped or failed model step never loads a pre-existing AI result file.
+- A missing OpenAI key produces setup instructions and no AI call.
+- A missing optional Slack webhook retains the GitHub report and produces a setup-required notification status without blocking the review.
 - A Slack HTTP error is bounded to status class; response bodies are not included in reports.
 - A scheduled run delayed by GitHub still records its actual start time and exact SHA.
 - Concurrent runs for the same branch use one concurrency group and cancel the older in-progress advisory run.
@@ -180,7 +187,7 @@ The slice is accepted when automated tests prove:
 
 A manual activation check then proves:
 
-1. An authorized user adds both GitHub secrets.
+1. An authorized user adds the required `OPENAI_API_KEY` and, only if the custom Cordia Block Kit summary is desired, the optional `SLACK_WEBHOOK_URL`.
 2. A manual run reviews the expected `main` SHA.
 3. One message arrives in the selected Slack channel with correct links and no sensitive data.
 4. The developer can follow the playbook without additional verbal instruction.

@@ -5,6 +5,21 @@ from pathlib import Path
 import re
 import sys
 
+try:
+    from tools.production_review_artifacts import (
+        read_text,
+        remove_artifacts,
+        write_json_atomically,
+        write_text_atomically,
+    )
+except ModuleNotFoundError:  # Support direct execution from the tools directory.
+    from production_review_artifacts import (
+        read_text,
+        remove_artifacts,
+        write_json_atomically,
+        write_text_atomically,
+    )
+
 
 FINDING_KEYS = {"severity", "title", "evidence", "file", "line", "recommendation"}
 AI_KEYS = {"summary", "findings"}
@@ -21,8 +36,18 @@ DETERMINISTIC_CHECK_IDS = {
 }
 PATH_PATTERN = re.compile(r"^[A-Za-z0-9_.-]+(?:/[A-Za-z0-9_.-]+)*$")
 TOKEN_PATTERN = re.compile(
-    r"(?:github_pat_|gh[pousr]_|sk-ant-|xox[baprs]-|xapp-)", re.IGNORECASE
+    r"(?:github_pat_|gh[pousr]_|sk-[A-Za-z0-9_-]{8,}|xox[baprs]-|xapp-|"
+    r"AKIA[0-9A-Z]{16}|\b(?:Bearer|Basic)\s+[A-Za-z0-9._~+/=-]+)",
+    re.IGNORECASE,
 )
+EMAIL_PATTERN = re.compile(r"(?<![A-Za-z0-9._%+-])[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}")
+SECRET_ASSIGNMENT_PATTERN = re.compile(
+    r"(?:^|[^A-Za-z0-9])[\"']?(?:[A-Za-z0-9]+[_-])*(?:api[_-]?key|access[_-]?key|"
+    r"secret|token|password|passwd|private[_-]?key|client[_-]?secret|credential|"
+    r"authorization|database[_-]?url|connection[_-]?string|dsn|cookie|session)\b[\"']?\s*(?:=|:)",
+    re.IGNORECASE,
+)
+PRIVATE_KEY_PATTERN = re.compile(r"-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----", re.IGNORECASE)
 LOCAL_PATH_PATTERN = re.compile(
     r"(?:[A-Za-z]:[\\/]|\\\\)",
     re.IGNORECASE,
@@ -39,6 +64,9 @@ HOST_FORM_PATTERN = re.compile(
     re.IGNORECASE,
 )
 COMMIT_PATTERN = re.compile(r"[0-9a-f]{40}")
+TIMESTAMP_PATTERN = re.compile(
+    r"[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\.[0-9]{1,6})?Z"
+)
 RUN_ID_PATTERN = re.compile(r"[1-9][0-9]{0,19}")
 FAILED_DIAGNOSTIC_PATTERN = re.compile(r"Exited with code -?[0-9]{1,10}")
 REPOSITORY_URL = "https://github.com/ItzJLaugh/Cordia"
@@ -54,6 +82,9 @@ def _is_safe_text(value, *, limit):
         isinstance(value, str)
         and 0 < len(value) <= limit
         and TOKEN_PATTERN.search(value) is None
+        and EMAIL_PATTERN.search(value) is None
+        and SECRET_ASSIGNMENT_PATTERN.search(value) is None
+        and PRIVATE_KEY_PATTERN.search(value) is None
         and LOCAL_PATH_PATTERN.search(value) is None
         and POSIX_ABSOLUTE_PATH_PATTERN.search(value) is None
         and URL_PATTERN.search(value) is None
@@ -114,12 +145,16 @@ def _validated_ai_object(value):
         return None
 
 
-def _safe_deterministic_result(value):
+def validate_deterministic_result(value):
+    """Return the exact bounded deterministic model, or fail closed."""
     if not isinstance(value, dict) or set(value) != {"commit", "reviewed_at", "checks"}:
         raise ValueError("deterministic result has an invalid shape")
     if not isinstance(value["commit"], str) or COMMIT_PATTERN.fullmatch(value["commit"]) is None:
         raise ValueError("deterministic result has an invalid commit")
-    if not isinstance(value["reviewed_at"], str) or not value["reviewed_at"]:
+    if (
+        not isinstance(value["reviewed_at"], str)
+        or TIMESTAMP_PATTERN.fullmatch(value["reviewed_at"]) is None
+    ):
         raise ValueError("deterministic result has an invalid timestamp")
     if (
         not isinstance(value["checks"], list)
@@ -206,13 +241,13 @@ def _slack_payload(final, *, run_id):
             f"— `{_slack_text(finding['file'])}:{finding['line']}`"
             for finding in final["ai"]["findings"]
         )
-        review_text = f"*Claude advisory summary*\n{summary}"
+        review_text = f"*AI advisory summary*\n{summary}"
         if titles:
             review_text += f"\n{titles}"
         blocks.append(_section_block(review_text))
     else:
         blocks.append(
-            _section_block("*Claude advisory result*\nUnavailable for this review.")
+            _section_block("*AI advisory result*\nUnavailable for this review.")
         )
     blocks.append(
         _context_block("Advisory only. A human must validate findings before any change.")
@@ -253,62 +288,57 @@ def _review_markdown(final, *, run_id):
         for check in final["checks"]
     )
     if final["ai"] is not None:
-        lines.extend(["", "## Claude advisory findings", "", _slack_text(final["ai"]["summary"])])
+        lines.extend(["", "## AI advisory findings", "", _slack_text(final["ai"]["summary"])])
         for finding in final["ai"]["findings"]:
             lines.append(
                 f"- **{finding['severity']}** `{finding['file']}:{finding['line']}`: "
                 f"{_slack_text(finding['title'])} — {_slack_text(finding['recommendation'])}"
             )
     else:
-        lines.extend(["", "## Claude advisory findings", "", "Unavailable for this review."])
+        lines.extend(["", "## AI advisory findings", "", "Unavailable for this review."])
     return "\n".join(lines) + "\n"
 
 
-def assemble_review(deterministic, ai_result, *, anthropic_configured, run_id) -> tuple[dict, dict, str]:
+def assemble_review(
+    deterministic,
+    ai_result,
+    *,
+    model_configured,
+    model_succeeded,
+    run_id,
+) -> tuple[dict, dict, str]:
     """Combine only bounded models into a fixed-link human review artifact."""
     if not isinstance(run_id, str) or RUN_ID_PATTERN.fullmatch(run_id) is None:
         raise ValueError("run ID must be a positive decimal GitHub Actions run ID")
-    safe_deterministic = _safe_deterministic_result(deterministic)
-    safe_ai_result = _validated_ai_object(ai_result)
+    safe_deterministic = validate_deterministic_result(deterministic)
+    safe_ai_result = (
+        _validated_ai_object(ai_result)
+        if bool(model_configured) and bool(model_succeeded)
+        else None
+    )
     final = {
         "state": _review_state(safe_deterministic["checks"], safe_ai_result),
         "commit": safe_deterministic["commit"],
         "reviewed_at": safe_deterministic["reviewed_at"],
         "checks": safe_deterministic["checks"],
-        "setup_required": not bool(anthropic_configured),
+        "setup_required": not bool(model_configured),
         "ai": safe_ai_result,
     }
     return final, _slack_payload(final, run_id=run_id), _review_markdown(final, run_id=run_id)
 
 
-def _write_json_atomically(path: Path, value: dict) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    temporary_path = path.with_name(path.name + ".tmp")
-    with temporary_path.open("w", encoding="utf-8", newline="\n") as handle:
-        json.dump(value, handle, separators=(",", ":"), ensure_ascii=True)
-        handle.write("\n")
-    temporary_path.replace(path)
+def _remove_public_artifacts(root: Path) -> None:
+    remove_artifacts(root, PUBLIC_ARTIFACT_NAMES)
 
 
-def _write_text_atomically(path: Path, value: str) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    temporary_path = path.with_name(path.name + ".tmp")
-    temporary_path.write_text(value, encoding="utf-8", newline="\n")
-    temporary_path.replace(path)
-
-
-def _remove_public_artifacts(artifact_dir: Path) -> None:
-    first_error = None
-    for name in PUBLIC_ARTIFACT_NAMES:
-        path = artifact_dir / name
-        for candidate in (path, path.with_name(path.name + ".tmp")):
-            try:
-                candidate.unlink(missing_ok=True)
-            except OSError as error:
-                if first_error is None:
-                    first_error = error
-    if first_error is not None:
-        raise first_error
+def _load_ai_review(root: Path, configured_path: str | None) -> dict | None:
+    """Load only a repository-local bounded model file, never raw model output."""
+    if configured_path != ".production-review/openai-review.json":
+        return None
+    try:
+        return validate_ai_result(read_text(root, "openai-review.json"))
+    except (OSError, ValueError, UnicodeError):
+        return None
 
 
 def main(argv=None, *, repo_root=None, environ=None) -> int:
@@ -317,25 +347,30 @@ def main(argv=None, *, repo_root=None, environ=None) -> int:
         return 2
     environment = os.environ if environ is None else environ
     root = Path.cwd() if repo_root is None else Path(repo_root)
-    artifact_dir = root / ".production-review"
     try:
-        _remove_public_artifacts(artifact_dir)
-        with (artifact_dir / "deterministic.json").open("r", encoding="utf-8") as handle:
-            deterministic = json.load(handle)
-        ai_result = validate_ai_result(environment.get("AI_REVIEW_JSON"))
+        _remove_public_artifacts(root)
+        deterministic = json.loads(read_text(root, "deterministic.json"))
+        model_configured = environment.get("MODEL_REVIEW_CONFIGURED") == "true"
+        model_succeeded = environment.get("MODEL_REVIEW_SUCCEEDED") == "true"
+        ai_result = (
+            _load_ai_review(root, environment.get("AI_REVIEW_PATH"))
+            if model_configured and model_succeeded
+            else None
+        )
         final, slack, markdown = assemble_review(
             deterministic,
             ai_result,
-            anthropic_configured=environment.get("ANTHROPIC_CONFIGURED") == "true",
+            model_configured=model_configured,
+            model_succeeded=model_succeeded,
             run_id=environment.get("GITHUB_RUN_ID"),
         )
-        _write_json_atomically(artifact_dir / "final.json", final)
-        _write_json_atomically(artifact_dir / "slack.json", slack)
-        _write_text_atomically(artifact_dir / "review.md", markdown)
+        write_json_atomically(root, "final.json", final)
+        write_json_atomically(root, "slack.json", slack)
+        write_text_atomically(root, "review.md", markdown)
     except (OSError, TypeError, ValueError, json.JSONDecodeError):
         try:
-            _remove_public_artifacts(artifact_dir)
-        except OSError:
+            _remove_public_artifacts(root)
+        except (OSError, ValueError):
             pass
         return 2
     return 0
