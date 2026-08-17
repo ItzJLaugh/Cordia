@@ -1,4 +1,4 @@
-Open `#cordia-production-review` at 7:30 AM India time. Click `Open full review`. Verify the report SHA against current `main`. Run `/cordia-production-review`. Validate every finding in the source. Record one outcome.
+Open `#cordia-production-review` at 7:30 AM India time. The official GitHub Slack app route uses a native workflow notification without `SLACK_WEBHOOK_URL`; open that notification's GitHub Actions run and navigate to the retained production-review artifact. The optional custom Cordia Block Kit route uses `SLACK_WEBHOOK_URL`; click `Open full review`. From either route, verify the report SHA against current `main`, run `/cordia-production-review`, validate every finding in the source, and record one outcome.
 
 # Daily production-review playbook
 

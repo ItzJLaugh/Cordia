@@ -1,5 +1,6 @@
 import importlib.util
 import json
+import os
 from pathlib import Path
 import sys
 import tempfile
@@ -92,6 +93,10 @@ class ValidateAiResultTests(unittest.TestCase):
             {"evidence": "xoxb-secret"},
             {"evidence": "ghp_secret"},
             {"evidence": "sk-ant-secret"},
+            {"evidence": "OPENAI_API_KEY=plain-sensitive-value"},
+            {"evidence": "DATABASE_URL=plain-sensitive-value"},
+            {"title": "-----BEGIN PRIVATE KEY-----"},
+            {"recommendation": "Contact reviewer@internal.invalid"},
             {"line": "42"},
             {"line": True},
             {"line": 2_147_483_648},
@@ -178,6 +183,7 @@ class AssembleReviewTests(unittest.TestCase):
             self.deterministic("failed"),
             self.output.validate_ai_result(valid_ai_result()),
             model_configured=True,
+            model_succeeded=True,
             run_id="123",
         )
 
@@ -191,6 +197,7 @@ class AssembleReviewTests(unittest.TestCase):
             self.deterministic(),
             self.output.validate_ai_result(valid_ai_result()),
             model_configured=True,
+            model_succeeded=True,
             run_id="123",
         )
 
@@ -212,10 +219,33 @@ class AssembleReviewTests(unittest.TestCase):
                     self.deterministic(),
                     ai_result,
                     model_configured=False,
+                    model_succeeded=False,
                     run_id="123",
                 )
                 self.assertEqual(final["state"], "REVIEW UNAVAILABLE")
                 self.assertTrue(final["setup_required"])
+                self.assertIsNone(final["ai"])
+
+    def test_model_configuration_and_execution_success_are_distinct(self):
+        valid_ai = self.output.validate_ai_result(valid_ai_result())
+        cases = (
+            (True, False, False),
+            (False, False, True),
+            (False, True, True),
+        )
+
+        for configured, succeeded, setup_required in cases:
+            with self.subTest(configured=configured, succeeded=succeeded):
+                final, _, _ = self.output.assemble_review(
+                    self.deterministic(),
+                    valid_ai,
+                    model_configured=configured,
+                    model_succeeded=succeeded,
+                    run_id="123",
+                )
+
+                self.assertEqual(final["state"], "REVIEW UNAVAILABLE")
+                self.assertEqual(final["setup_required"], setup_required)
                 self.assertIsNone(final["ai"])
 
     def test_slack_uses_only_fixed_urls_and_escapes_ai_text(self):
@@ -226,6 +256,7 @@ class AssembleReviewTests(unittest.TestCase):
             self.deterministic("failed"),
             escaped_ai,
             model_configured=True,
+            model_succeeded=True,
             run_id="123",
         )
 
@@ -294,6 +325,7 @@ class AssembleReviewTests(unittest.TestCase):
             deterministic,
             ai_result,
             model_configured=True,
+            model_succeeded=True,
             run_id="123",
         )
 
@@ -326,6 +358,7 @@ class AssembleReviewTests(unittest.TestCase):
                         deterministic,
                         None,
                         model_configured=False,
+                        model_succeeded=False,
                         run_id="123",
                     )
 
@@ -349,6 +382,7 @@ class AssembleReviewTests(unittest.TestCase):
                 environ={
                     "AI_REVIEW_PATH": ".production-review/openai-review.json",
                     "MODEL_REVIEW_CONFIGURED": "true",
+                    "MODEL_REVIEW_SUCCEEDED": "true",
                     "GITHUB_RUN_ID": "123",
                 },
             )
@@ -385,6 +419,7 @@ class AssembleReviewTests(unittest.TestCase):
                 environ={
                     "AI_REVIEW_PATH": ".production-review/openai-review.json",
                     "MODEL_REVIEW_CONFIGURED": "true",
+                    "MODEL_REVIEW_SUCCEEDED": "true",
                     "GITHUB_RUN_ID": "123",
                 },
             )
@@ -393,6 +428,108 @@ class AssembleReviewTests(unittest.TestCase):
             self.assertEqual(exit_code, 0)
             self.assertEqual(final["state"], "REVIEW UNAVAILABLE")
             self.assertIsNone(final["ai"])
+
+    def test_cli_fails_closed_for_symlinked_public_artifact_paths(self):
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            repo_root = Path(temporary_directory)
+            external_dir = repo_root / "external"
+            external_dir.mkdir()
+            (external_dir / "deterministic.json").write_text(
+                json.dumps(self.deterministic()), encoding="utf-8"
+            )
+            external_final = external_dir / "final.json"
+            external_final.write_text("keep external final", encoding="utf-8")
+            artifact_dir = repo_root / ".production-review"
+            try:
+                artifact_dir.symlink_to(external_dir, target_is_directory=True)
+            except OSError as error:
+                self.skipTest(f"symbolic links are unavailable: {error}")
+
+            exit_code = self.output.main(
+                ["assemble"], repo_root=repo_root, environ={"GITHUB_RUN_ID": "123"}
+            )
+
+            self.assertEqual(exit_code, 2)
+            self.assertTrue(artifact_dir.is_symlink())
+            self.assertEqual(external_final.read_text(encoding="utf-8"), "keep external final")
+
+        for unsafe_name in ("final.json", "final.json.tmp"):
+            with self.subTest(unsafe_name=unsafe_name):
+                with tempfile.TemporaryDirectory() as temporary_directory:
+                    repo_root = Path(temporary_directory)
+                    artifact_dir = repo_root / ".production-review"
+                    artifact_dir.mkdir()
+                    (artifact_dir / "deterministic.json").write_text(
+                        json.dumps(self.deterministic()), encoding="utf-8"
+                    )
+                    external_file = repo_root / "external-file.json"
+                    external_file.write_text("keep external file", encoding="utf-8")
+                    unsafe_path = artifact_dir / unsafe_name
+                    try:
+                        unsafe_path.symlink_to(external_file)
+                    except OSError as error:
+                        self.skipTest(f"symbolic links are unavailable: {error}")
+
+                    exit_code = self.output.main(
+                        ["assemble"], repo_root=repo_root, environ={"GITHUB_RUN_ID": "123"}
+                    )
+
+                    self.assertEqual(exit_code, 2)
+                    self.assertTrue(unsafe_path.is_symlink())
+                    self.assertEqual(
+                        external_file.read_text(encoding="utf-8"), "keep external file"
+                    )
+
+    def test_cli_rejects_outside_or_symlinked_atomic_temp_paths(self):
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            repo_root = Path(temporary_directory)
+            artifact_dir = repo_root / ".production-review"
+            artifact_dir.mkdir()
+            (artifact_dir / "deterministic.json").write_text(
+                json.dumps(self.deterministic()), encoding="utf-8"
+            )
+            outside_path = repo_root / "outside-temp"
+            outside_path.write_text("keep outside temp", encoding="utf-8")
+
+            def outside_temp(*args, **kwargs):
+                return os.open(outside_path, os.O_RDWR), str(outside_path)
+
+            with patch("tempfile.mkstemp", side_effect=outside_temp):
+                exit_code = self.output.main(
+                    ["assemble"], repo_root=repo_root, environ={"GITHUB_RUN_ID": "123"}
+                )
+
+            self.assertEqual(exit_code, 2)
+            self.assertEqual(outside_path.read_text(encoding="utf-8"), "keep outside temp")
+
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            repo_root = Path(temporary_directory)
+            artifact_dir = repo_root / ".production-review"
+            artifact_dir.mkdir()
+            (artifact_dir / "deterministic.json").write_text(
+                json.dumps(self.deterministic()), encoding="utf-8"
+            )
+            external_path = repo_root / "external-temp-target"
+            external_path.write_text("keep external target", encoding="utf-8")
+            symlink_temp = artifact_dir / ".forced-temp"
+            descriptor_path = repo_root / "descriptor-file"
+            descriptor_path.write_text("keep descriptor", encoding="utf-8")
+            try:
+                symlink_temp.symlink_to(external_path)
+            except OSError as error:
+                self.skipTest(f"symbolic links are unavailable: {error}")
+
+            def symlinked_temp(*args, **kwargs):
+                return os.open(descriptor_path, os.O_RDWR), str(symlink_temp)
+
+            with patch("tempfile.mkstemp", side_effect=symlinked_temp):
+                exit_code = self.output.main(
+                    ["assemble"], repo_root=repo_root, environ={"GITHUB_RUN_ID": "123"}
+                )
+
+            self.assertEqual(exit_code, 2)
+            self.assertTrue(symlink_temp.is_symlink())
+            self.assertEqual(external_path.read_text(encoding="utf-8"), "keep external target")
 
     def test_cli_loads_a_valid_bounded_ai_file_when_the_model_ran(self):
         with tempfile.TemporaryDirectory() as temporary_directory:
@@ -412,6 +549,7 @@ class AssembleReviewTests(unittest.TestCase):
                 environ={
                     "AI_REVIEW_PATH": ".production-review/openai-review.json",
                     "MODEL_REVIEW_CONFIGURED": "true",
+                    "MODEL_REVIEW_SUCCEEDED": "true",
                     "GITHUB_RUN_ID": "123",
                 },
             )
@@ -420,6 +558,79 @@ class AssembleReviewTests(unittest.TestCase):
             self.assertEqual(exit_code, 0)
             self.assertEqual(final["state"], "REVIEW READY")
             self.assertEqual(final["ai"]["summary"], "One permission issue needs human validation.")
+
+    def test_cli_never_loads_a_stale_ai_file_when_model_was_skipped_or_failed(self):
+        cases = (
+            ("false", "false", True),
+            ("true", "false", False),
+        )
+
+        for configured, succeeded, setup_required in cases:
+            with self.subTest(configured=configured, succeeded=succeeded):
+                with tempfile.TemporaryDirectory() as temporary_directory:
+                    repo_root = Path(temporary_directory)
+                    artifact_dir = repo_root / ".production-review"
+                    artifact_dir.mkdir()
+                    (artifact_dir / "deterministic.json").write_text(
+                        json.dumps(self.deterministic()), encoding="utf-8"
+                    )
+                    (artifact_dir / "openai-review.json").write_text(
+                        valid_ai_result(), encoding="utf-8"
+                    )
+
+                    with patch.object(
+                        self.output,
+                        "_load_ai_review",
+                        side_effect=AssertionError("stale AI file must not be loaded"),
+                    ):
+                        exit_code = self.output.main(
+                            ["assemble"],
+                            repo_root=repo_root,
+                            environ={
+                                "AI_REVIEW_PATH": ".production-review/openai-review.json",
+                                "MODEL_REVIEW_CONFIGURED": configured,
+                                "MODEL_REVIEW_SUCCEEDED": succeeded,
+                                "GITHUB_RUN_ID": "123",
+                            },
+                        )
+
+                    final = json.loads((artifact_dir / "final.json").read_text(encoding="utf-8"))
+                    self.assertEqual(exit_code, 0)
+                    self.assertEqual(final["state"], "REVIEW UNAVAILABLE")
+                    self.assertEqual(final["setup_required"], setup_required)
+                    self.assertIsNone(final["ai"])
+
+    def test_cli_checks_ai_file_symlinks_before_resolution(self):
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            repo_root = Path(temporary_directory)
+            artifact_dir = repo_root / ".production-review"
+            artifact_dir.mkdir()
+            (artifact_dir / "deterministic.json").write_text(
+                json.dumps(self.deterministic()), encoding="utf-8"
+            )
+            external_ai = repo_root / "external-ai.json"
+            external_ai.write_text(valid_ai_result(), encoding="utf-8")
+            ai_path = artifact_dir / "openai-review.json"
+            try:
+                ai_path.symlink_to(external_ai)
+            except OSError as error:
+                self.skipTest(f"symbolic links are unavailable: {error}")
+
+            exit_code = self.output.main(
+                ["assemble"],
+                repo_root=repo_root,
+                environ={
+                    "AI_REVIEW_PATH": ".production-review/openai-review.json",
+                    "MODEL_REVIEW_CONFIGURED": "true",
+                    "MODEL_REVIEW_SUCCEEDED": "true",
+                    "GITHUB_RUN_ID": "123",
+                },
+            )
+
+            final = json.loads((artifact_dir / "final.json").read_text(encoding="utf-8"))
+            self.assertEqual(exit_code, 0)
+            self.assertEqual(final["state"], "REVIEW UNAVAILABLE")
+            self.assertIsNone(final["ai"])
 
     def test_cli_failure_removes_stale_and_partially_published_artifacts(self):
         with tempfile.TemporaryDirectory() as temporary_directory:
@@ -450,6 +661,7 @@ class AssembleReviewTests(unittest.TestCase):
                     environ={
                         "AI_REVIEW_PATH": ".production-review/openai-review.json",
                         "MODEL_REVIEW_CONFIGURED": "true",
+                        "MODEL_REVIEW_SUCCEEDED": "true",
                         "GITHUB_RUN_ID": "123",
                     },
                 )
@@ -460,6 +672,34 @@ class AssembleReviewTests(unittest.TestCase):
                 with self.subTest(path=path.name):
                     self.assertFalse(path.exists())
                     self.assertFalse(path.with_name(path.name + ".tmp").exists())
+
+    def test_cli_publishes_each_artifact_from_a_unique_same_directory_temp(self):
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            repo_root = Path(temporary_directory)
+            artifact_dir = repo_root / ".production-review"
+            artifact_dir.mkdir()
+            (artifact_dir / "deterministic.json").write_text(
+                json.dumps(self.deterministic()), encoding="utf-8"
+            )
+            replacements = []
+            original_replace = Path.replace
+
+            def recording_replace(source, target):
+                replacements.append((Path(source), Path(target)))
+                return original_replace(source, target)
+
+            with patch.object(Path, "replace", new=recording_replace):
+                exit_code = self.output.main(
+                    ["assemble"], repo_root=repo_root, environ={"GITHUB_RUN_ID": "123"}
+                )
+
+            self.assertEqual(exit_code, 0)
+            self.assertEqual(len(replacements), 3)
+            self.assertEqual(len({source.name for source, _ in replacements}), 3)
+            for source, target in replacements:
+                with self.subTest(target=target.name):
+                    self.assertEqual(source.parent, target.parent)
+                    self.assertNotEqual(source.name, target.name + ".tmp")
 
     def test_cli_cleanup_attempts_every_public_path_after_one_unlink_error(self):
         with tempfile.TemporaryDirectory() as temporary_directory:
@@ -496,6 +736,7 @@ class AssembleReviewTests(unittest.TestCase):
                     environ={
                         "AI_REVIEW_PATH": ".production-review/openai-review.json",
                         "MODEL_REVIEW_CONFIGURED": "true",
+                        "MODEL_REVIEW_SUCCEEDED": "true",
                         "GITHUB_RUN_ID": "123",
                     },
                 )
@@ -511,6 +752,53 @@ class AssembleReviewTests(unittest.TestCase):
             for path in expected_attempts - {locked_path}:
                 with self.subTest(path=path.name):
                     self.assertFalse(path.exists())
+
+    def test_cli_cleanup_covers_unique_temp_files_and_fails_closed_on_a_temp_symlink(self):
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            repo_root = Path(temporary_directory)
+            artifact_dir = repo_root / ".production-review"
+            artifact_dir.mkdir()
+            (artifact_dir / "deterministic.json").write_text(
+                json.dumps(self.deterministic()), encoding="utf-8"
+            )
+            stale_temps = tuple(
+                artifact_dir / f".{name}-stale.tmp"
+                for name in ("final.json", "slack.json", "review.md")
+            )
+            for path in stale_temps:
+                path.write_text("stale temporary data", encoding="utf-8")
+
+            exit_code = self.output.main(
+                ["assemble"], repo_root=repo_root, environ={"GITHUB_RUN_ID": "invalid"}
+            )
+
+            self.assertEqual(exit_code, 2)
+            for path in stale_temps:
+                with self.subTest(path=path.name):
+                    self.assertFalse(path.exists())
+
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            repo_root = Path(temporary_directory)
+            artifact_dir = repo_root / ".production-review"
+            artifact_dir.mkdir()
+            (artifact_dir / "deterministic.json").write_text(
+                json.dumps(self.deterministic()), encoding="utf-8"
+            )
+            external = repo_root / "external-temp-target"
+            external.write_text("keep external target", encoding="utf-8")
+            stale_symlink = artifact_dir / ".final.json-attacker.tmp"
+            try:
+                stale_symlink.symlink_to(external)
+            except OSError as error:
+                self.skipTest(f"symbolic links are unavailable: {error}")
+
+            exit_code = self.output.main(
+                ["assemble"], repo_root=repo_root, environ={"GITHUB_RUN_ID": "123"}
+            )
+
+            self.assertEqual(exit_code, 2)
+            self.assertTrue(stale_symlink.is_symlink())
+            self.assertEqual(external.read_text(encoding="utf-8"), "keep external target")
 
 
 if __name__ == "__main__":

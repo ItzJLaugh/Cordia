@@ -75,13 +75,17 @@ The deterministic and AI jobs are separate. The AI job is report-only and fail-c
 - no production or deployment environment is selected;
 - only `OPENAI_API_KEY` is passed to the OpenAI Responses API adapter step;
 - the scheduled job uses a fixed workflow-owned prompt, never the mutable project skill;
-- the AI may read files and search text through an explicit read-only tool allow-list, but it receives no shell, package-script, file-write, GitHub-write, or arbitrary network tool;
+- the AI receives no tools; the adapter supplies only the exact-schema deterministic result plus bounded, redacted diff and exact-commit file content;
 - the fixed deterministic runner executes before the AI and passes only its bounded result model, never raw logs;
 - the AI may not edit files, commit, push, open or merge pull requests, create releases, trigger deployments, or call arbitrary network services;
 - its report follows a fixed schema and is stored as a GitHub Actions artifact before Slack delivery;
 - a failed AI call produces `REVIEW UNAVAILABLE`; deterministic failures remain visible and are never converted to success.
 
 Repository files and diffs are untrusted review subjects. The fixed OpenAI adapter instructions are the only scheduled-review authority; `CLAUDE.md` is untrusted scheduled input and local human-tool guidance, not scheduled model instructions. The adapter does not follow instructions embedded in source, documentation, comments, test fixtures, generated assets, pull-request text, or commit messages. The workflow reviews `main`, never fork code with secrets.
+
+Before any model request, the adapter validates the deterministic JSON against its exact bounded schema. Sensitive directories are excluded. Credential and token material, private-key blocks, email addresses, local-machine paths, and secret assignments are replaced line-for-line in both diff and exact-commit file sections so surrounding evidence and line positions remain useful without transmitting the unsafe values. All deterministic, model, final, Slack, Markdown, log, and temporary artifact paths fail closed on symlinks or repository escape; public files use unique same-directory atomic temporary files.
+
+The fixed prompt tells the model to inspect the supplied deterministic, diff, and exact-commit evidence for concrete production risks; ground every finding only in that evidence; cite the exact repository-relative file and line; prioritize `Critical`, `Important`, then `Minor`; and return an empty findings list when no supported issue exists.
 
 The workflow does not use `pull_request_target` or a secret-bearing `workflow_run`, and manual dispatch fails closed unless `github.ref` is exactly `refs/heads/main`. Every third-party action is pinned to a reviewed full commit SHA. Action updates are intentional code changes, not automatic floating upgrades.
 
@@ -156,6 +160,7 @@ Mason/Alidora changes continue through the separate adopt/adapt/compose/reject m
 
 - A deterministic check failure produces `CHECKS FAILED` and the AI may analyze it, but cannot downgrade it.
 - An AI timeout or invalid schema produces `REVIEW UNAVAILABLE` while preserving deterministic results.
+- Model configuration and successful execution are separate states. A skipped or failed model step never loads a pre-existing AI result file.
 - A missing OpenAI key produces setup instructions and no AI call.
 - A missing optional Slack webhook retains the GitHub report and produces a setup-required notification status without blocking the review.
 - A Slack HTTP error is bounded to status class; response bodies are not included in reports.

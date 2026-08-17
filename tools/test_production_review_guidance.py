@@ -20,6 +20,7 @@ class ProductionReviewGuidanceTests(unittest.TestCase):
             ".claude/skills/cordia-production-review/SKILL.md",
             "docs/PRODUCTION_REVIEW_PLAYBOOK.md",
             "docs/PRODUCTION_REVIEW_SETUP.md",
+            "docs/superpowers/plans/2026-08-15-cordia-daily-production-review.md",
             ".github/pull_request_template.md",
             ".github/ISSUE_TEMPLATE/production-review-finding.yml",
             ".github/ISSUE_TEMPLATE/production-review-record.yml",
@@ -63,6 +64,30 @@ class ProductionReviewGuidanceTests(unittest.TestCase):
         self.assertIn("This review does not authorize deployment", pr_template)
         self.assertIn("Human validation", issue_form)
         self.assertIn("Daily production-review record", record_form)
+
+        for guidance in (playbook, skill):
+            with self.subTest(guidance=guidance[:40]):
+                self.assertIn("official GitHub Slack app", guidance)
+                self.assertIn("native workflow notification", guidance)
+                self.assertIn("without `SLACK_WEBHOOK_URL`", guidance)
+                self.assertIn("custom Cordia Block Kit", guidance)
+                self.assertIn("optional", guidance.lower())
+                self.assertIn("Open full review", guidance)
+
+        historical_plan = self.read_target(
+            "docs/superpowers/plans/2026-08-15-cordia-daily-production-review.md"
+        )
+        self.assertIn("Status: Historical and superseded", historical_plan)
+        self.assertIn(
+            "docs/superpowers/plans/2026-08-16-openai-production-review.md",
+            historical_plan,
+        )
+        self.assertIn("only `OPENAI_API_KEY` is required", historical_plan)
+        self.assertIn("`SLACK_WEBHOOK_URL` is optional", historical_plan)
+        self.assertNotIn(
+            "ask Jackson to add `ANTHROPIC_API_KEY` and `SLACK_WEBHOOK_URL`",
+            historical_plan,
+        )
 
     def test_fixed_runner_guidance_supplies_sha_and_readiness_commands(self) -> None:
         skill = self.read_target(".claude/skills/cordia-production-review/SKILL.md")

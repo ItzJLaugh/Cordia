@@ -1,5 +1,7 @@
 # Cordia Daily Production Review Implementation Plan
 
+> **Status: Historical and superseded. Do not execute this plan.** The active implementation plan is `docs/superpowers/plans/2026-08-16-openai-production-review.md`. Current activation uses the OpenAI adapter: only `OPENAI_API_KEY` is required for the scheduled advisory, and `SLACK_WEBHOOK_URL` is optional for the custom Cordia Block Kit route. Anthropic and mandatory-webhook instructions below are retained only as historical design evidence.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Build a weekday 7:30 AM India-time, report-only Cordia production review with deterministic checks, a bounded Claude assessment, a simple Slack notification, and a human-guided small-fix skill.
@@ -274,8 +276,6 @@ Commit Task 4 as `ci: add daily Claude and Slack production review`. Review `ori
 
 ---
 
-## Activation Handoff
+## Historical Activation Handoff
 
-After implementation and independent review, stop and ask Jackson to add `ANTHROPIC_API_KEY` and `SLACK_WEBHOOK_URL` through the GitHub UI described in `docs/PRODUCTION_REVIEW_SETUP.md`. Never ask him to paste either value into chat.
-
-After he confirms both secret names exist: publish the focused PR if needed, merge normally, manually run `Daily Production Review` from `main`, verify the exact SHA and Slack message, and record `ACTIVE` or `SETUP REQUIRED`.
+This handoff is superseded and must not be followed. Use `docs/PRODUCTION_REVIEW_SETUP.md`: only `OPENAI_API_KEY` is required for the scheduled advisory, while `SLACK_WEBHOOK_URL` is optional for the custom Cordia Block Kit route. The official GitHub Slack app route requires no repository webhook secret. Never request or handle secret values in chat.

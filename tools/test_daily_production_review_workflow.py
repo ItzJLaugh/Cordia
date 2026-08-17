@@ -48,7 +48,11 @@ class DailyProductionReviewWorkflowTests(unittest.TestCase):
         self.assertIsNotNone(trigger_block)
         self.assertEqual(trigger_block.group(0), EXPECTED_TRIGGER_BLOCK)
         self.assertRegex(workflow, r"(?m)^permissions: \{\}\s*$")
-        self.assertIn("group: cordia-daily-production-review-main", workflow)
+        self.assertRegex(
+            workflow,
+            r"(?m)^  group: cordia-daily-production-review-\$\{\{ github\.ref \}\}$",
+        )
+        self.assertNotIn("group: cordia-daily-production-review-main", workflow)
         self.assertIn("cancel-in-progress: true", workflow)
         expected_guards = {
             "deterministic": "github.ref == 'refs/heads/main'",
@@ -128,6 +132,7 @@ class DailyProductionReviewWorkflowTests(unittest.TestCase):
         )
         self.assertIn("AI_REVIEW_PATH: .production-review/openai-review.json", job)
         self.assertIn("MODEL_REVIEW_CONFIGURED: ${{ steps.openai.outcome != 'skipped' && 'true' || 'false' }}", job)
+        self.assertIn("MODEL_REVIEW_SUCCEEDED: ${{ steps.openai.outcome == 'success' && 'true' || 'false' }}", job)
         steps = {
             match.group("name"): match.group(0)
             for match in re.finditer(

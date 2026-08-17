@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
 permissions: {}
 concurrency:
-  group: cordia-daily-production-review-main
+  group: cordia-daily-production-review-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -89,6 +89,7 @@ jobs:
           CORDIA_OPENAI_API_KEY: ""
           AI_REVIEW_PATH: .production-review/openai-review.json
           MODEL_REVIEW_CONFIGURED: ${{ steps.openai.outcome != 'skipped' && 'true' || 'false' }}
+          MODEL_REVIEW_SUCCEEDED: ${{ steps.openai.outcome == 'success' && 'true' || 'false' }}
           GITHUB_RUN_ID: ${{ github.run_id }}
         run: python tools/production_review_output.py assemble
       - name: Add the validated review to the run summary

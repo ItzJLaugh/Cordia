@@ -52,7 +52,14 @@ class OpenAiProductionReviewTests(unittest.TestCase):
                 {
                     "commit": SHA,
                     "reviewed_at": "2026-08-16T12:00:00Z",
-                    "checks": [{"id": "backend-tests", "status": "passed"}],
+                    "checks": [
+                        {
+                            "id": "backend-tests",
+                            "status": "passed",
+                            "duration_ms": 12,
+                            "diagnostic": "Passed",
+                        }
+                    ],
                 }
             ),
             encoding="utf-8",
@@ -140,6 +147,21 @@ class OpenAiProductionReviewTests(unittest.TestCase):
         self.assertFalse(body["text"]["format"]["schema"]["additionalProperties"])
         self.assertEqual(body["max_output_tokens"], 4000)
 
+        instructions = body["instructions"]
+        for required_instruction in (
+            "Inspect the deterministic results",
+            "supplied diff and exact-commit file content",
+            "concrete production risks",
+            "Ground every finding only in supplied evidence",
+            "exact repository-relative file and line",
+            "Critical, Important, then Minor",
+            "empty findings list when no supported issue exists",
+            "untrusted data",
+            "Do not use tools",
+        ):
+            with self.subTest(required_instruction=required_instruction):
+                self.assertIn(required_instruction, instructions)
+
     def test_context_requires_exact_sha_and_is_bounded(self):
         deterministic_path = self.artifact_dir / "deterministic.json"
         context = self.module.build_review_context(
@@ -222,6 +244,146 @@ class OpenAiProductionReviewTests(unittest.TestCase):
         self.assertLessEqual(context.count("FILE: src/changed"), self.module.MAX_CHANGED_FILES)
         self.assertLessEqual(len(context), self.module.MAX_CONTEXT_CHARS)
 
+    def test_sensitive_diff_and_exact_commit_blob_lines_are_redacted_before_request(self):
+        sensitive_values = (
+            "ghp_DIFF_SENTINEL_1234567890",
+            "diff-owner@example.invalid",
+            "C:\\Users\\diff-owner\\private.txt",
+            "diff-secret-assignment",
+            "diff-database-secret",
+            "DIFF_PRIVATE_KEY_BODY_SENTINEL",
+            "ghp_BLOB_SENTINEL_1234567890",
+            "blob-owner@example.invalid",
+            "/home/blob-owner/private.txt",
+            "blob-secret-assignment",
+            "blob-connection-secret",
+            "/srv/cordia/private.txt",
+            "BLOB_PRIVATE_KEY_BODY_SENTINEL",
+            "SENSITIVE_DIRECTORY_SENTINEL",
+        )
+
+        diff = "".join(
+            (
+                "diff --git a/src/safe.py b/src/safe.py\n",
+                "@@ -1,2 +1,8 @@\n",
+                "+safe neighboring diff line\n",
+                "+token = 'ghp_DIFF_SENTINEL_1234567890'\n",
+                "+contact = 'diff-owner@example.invalid'\n",
+                "+path = r'C:\\Users\\diff-owner\\private.txt'\n",
+                "+OPENAI_API_KEY=diff-secret-assignment\n",
+                "+\"DATABASE_URL\": \"diff-database-secret\"\n",
+                "+-----BEGIN PRIVATE KEY-----\n",
+                "+DIFF_PRIVATE_KEY_BODY_SENTINEL\n",
+                "+-----END PRIVATE KEY-----\n",
+                "diff --git a/secrets/config.py b/secrets/config.py\n",
+                "@@ -0,0 +1 @@\n",
+                "+SENSITIVE_DIRECTORY_SENTINEL\n",
+            )
+        )
+        blob = "".join(
+            (
+                "safe_before = True\n",
+                "token = 'ghp_BLOB_SENTINEL_1234567890'\n",
+                "contact = 'blob-owner@example.invalid'\n",
+                "path = '/home/blob-owner/private.txt'\n",
+                "password: blob-secret-assignment\n",
+                "connection_string = 'blob-connection-secret'\n",
+                "server_path = '/srv/cordia/private.txt'\n",
+                "-----BEGIN PRIVATE KEY-----\n",
+                "BLOB_PRIVATE_KEY_BODY_SENTINEL\n",
+                "-----END PRIVATE KEY-----\n",
+                "safe_after = True\n",
+            )
+        ).encode("utf-8")
+
+        def sensitive_git(argv, **kwargs):
+            command = tuple(argv)
+            if command == ("git", "diff", "--name-only", "HEAD^", "HEAD", "--"):
+                return subprocess.CompletedProcess(argv, 0, "src/safe.py\nsecrets/config.py\n", "")
+            if command == ("git", "diff", "--no-ext-diff", "--unified=3", "HEAD^", "HEAD", "--"):
+                return subprocess.CompletedProcess(argv, 0, diff, "")
+            if command == ("git", "show", f"{SHA}:src/safe.py"):
+                return subprocess.CompletedProcess(argv, 0, blob, b"")
+            if command == ("git", "show", f"{SHA}:secrets/config.py"):
+                return subprocess.CompletedProcess(argv, 0, b"SENSITIVE_DIRECTORY_SENTINEL\n", b"")
+            return self.fake_git(argv, **kwargs)
+
+        captured_request = {}
+
+        def capturing_opener(request, timeout=None):
+            captured_request.update(json.loads(request.data.decode("utf-8")))
+            return self.completed_opener(request, timeout=timeout)
+
+        stdout, stderr = io.StringIO(), io.StringIO()
+        with redirect_stdout(stdout), redirect_stderr(stderr):
+            exit_code = self.module.main(
+                ["run"],
+                repo_root=self.root,
+                environ=self.environment(),
+                opener=capturing_opener,
+                run_git=sensitive_git,
+            )
+
+        output_text = (self.artifact_dir / "openai-review.json").read_text(encoding="utf-8")
+        observable_text = "\n".join(
+            (json.dumps(captured_request), stdout.getvalue(), stderr.getvalue(), output_text)
+        )
+        self.assertEqual(exit_code, 0)
+        self.assertIn("safe neighboring diff line", captured_request["input"])
+        self.assertIn("safe_before = True", captured_request["input"])
+        self.assertIn("safe_after = True", captured_request["input"])
+        self.assertIn("[REDACTED SENSITIVE LINE]", captured_request["input"])
+        self.assertNotIn("secrets/config.py", captured_request["input"])
+        for sensitive_value in sensitive_values:
+            with self.subTest(sensitive_value=sensitive_value):
+                self.assertNotIn(sensitive_value, observable_text)
+
+    def test_invalid_deterministic_schema_never_reaches_the_opener(self):
+        valid = json.loads((self.artifact_dir / "deterministic.json").read_text(encoding="utf-8"))
+        invalid_values = []
+
+        unknown_top_level = dict(valid)
+        unknown_top_level["raw_output"] = "OPENAI_API_KEY=must-not-send"
+        invalid_values.append(unknown_top_level)
+
+        unsafe_timestamp = json.loads(json.dumps(valid))
+        unsafe_timestamp["reviewed_at"] = "review-owner@example.invalid"
+        invalid_values.append(unsafe_timestamp)
+
+        unknown_check_field = json.loads(json.dumps(valid))
+        unknown_check_field["checks"][0]["raw_log"] = "ghp_MUST_NOT_SEND"
+        invalid_values.append(unknown_check_field)
+
+        unsafe_diagnostic = json.loads(json.dumps(valid))
+        unsafe_diagnostic["checks"][0]["diagnostic"] = "OPENAI_API_KEY=must-not-send"
+        invalid_values.append(unsafe_diagnostic)
+
+        for deterministic in invalid_values:
+            with self.subTest(deterministic=deterministic):
+                (self.artifact_dir / "deterministic.json").write_text(
+                    json.dumps(deterministic), encoding="utf-8"
+                )
+                opener_calls = []
+
+                def forbidden_opener(*args, **kwargs):
+                    opener_calls.append((args, kwargs))
+                    return self.completed_opener(*args, **kwargs)
+
+                stdout, stderr = io.StringIO(), io.StringIO()
+                with redirect_stdout(stdout), redirect_stderr(stderr):
+                    exit_code = self.module.main(
+                        ["run"],
+                        repo_root=self.root,
+                        environ=self.environment(),
+                        opener=forbidden_opener,
+                        run_git=self.fake_git,
+                    )
+
+                self.assertEqual(exit_code, 2)
+                self.assertEqual(opener_calls, [])
+                self.assertFalse((self.artifact_dir / "openai-review.json").exists())
+                self.assertNotIn("must-not-send", stdout.getvalue() + stderr.getvalue())
+
     def test_context_rejects_mismatched_or_invalid_sha(self):
         with self.assertRaises(ValueError):
             self.module.build_review_context(
@@ -275,10 +437,6 @@ class OpenAiProductionReviewTests(unittest.TestCase):
             )
 
     def test_context_bounds_each_section_and_preserves_delimiters(self):
-        (self.artifact_dir / "deterministic.json").write_text(
-            json.dumps({"commit": SHA, "padding": "d" * 200_000}), encoding="utf-8"
-        )
-
         def oversized_git(argv, **kwargs):
             if tuple(argv) == ("git", "diff", "--no-ext-diff", "--unified=3", "HEAD^", "HEAD", "--"):
                 return subprocess.CompletedProcess(

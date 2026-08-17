@@ -1,12 +1,24 @@
 from dataclasses import dataclass
 from datetime import datetime, timezone
-import json
 import os
 from pathlib import Path
 import re
 import subprocess
 import sys
 import time
+
+try:
+    from tools.production_review_artifacts import (
+        artifact_path,
+        remove_artifacts,
+        write_json_atomically,
+    )
+except ModuleNotFoundError:  # Support direct execution from the tools directory.
+    from production_review_artifacts import (
+        artifact_path,
+        remove_artifacts,
+        write_json_atomically,
+    )
 
 
 @dataclass(frozen=True)
@@ -66,10 +78,9 @@ def _output_bytes(*values) -> bytes:
     return b"".join(chunks)
 
 
-def _write_private_log(logs_dir: Path, check_id: str, *output) -> None:
-    logs_dir.mkdir(parents=True, exist_ok=True)
+def _write_private_log(repo_root: Path, check_id: str, *output) -> None:
     data = _output_bytes(*output)[:LOG_CAP_BYTES]
-    (logs_dir / f"{check_id}.log").write_bytes(data)
+    artifact_path(repo_root, f"logs/{check_id}.log", create_parents=True).write_bytes(data)
 
 
 def _timestamp(now) -> str:
@@ -110,7 +121,6 @@ def run_review(repo_root, *, expected_sha, executor, now, platform=None, python=
     if str(head.stdout).strip() != expected_sha:
         raise ValueError("checked-out commit does not match expected SHA")
 
-    logs_dir = root / ".production-review" / "logs"
     checks = []
     for spec in check_specs(platform=platform, python=python):
         started = time.monotonic()
@@ -123,7 +133,7 @@ def run_review(repo_root, *, expected_sha, executor, now, platform=None, python=
             )
         except subprocess.TimeoutExpired as error:
             duration_ms = round((time.monotonic() - started) * 1000)
-            _write_private_log(logs_dir, spec.check_id, error.output, error.stderr)
+            _write_private_log(root, spec.check_id, error.output, error.stderr)
             checks.append(
                 {
                     "id": spec.check_id,
@@ -135,7 +145,7 @@ def run_review(repo_root, *, expected_sha, executor, now, platform=None, python=
             continue
 
         duration_ms = round((time.monotonic() - started) * 1000)
-        _write_private_log(logs_dir, spec.check_id, completed.stdout, completed.stderr)
+        _write_private_log(root, spec.check_id, completed.stdout, completed.stderr)
         if completed.returncode == 0:
             status = "passed"
             diagnostic = "Passed"
@@ -154,15 +164,6 @@ def run_review(repo_root, *, expected_sha, executor, now, platform=None, python=
     return {"commit": expected_sha, "reviewed_at": _timestamp(now), "checks": checks}
 
 
-def _write_json_atomically(path: Path, value: dict) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    temporary_path = path.with_name(path.name + ".tmp")
-    with temporary_path.open("w", encoding="utf-8", newline="\n") as handle:
-        json.dump(value, handle, separators=(",", ":"), ensure_ascii=True)
-        handle.write("\n")
-    temporary_path.replace(path)
-
-
 def main(argv=None, *, repo_root=None, environ=None, executor=subprocess.run, now=None) -> int:
     arguments = sys.argv[1:] if argv is None else argv
     if arguments != ["run"]:
@@ -172,13 +173,14 @@ def main(argv=None, *, repo_root=None, environ=None, executor=subprocess.run, no
     root = Path.cwd() if repo_root is None else Path(repo_root)
     timestamp = datetime.now(timezone.utc) if now is None else now
     try:
+        remove_artifacts(root, ("deterministic.json",))
         result = run_review(
             root,
             expected_sha=expected_sha,
             executor=executor,
             now=timestamp,
         )
-        _write_json_atomically(root / ".production-review" / "deterministic.json", result)
+        write_json_atomically(root, "deterministic.json", result)
     except (OSError, RuntimeError, TypeError, ValueError, subprocess.SubprocessError):
         return 2
     return 0
