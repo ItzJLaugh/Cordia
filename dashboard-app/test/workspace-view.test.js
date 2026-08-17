@@ -169,8 +169,8 @@ test('workspaceRendererModel restores the declared GitHub repository artifact wi
     id: 'github-repository-surface',
     kind: 'github-repositories',
     title: 'GitHub repositories',
-    badge: 'Available now',
-    body: 'GitHub is connected. Open the bounded repository view to review its available repositories.',
+    badge: 'Unavailable',
+    body: 'GitHub repository data is unavailable right now. Use the setup page to review or reconnect it.',
     link: { href: '/github.html', label: 'Open GitHub repositories' },
   })
 
@@ -513,6 +513,13 @@ test('loadWorkspaceTruth refreshes canonical state and every bounded supplementa
     ['/surveyor/capabilities', supplemental.capabilities],
     ['/surveyor/skills', supplemental.skills],
     ['/surveyor/activity', supplemental.activity],
+    ['/surveyor/github/repositories', {
+      ok: true,
+      capability: 'github.read_repositories',
+      permission: 'ALLOW',
+      repositories: [],
+      repository_limit: 30,
+    }],
   ])
   const truth = await workspaceView.loadWorkspaceTruth(async (path) => {
     requested.push(path)
@@ -525,9 +532,368 @@ test('loadWorkspaceTruth refreshes canonical state and every bounded supplementa
     '/surveyor/capabilities',
     '/surveyor/skills',
     '/surveyor/activity',
+    '/surveyor/github/repositories',
   ])
   assert.equal(truth.workspace, workspaceResponse)
-  assert.deepEqual(Object.keys(truth.supplemental), ['artifacts', 'capabilities', 'skills', 'activity'])
+  assert.deepEqual(Object.keys(truth.supplemental), ['artifacts', 'capabilities', 'skills', 'activity', 'github'])
+})
+
+test('GitHub repository artifact projects only bounded deterministic repository summaries', () => {
+  const feeds = structuredClone(supplemental)
+  feeds.github = {
+    ok: true,
+    capability: 'github.read_repositories',
+    permission: 'ALLOW',
+    repository_limit: 30,
+    repositories: [
+      {
+        name: 'Zulu/Cordia', private: true, description: 'Primary agent workspace.',
+        url: 'https://github.com/Zulu/Cordia?token=must-not-render',
+        default_branch: 'main', updated_at: '2026-08-13T12:00:00Z',
+        local_path: 'C:\\private\\Cordia', transport_error: 'authorization=private',
+      },
+      {
+        name: 'Alpha/Studio', private: false, description: 'Build company agent systems.',
+        url: 'https://github.com/Alpha/Studio', default_branch: 'feature/system-map',
+        updated_at: '2026-08-14T09:30:00Z',
+      },
+      {
+        name: 'Bravo/UnsafeDescription', private: false,
+        description: 'token=must-not-render', default_branch: 'main',
+        updated_at: '2026-08-12T08:00:00Z',
+      },
+      {
+        name: 'C:\\private\\repository', private: false,
+        description: 'Must be dropped with the invalid repository identity.',
+        default_branch: 'main', updated_at: '2026-08-11T08:00:00Z',
+      },
+    ],
+    raw: { authorization: 'Bearer must-not-render' },
+  }
+
+  const card = workspaceRendererModel(workspaceResponse, feeds, 'workspace-1').cards
+    .find((candidate) => candidate.kind === 'github-repositories')
+
+  assert.deepEqual(card, {
+    id: 'github-repository-surface',
+    kind: 'github-repositories',
+    title: 'GitHub repositories',
+    badge: 'Live data',
+    body: 'Showing 3 of up to 30 recently updated repositories.',
+    items: [
+      {
+        label: 'Alpha/Studio',
+        meta: 'Public · feature/system-map · Updated 2026-08-14',
+        detail: 'Build company agent systems.',
+      },
+      {
+        label: 'Bravo/UnsafeDescription',
+        meta: 'Public · main · Updated 2026-08-12',
+      },
+      {
+        label: 'Zulu/Cordia',
+        meta: 'Private · main · Updated 2026-08-13',
+        detail: 'Primary agent workspace.',
+      },
+    ],
+    link: { href: '/github.html', label: 'Open GitHub repositories' },
+  })
+  const rendered = JSON.stringify(card)
+  for (const value of [
+    'must-not-render', 'https://github.com', 'C:\\private', 'transport_error', 'authorization', 'raw',
+  ]) assert.equal(rendered.includes(value), false, value)
+})
+
+test('GitHub repository artifact never renders more than the declared thirty-repository boundary', () => {
+  const feeds = structuredClone(supplemental)
+  feeds.github = {
+    ok: true, capability: 'github.read_repositories', permission: 'ALLOW', repository_limit: 30,
+    repositories: Array.from({ length: 35 }, (_value, index) => ({
+      name: `CordiaHQ/repo-${String(index).padStart(2, '0')}`,
+      private: false,
+      description: `Repository ${index}`,
+      url: `https://github.com/CordiaHQ/repo-${index}`,
+      default_branch: 'main',
+      updated_at: '2026-08-16T10:00:00Z',
+    })),
+  }
+
+  const card = workspaceRendererModel(workspaceResponse, feeds, 'workspace-1').cards
+    .find((candidate) => candidate.kind === 'github-repositories')
+  assert.equal(card.items.length, 30)
+  assert.equal(card.items[0].label, 'CordiaHQ/repo-00')
+  assert.equal(card.items[29].label, 'CordiaHQ/repo-29')
+  assert.equal(JSON.stringify(card).includes('CordiaHQ/repo-30'), false)
+})
+
+test('GitHub repository artifact treats a malformed repository payload as needs-attention without rendering it', () => {
+  const feeds = structuredClone(supplemental)
+  feeds.github = {
+    ok: true, capability: 'github.read_repositories', permission: 'ALLOW',
+    repository_limit: 3000,
+    repositories: [{
+      name: 'CordiaHQ/Cordia', private: false, description: 'authorization=private',
+      url: 'file:///C:/private/repository', default_branch: 'main', updated_at: 'not-a-timestamp',
+    }],
+  }
+
+  const cards = new Map(workspaceRendererModel(workspaceResponse, feeds, 'workspace-1').cards
+    .map((card) => [card.id, card]))
+  assert.deepEqual(cards.get('github-repository-surface'), {
+    id: 'github-repository-surface', kind: 'github-repositories', title: 'GitHub repositories',
+    badge: 'Needs attention',
+    body: 'GitHub needs attention before Cordia can read repositories.',
+    link: { href: '/github.html', label: 'Open GitHub repositories' },
+  })
+  assert.deepEqual(cards.get('connector:github').items, [
+    { label: 'Consent', meta: 'confirmed' },
+    { label: 'Adapter', meta: 'live' },
+    { label: 'Lifecycle', meta: 'needs handoff' },
+    { label: 'Runtime', meta: 'needs attention' },
+  ])
+  for (const value of ['3000', 'authorization', 'private', 'file:///', 'not-a-timestamp']) {
+    assert.equal(JSON.stringify([...cards.values()]).includes(value), false, value)
+  }
+})
+
+test('GitHub repository artifact does not admit URL-shaped repository metadata through safe-looking fields', () => {
+  for (const [field, value] of [
+    ['description', 'See https://example.test/private for details.'],
+    ['default_branch', 'https://example.test/private'],
+    ['default_branch', '/home/cordia/private'],
+  ]) {
+    const repository = {
+      name: 'CordiaHQ/Cordia', private: false, description: 'Primary workspace.',
+      url: 'https://github.com/CordiaHQ/Cordia', default_branch: 'main',
+      updated_at: '2026-08-16T10:00:00Z',
+    }
+    repository[field] = value
+    const feeds = structuredClone(supplemental)
+    feeds.github = {
+      ok: true, capability: 'github.read_repositories', permission: 'ALLOW', repository_limit: 30,
+      repositories: [repository],
+    }
+    const card = workspaceRendererModel(workspaceResponse, feeds, 'workspace-1').cards
+      .find((candidate) => candidate.kind === 'github-repositories')
+    assert.equal(JSON.stringify(card).includes(value), false, `${field}: ${value}`)
+  }
+})
+
+test('loadWorkspaceTruth reads GitHub only for a confirmed live adapter that is not marked needs-attention', async () => {
+  const cases = [
+    { label: 'live runtime', mutate() {}, expectedReads: 1 },
+    {
+      label: 'first unobserved runtime',
+      mutate(workspace) {
+        workspace.connectors[0].runtime_status = 'not_observed'
+        workspace.connectors[0].lifecycle = 'needs_handoff'
+      },
+      expectedReads: 1,
+    },
+    {
+      label: 'suggested connector',
+      mutate(workspace) { workspace.connectors[0].status = 'suggested' },
+      expectedReads: 0,
+    },
+    {
+      label: 'planned adapter',
+      mutate(workspace) { workspace.connectors[0].implementation_status = 'planned' },
+      expectedReads: 0,
+    },
+    {
+      label: 'needs-attention runtime',
+      mutate(workspace) {
+        workspace.connectors[0].runtime_status = 'needs_attention'
+        workspace.connectors[0].lifecycle = 'failed'
+      },
+      expectedReads: 0,
+    },
+    {
+      label: 'missing connector',
+      mutate(workspace) { workspace.connectors = [] },
+      expectedReads: 0,
+    },
+  ]
+
+  for (const scenario of cases) {
+    const canonical = structuredClone(workspaceResponse)
+    scenario.mutate(canonical.workspace)
+    let githubReads = 0
+    const responses = new Map([
+      ['/surveyor/workspace?id=workspace-1', canonical],
+      ['/surveyor/artifacts', supplemental.artifacts],
+      ['/surveyor/capabilities', supplemental.capabilities],
+      ['/surveyor/skills', supplemental.skills],
+      ['/surveyor/activity', supplemental.activity],
+    ])
+    const truth = await workspaceView.loadWorkspaceTruth(async (path) => {
+      if (path === '/surveyor/github/repositories') {
+        githubReads += 1
+        return { ok: true, repositories: [], repository_limit: 30 }
+      }
+      return responses.get(path)
+    }, 'workspace-1')
+
+    assert.equal(githubReads, scenario.expectedReads, scenario.label)
+    assert.equal(Object.hasOwn(truth.supplemental, 'github'), scenario.expectedReads === 1, scenario.label)
+  }
+})
+
+test('loadWorkspaceTruth never reads GitHub for a mismatched or malformed canonical workspace response', async () => {
+  const cases = [
+    {
+      label: 'mismatched workspace',
+      response: (() => {
+        const mismatched = structuredClone(workspaceResponse)
+        mismatched.workspace.id = 'workspace-2'
+        return mismatched
+      })(),
+    },
+    { label: 'malformed workspace', response: { ok: true, workspace: [] } },
+    { label: 'failed envelope', response: { ok: false, workspace: structuredClone(workspaceResponse.workspace) } },
+  ]
+
+  for (const scenario of cases) {
+    let githubReads = 0
+    const responses = new Map([
+      ['/surveyor/workspace?id=workspace-1', scenario.response],
+      ['/surveyor/artifacts', supplemental.artifacts],
+      ['/surveyor/capabilities', supplemental.capabilities],
+      ['/surveyor/skills', supplemental.skills],
+      ['/surveyor/activity', supplemental.activity],
+    ])
+    const truth = await workspaceView.loadWorkspaceTruth(async (path) => {
+      if (path === '/surveyor/github/repositories') {
+        githubReads += 1
+        return { ok: true, repositories: [], repository_limit: 30 }
+      }
+      return responses.get(path)
+    }, 'workspace-1')
+
+    assert.equal(githubReads, 0, scenario.label)
+    assert.equal(workspaceRendererModel(truth.workspace, truth.supplemental, 'workspace-1'), null, scenario.label)
+  }
+})
+
+test('a successful first GitHub read renders native repository data before canonical runtime refresh', () => {
+  const canonical = structuredClone(workspaceResponse)
+  canonical.workspace.connectors[0].runtime_status = 'not_observed'
+  canonical.workspace.connectors[0].lifecycle = 'needs_handoff'
+  const feeds = structuredClone(supplemental)
+  feeds.github = {
+    ok: true, capability: 'github.read_repositories', permission: 'ALLOW', repository_limit: 30,
+    repositories: [{
+      name: 'ItzJLaugh/Cordia', private: true, description: 'Primary agent workspace.',
+      url: 'https://github.com/ItzJLaugh/Cordia', default_branch: 'main',
+      updated_at: '2026-08-16T10:00:00Z',
+    }],
+  }
+
+  const cards = new Map(workspaceRendererModel(canonical, feeds, 'workspace-1').cards
+    .map((card) => [card.id, card]))
+  assert.equal(cards.get('github-repository-surface').badge, 'Live data')
+  assert.deepEqual(cards.get('github-repository-surface').items, [{
+    label: 'ItzJLaugh/Cordia', meta: 'Private · main · Updated 2026-08-16',
+    detail: 'Primary agent workspace.',
+  }])
+  assert.equal(cards.get('connector:github').badge, 'Available now')
+  assert.deepEqual(cards.get('connector:github').items, [
+    { label: 'Consent', meta: 'confirmed' },
+    { label: 'Adapter', meta: 'live' },
+    { label: 'Lifecycle', meta: 'live' },
+    { label: 'Runtime', meta: 'live' },
+  ])
+  assert.equal(canonical.workspace.connectors[0].runtime_status, 'not_observed')
+  assert.equal(canonical.workspace.connectors[0].lifecycle, 'needs_handoff')
+})
+
+test('GitHub repository artifact distinguishes a true empty result from an all-malformed repository list', () => {
+  const empty = {
+    ok: true, capability: 'github.read_repositories', permission: 'ALLOW', repository_limit: 30,
+    repositories: [],
+  }
+  const emptyCards = new Map(workspaceRendererModel(
+    workspaceResponse, { ...supplemental, github: empty }, 'workspace-1',
+  ).cards.map((card) => [card.id, card]))
+  assert.deepEqual(emptyCards.get('github-repository-surface'), {
+    id: 'github-repository-surface', kind: 'github-repositories', title: 'GitHub repositories',
+    badge: 'Live data',
+    body: 'GitHub is connected. No repositories were returned for this bounded view.',
+    link: { href: '/github.html', label: 'Open GitHub repositories' },
+  })
+  assert.deepEqual(emptyCards.get('connector:github').items, [
+    { label: 'Consent', meta: 'confirmed' },
+    { label: 'Adapter', meta: 'live' },
+    { label: 'Lifecycle', meta: 'live' },
+    { label: 'Runtime', meta: 'live' },
+  ])
+
+  const privateValue = 'ghp_private-value-at-C:\\private\\connector'
+  const malformed = {
+    ...empty,
+    repositories: [
+      { name: privateValue, private: true, description: privateValue, default_branch: privateValue },
+      { name: 'ItzJLaugh/Cordia', private: 'private', description: privateValue },
+    ],
+  }
+  const malformedModel = workspaceRendererModel(
+    workspaceResponse, { ...supplemental, github: malformed }, 'workspace-1',
+  )
+  const malformedCards = new Map(malformedModel.cards.map((card) => [card.id, card]))
+  assert.deepEqual(malformedCards.get('github-repository-surface'), {
+    id: 'github-repository-surface', kind: 'github-repositories', title: 'GitHub repositories',
+    badge: 'Needs attention',
+    body: 'GitHub needs attention before Cordia can read repositories.',
+    link: { href: '/github.html', label: 'Open GitHub repositories' },
+  })
+  assert.deepEqual(malformedCards.get('connector:github').items, [
+    { label: 'Consent', meta: 'confirmed' },
+    { label: 'Adapter', meta: 'live' },
+    { label: 'Lifecycle', meta: 'needs handoff' },
+    { label: 'Runtime', meta: 'needs attention' },
+  ])
+  assert.equal(JSON.stringify(malformedModel).includes(privateValue), false)
+})
+
+test('a failed eligible GitHub read becomes bounded needs-attention truth without transport details', async () => {
+  const unobserved = structuredClone(workspaceResponse)
+  unobserved.workspace.connectors[0].runtime_status = 'not_observed'
+  unobserved.workspace.connectors[0].lifecycle = 'needs_handoff'
+  const responses = new Map([
+    ['/surveyor/workspace?id=workspace-1', unobserved],
+    ['/surveyor/artifacts', supplemental.artifacts],
+    ['/surveyor/capabilities', supplemental.capabilities],
+    ['/surveyor/skills', supplemental.skills],
+    ['/surveyor/activity', supplemental.activity],
+  ])
+  const truth = await workspaceView.loadWorkspaceTruth(async (path) => {
+    if (path === '/surveyor/github/repositories') {
+      throw new Error('authorization=Bearer private-value at C:\\private\\connector')
+    }
+    return responses.get(path)
+  }, 'workspace-1')
+
+  assert.deepEqual(truth.supplemental.github, { state: 'needs-attention' })
+  const cards = new Map(workspaceRendererModel(truth.workspace, truth.supplemental, 'workspace-1').cards
+    .map((card) => [card.id, card]))
+  assert.deepEqual(cards.get('github-repository-surface'), {
+    id: 'github-repository-surface', kind: 'github-repositories', title: 'GitHub repositories',
+    badge: 'Needs attention',
+    body: 'GitHub needs attention before Cordia can read repositories. Use the setup page to review or reconnect it.',
+    link: { href: '/github.html', label: 'Open GitHub repositories' },
+  })
+  assert.deepEqual(cards.get('connector:github').items, [
+    { label: 'Consent', meta: 'confirmed' },
+    { label: 'Adapter', meta: 'live' },
+    { label: 'Lifecycle', meta: 'needs handoff' },
+    { label: 'Runtime', meta: 'needs attention' },
+  ])
+  assert.equal(truth.workspace.workspace.connectors[0].runtime_status, 'not_observed')
+  assert.equal(truth.workspace.workspace.connectors[0].lifecycle, 'needs_handoff')
+  for (const value of ['authorization', 'Bearer', 'private-value', 'C:\\private', '/surveyor/']) {
+    assert.equal(JSON.stringify(truth.supplemental.github).includes(value), false, value)
+    assert.equal(JSON.stringify([...cards.values()]).includes(value), false, value)
+  }
 })
 
 test('loadWorkspaceTruth projects bounded rate-limited and partial supplemental-feed status', async () => {

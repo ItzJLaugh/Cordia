@@ -1,4 +1,5 @@
 import ArtifactLink from './ArtifactLink.js'
+import ArtifactItems from './ArtifactItems.js'
 import SkillAction from './SkillAction.js'
 
 export default function ArtifactCard({ card, actionBusy = false, actionsDisabled = false, onAction }) {
@@ -12,16 +13,7 @@ export default function ArtifactCard({ card, actionBusy = false, actionsDisabled
         {card.badge && <span className="artifact-badge">{card.badge}</span>}
       </header>
       {card.body && <p className="artifact-body">{card.body}</p>}
-      {card.items && (
-        <ul className="artifact-items">
-          {card.items.map((item, index) => (
-            <li key={`${item.label}:${index}`}>
-              <span>{item.label}</span>
-              {item.meta && <span className="artifact-meta">{item.meta}</span>}
-            </li>
-          ))}
-        </ul>
-      )}
+      {card.items && <ArtifactItems items={card.items} />}
       {card.link && <ArtifactLink link={card.link} />}
       {card.action && (
         <SkillAction

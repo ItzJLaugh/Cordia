@@ -171,6 +171,8 @@ a { color: inherit; }
 .artifact-items { display: grid; gap: 0; margin: 12px 0 0; padding: 0; list-style: none; }
 .artifact-items li { min-width: 0; display: flex; align-items: baseline; justify-content: space-between; gap: 14px; padding: 8px 0; border-top: 1px solid rgba(11, 11, 11, 0.065); font-size: 12px; line-height: 1.4; }
 .artifact-items li > span:first-child { min-width: 0; overflow-wrap: anywhere; }
+.artifact-item-main { display: grid; gap: 2px; }
+.artifact-item-detail { color: #6e6e6e; font-size: 11px; line-height: 1.45; }
 .artifact-meta { color: #6e6e6e; font-size: 10.5px; text-align: right; overflow-wrap: anywhere; }
 .artifact-link { display: inline-flex; min-height: 34px; align-items: center; margin-top: 14px; padding: 0 12px; border-radius: 9px; background: #eef1eb; color: #394533; font-size: 11px; font-weight: 650; text-decoration: none; }
 .artifact-link:focus-visible { outline: 2px solid #4a5a42; outline-offset: 2px; }
