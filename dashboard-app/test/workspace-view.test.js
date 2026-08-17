@@ -733,6 +733,42 @@ test('loadWorkspaceTruth reads GitHub only for a confirmed live adapter that is 
   }
 })
 
+test('loadWorkspaceTruth never reads GitHub for a mismatched or malformed canonical workspace response', async () => {
+  const cases = [
+    {
+      label: 'mismatched workspace',
+      response: (() => {
+        const mismatched = structuredClone(workspaceResponse)
+        mismatched.workspace.id = 'workspace-2'
+        return mismatched
+      })(),
+    },
+    { label: 'malformed workspace', response: { ok: true, workspace: [] } },
+    { label: 'failed envelope', response: { ok: false, workspace: structuredClone(workspaceResponse.workspace) } },
+  ]
+
+  for (const scenario of cases) {
+    let githubReads = 0
+    const responses = new Map([
+      ['/surveyor/workspace?id=workspace-1', scenario.response],
+      ['/surveyor/artifacts', supplemental.artifacts],
+      ['/surveyor/capabilities', supplemental.capabilities],
+      ['/surveyor/skills', supplemental.skills],
+      ['/surveyor/activity', supplemental.activity],
+    ])
+    const truth = await workspaceView.loadWorkspaceTruth(async (path) => {
+      if (path === '/surveyor/github/repositories') {
+        githubReads += 1
+        return { ok: true, repositories: [], repository_limit: 30 }
+      }
+      return responses.get(path)
+    }, 'workspace-1')
+
+    assert.equal(githubReads, 0, scenario.label)
+    assert.equal(workspaceRendererModel(truth.workspace, truth.supplemental, 'workspace-1'), null, scenario.label)
+  }
+})
+
 test('a successful first GitHub read renders native repository data before canonical runtime refresh', () => {
   const canonical = structuredClone(workspaceResponse)
   canonical.workspace.connectors[0].runtime_status = 'not_observed'
@@ -747,18 +783,65 @@ test('a successful first GitHub read renders native repository data before canon
     }],
   }
 
-  const card = workspaceRendererModel(canonical, feeds, 'workspace-1').cards
-    .find((candidate) => candidate.kind === 'github-repositories')
-  assert.equal(card.badge, 'Live data')
-  assert.deepEqual(card.items, [{
+  const cards = new Map(workspaceRendererModel(canonical, feeds, 'workspace-1').cards
+    .map((card) => [card.id, card]))
+  assert.equal(cards.get('github-repository-surface').badge, 'Live data')
+  assert.deepEqual(cards.get('github-repository-surface').items, [{
     label: 'ItzJLaugh/Cordia', meta: 'Private · main · Updated 2026-08-16',
     detail: 'Primary agent workspace.',
   }])
+  assert.equal(cards.get('connector:github').badge, 'Available now')
+  assert.deepEqual(cards.get('connector:github').items, [
+    { label: 'Consent', meta: 'confirmed' },
+    { label: 'Adapter', meta: 'live' },
+    { label: 'Lifecycle', meta: 'live' },
+    { label: 'Runtime', meta: 'live' },
+  ])
+  assert.equal(canonical.workspace.connectors[0].runtime_status, 'not_observed')
+  assert.equal(canonical.workspace.connectors[0].lifecycle, 'needs_handoff')
+})
+
+test('GitHub repository artifact distinguishes a true empty result from an all-malformed repository list', () => {
+  const empty = {
+    ok: true, capability: 'github.read_repositories', permission: 'ALLOW', repository_limit: 30,
+    repositories: [],
+  }
+  const emptyCard = workspaceRendererModel(workspaceResponse, { ...supplemental, github: empty }, 'workspace-1')
+    .cards.find((card) => card.id === 'github-repository-surface')
+  assert.deepEqual(emptyCard, {
+    id: 'github-repository-surface', kind: 'github-repositories', title: 'GitHub repositories',
+    badge: 'Live data',
+    body: 'GitHub is connected. No repositories were returned for this bounded view.',
+    link: { href: '/github.html', label: 'Open GitHub repositories' },
+  })
+
+  const privateValue = 'ghp_private-value-at-C:\\private\\connector'
+  const malformed = {
+    ...empty,
+    repositories: [
+      { name: privateValue, private: true, description: privateValue, default_branch: privateValue },
+      { name: 'ItzJLaugh/Cordia', private: 'private', description: privateValue },
+    ],
+  }
+  const malformedModel = workspaceRendererModel(
+    workspaceResponse, { ...supplemental, github: malformed }, 'workspace-1',
+  )
+  const malformedCard = malformedModel.cards.find((card) => card.id === 'github-repository-surface')
+  assert.deepEqual(malformedCard, {
+    id: 'github-repository-surface', kind: 'github-repositories', title: 'GitHub repositories',
+    badge: 'Unavailable',
+    body: 'GitHub repository data is unavailable right now. Use the setup page to review or reconnect it.',
+    link: { href: '/github.html', label: 'Open GitHub repositories' },
+  })
+  assert.equal(JSON.stringify(malformedModel).includes(privateValue), false)
 })
 
 test('a failed eligible GitHub read becomes bounded needs-attention truth without transport details', async () => {
+  const unobserved = structuredClone(workspaceResponse)
+  unobserved.workspace.connectors[0].runtime_status = 'not_observed'
+  unobserved.workspace.connectors[0].lifecycle = 'needs_handoff'
   const responses = new Map([
-    ['/surveyor/workspace?id=workspace-1', workspaceResponse],
+    ['/surveyor/workspace?id=workspace-1', unobserved],
     ['/surveyor/artifacts', supplemental.artifacts],
     ['/surveyor/capabilities', supplemental.capabilities],
     ['/surveyor/skills', supplemental.skills],
@@ -772,17 +855,25 @@ test('a failed eligible GitHub read becomes bounded needs-attention truth withou
   }, 'workspace-1')
 
   assert.deepEqual(truth.supplemental.github, { state: 'needs-attention' })
-  const card = workspaceRendererModel(truth.workspace, truth.supplemental, 'workspace-1').cards
-    .find((candidate) => candidate.kind === 'github-repositories')
-  assert.deepEqual(card, {
+  const cards = new Map(workspaceRendererModel(truth.workspace, truth.supplemental, 'workspace-1').cards
+    .map((card) => [card.id, card]))
+  assert.deepEqual(cards.get('github-repository-surface'), {
     id: 'github-repository-surface', kind: 'github-repositories', title: 'GitHub repositories',
     badge: 'Needs attention',
     body: 'GitHub needs attention before Cordia can read repositories. Use the setup page to review or reconnect it.',
     link: { href: '/github.html', label: 'Open GitHub repositories' },
   })
+  assert.deepEqual(cards.get('connector:github').items, [
+    { label: 'Consent', meta: 'confirmed' },
+    { label: 'Adapter', meta: 'live' },
+    { label: 'Lifecycle', meta: 'needs handoff' },
+    { label: 'Runtime', meta: 'needs attention' },
+  ])
+  assert.equal(truth.workspace.workspace.connectors[0].runtime_status, 'not_observed')
+  assert.equal(truth.workspace.workspace.connectors[0].lifecycle, 'needs_handoff')
   for (const value of ['authorization', 'Bearer', 'private-value', 'C:\\private', '/surveyor/']) {
     assert.equal(JSON.stringify(truth.supplemental.github).includes(value), false, value)
-    assert.equal(JSON.stringify(card).includes(value), false, value)
+    assert.equal(JSON.stringify([...cards.values()]).includes(value), false, value)
   }
 })
 

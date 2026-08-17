@@ -68,7 +68,10 @@ function connectorReadiness(connectors, requiredIds) {
   return 'ready'
 }
 
-function shouldReadGithub(response) {
+function shouldReadGithub(response, expectedWorkspaceId) {
+  if (!response || typeof response !== 'object' || Array.isArray(response) || response.ok !== true
+      || !response.workspace || typeof response.workspace !== 'object' || Array.isArray(response.workspace)
+      || response.workspace.id !== expectedWorkspaceId) return false
   const model = workspaceToRendererModel(response)
   const declared = model.artifactCards.some((card) => (
     card.id === 'github-repositories' && card.kind === 'connector'
@@ -224,11 +227,39 @@ function githubRepositorySummary(response) {
     .sort((left, right) => JSON.stringify(left).localeCompare(JSON.stringify(right)))
   const unique = new Map()
   for (const row of rows) if (!unique.has(row.label)) unique.set(row.label, row)
+  if (response.repositories.length > 0 && unique.size === 0) return null
   return {
     limit: response.repository_limit,
     items: [...unique.values()]
       .sort((left, right) => left.label.localeCompare(right.label))
       .slice(0, response.repository_limit),
+  }
+}
+
+function githubReadFailed(response) {
+  return response && typeof response === 'object' && !Array.isArray(response)
+    && Object.keys(response).join('|') === 'state' && response.state === 'needs-attention'
+}
+
+function overlayGithubRuntime(model, response) {
+  const connector = model.connectors.find((candidate) => candidate.id === 'github')
+  if (!connector || connector.consent !== 'confirmed' || connector.implementation !== 'live') return model
+
+  const successful = githubRepositorySummary(response) !== null
+  const failed = githubReadFailed(response)
+  if (!successful && !failed) return model
+
+  const github = {
+    ...connector,
+    lifecycle: successful ? 'live' : 'needs_handoff',
+    runtime: successful ? 'live' : 'needs_attention',
+  }
+  return {
+    ...model,
+    connectors: model.connectors.map((candidate) => candidate.id === 'github' ? github : candidate),
+    artifactCards: model.artifactCards.map((card) => (
+      card.connector && card.connector.id === 'github' ? { ...card, connector: github } : card
+    )),
   }
 }
 
@@ -240,8 +271,8 @@ function githubRepositoryCard(model, response) {
 
   const readiness = connectorReadiness(model.connectors, ['github'])
   const connector = model.connectors.find((candidate) => candidate.id === 'github')
-  const readEligible = connector && connector.consent === 'confirmed'
-    && connector.implementation === 'live' && connector.runtime !== 'needs_attention'
+  const configured = connector && connector.consent === 'confirmed' && connector.implementation === 'live'
+  const readEligible = configured && connector.runtime !== 'needs_attention'
   let badge = 'Needs attention'
   let body = 'GitHub needs attention before Cordia can read repositories.'
   if (readiness === 'ready') {
@@ -255,9 +286,7 @@ function githubRepositoryCard(model, response) {
     body = 'GitHub repository access is not available on this surface yet.'
   }
   const repositories = readEligible ? githubRepositorySummary(response) : null
-  const readFailed = response && typeof response === 'object' && !Array.isArray(response)
-    && Object.keys(response).join('|') === 'state' && response.state === 'needs-attention'
-  if (readEligible && readFailed) {
+  if (configured && githubReadFailed(response)) {
     badge = 'Needs attention'
     body = 'GitHub needs attention before Cordia can read repositories. Use the setup page to review or reconnect it.'
   } else if (repositories) {
@@ -368,7 +397,7 @@ export function workspaceRendererModel(response, supplemental = {}, expectedWork
       || !expectedWorkspaceId || response.workspace.id !== expectedWorkspaceId) return null
 
   const workspace = response.workspace
-  const canonical = workspaceToRendererModel(response)
+  const canonical = overlayGithubRuntime(workspaceToRendererModel(response), supplemental.github)
   const cards = [
     missionCard(supplemental.artifacts),
     supplementalFeedStatusCard(supplemental.feedStatus),
@@ -397,7 +426,7 @@ export async function loadWorkspaceTruth(get, workspaceId, errorKind = () => 'er
   const workspace = await get(`/surveyor/workspace?id=${encodeURIComponent(id)}`)
   const entries = Object.entries(SUPPLEMENTAL_ENDPOINTS)
   const requests = entries.map(([, path]) => get(path))
-  const githubRequest = shouldReadGithub(workspace) ? get(GITHUB_REPOSITORIES_ENDPOINT) : null
+  const githubRequest = shouldReadGithub(workspace, id) ? get(GITHUB_REPOSITORIES_ENDPOINT) : null
   const githubSettled = githubRequest ? Promise.allSettled([githubRequest]) : null
   const settled = await Promise.allSettled(requests)
   const supplemental = {}
