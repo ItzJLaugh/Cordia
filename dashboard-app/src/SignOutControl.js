@@ -6,7 +6,9 @@ const FAILURE_MESSAGE = 'Cordia could not sign you out. Try again.'
 
 function clearBrowserAuthHints() {
   try { localStorage.removeItem('cordia-dev-token') } catch (_) {}
+  try { localStorage.removeItem('cordia-learner') } catch (_) {}
   try { sessionStorage.removeItem('cordia-auth') } catch (_) {}
+  try { sessionStorage.removeItem('cordia-user') } catch (_) {}
 }
 
 export default function SignOutControl() {

@@ -45,7 +45,7 @@ async function render(component) {
   }
 }
 
-test('rendered sign out submits once, clears browser auth hints, and navigates only after success', async () => {
+test('rendered sign out submits once, clears identity hints but retains device and responses, then navigates', async () => {
   const originals = new Map()
   const request = deferred()
   const requests = []
@@ -93,8 +93,10 @@ test('rendered sign out submits once, clears browser auth hints, and navigates o
       request.resolve({ ok: true, status: 200, json: async () => ({ ok: true }) })
       await request.promise
     })
-    assert.deepEqual(removedLocal, ['cordia-dev-token'])
-    assert.deepEqual(removedSession, ['cordia-auth'])
+    assert.deepEqual(removedLocal, ['cordia-dev-token', 'cordia-learner'])
+    assert.deepEqual(removedSession, ['cordia-auth', 'cordia-user'])
+    assert.equal(removedLocal.includes('cordia-device'), false)
+    assert.equal(removedLocal.includes('cordia-responses'), false)
     assert.deepEqual(navigations, ['/'])
   } finally {
     if (renderer) await act(async () => { renderer.unmount() })
