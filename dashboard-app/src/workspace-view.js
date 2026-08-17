@@ -241,14 +241,12 @@ function githubReadFailed(response) {
     && Object.keys(response).join('|') === 'state' && response.state === 'needs-attention'
 }
 
-function overlayGithubRuntime(model, response) {
+function overlayGithubRuntime(model, response, attempted) {
   const connector = model.connectors.find((candidate) => candidate.id === 'github')
   if (!connector || connector.consent !== 'confirmed' || connector.implementation !== 'live') return model
+  if (!attempted) return model
 
   const successful = githubRepositorySummary(response) !== null
-  const failed = githubReadFailed(response)
-  if (!successful && !failed) return model
-
   const github = {
     ...connector,
     lifecycle: successful ? 'live' : 'needs_handoff',
@@ -397,7 +395,9 @@ export function workspaceRendererModel(response, supplemental = {}, expectedWork
       || !expectedWorkspaceId || response.workspace.id !== expectedWorkspaceId) return null
 
   const workspace = response.workspace
-  const canonical = overlayGithubRuntime(workspaceToRendererModel(response), supplemental.github)
+  const canonical = overlayGithubRuntime(
+    workspaceToRendererModel(response), supplemental.github, Object.hasOwn(supplemental, 'github'),
+  )
   const cards = [
     missionCard(supplemental.artifacts),
     supplementalFeedStatusCard(supplemental.feedStatus),

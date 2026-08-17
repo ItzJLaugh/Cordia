@@ -626,7 +626,7 @@ test('GitHub repository artifact never renders more than the declared thirty-rep
   assert.equal(JSON.stringify(card).includes('CordiaHQ/repo-30'), false)
 })
 
-test('GitHub repository artifact treats a malformed repository payload as unavailable without rendering it', () => {
+test('GitHub repository artifact treats a malformed repository payload as needs-attention without rendering it', () => {
   const feeds = structuredClone(supplemental)
   feeds.github = {
     ok: true, capability: 'github.read_repositories', permission: 'ALLOW',
@@ -637,16 +637,22 @@ test('GitHub repository artifact treats a malformed repository payload as unavai
     }],
   }
 
-  const card = workspaceRendererModel(workspaceResponse, feeds, 'workspace-1').cards
-    .find((candidate) => candidate.kind === 'github-repositories')
-  assert.deepEqual(card, {
+  const cards = new Map(workspaceRendererModel(workspaceResponse, feeds, 'workspace-1').cards
+    .map((card) => [card.id, card]))
+  assert.deepEqual(cards.get('github-repository-surface'), {
     id: 'github-repository-surface', kind: 'github-repositories', title: 'GitHub repositories',
-    badge: 'Unavailable',
-    body: 'GitHub repository data is unavailable right now. Use the setup page to review or reconnect it.',
+    badge: 'Needs attention',
+    body: 'GitHub needs attention before Cordia can read repositories.',
     link: { href: '/github.html', label: 'Open GitHub repositories' },
   })
+  assert.deepEqual(cards.get('connector:github').items, [
+    { label: 'Consent', meta: 'confirmed' },
+    { label: 'Adapter', meta: 'live' },
+    { label: 'Lifecycle', meta: 'needs handoff' },
+    { label: 'Runtime', meta: 'needs attention' },
+  ])
   for (const value of ['3000', 'authorization', 'private', 'file:///', 'not-a-timestamp']) {
-    assert.equal(JSON.stringify(card).includes(value), false, value)
+    assert.equal(JSON.stringify([...cards.values()]).includes(value), false, value)
   }
 })
 
@@ -806,14 +812,21 @@ test('GitHub repository artifact distinguishes a true empty result from an all-m
     ok: true, capability: 'github.read_repositories', permission: 'ALLOW', repository_limit: 30,
     repositories: [],
   }
-  const emptyCard = workspaceRendererModel(workspaceResponse, { ...supplemental, github: empty }, 'workspace-1')
-    .cards.find((card) => card.id === 'github-repository-surface')
-  assert.deepEqual(emptyCard, {
+  const emptyCards = new Map(workspaceRendererModel(
+    workspaceResponse, { ...supplemental, github: empty }, 'workspace-1',
+  ).cards.map((card) => [card.id, card]))
+  assert.deepEqual(emptyCards.get('github-repository-surface'), {
     id: 'github-repository-surface', kind: 'github-repositories', title: 'GitHub repositories',
     badge: 'Live data',
     body: 'GitHub is connected. No repositories were returned for this bounded view.',
     link: { href: '/github.html', label: 'Open GitHub repositories' },
   })
+  assert.deepEqual(emptyCards.get('connector:github').items, [
+    { label: 'Consent', meta: 'confirmed' },
+    { label: 'Adapter', meta: 'live' },
+    { label: 'Lifecycle', meta: 'live' },
+    { label: 'Runtime', meta: 'live' },
+  ])
 
   const privateValue = 'ghp_private-value-at-C:\\private\\connector'
   const malformed = {
@@ -826,13 +839,19 @@ test('GitHub repository artifact distinguishes a true empty result from an all-m
   const malformedModel = workspaceRendererModel(
     workspaceResponse, { ...supplemental, github: malformed }, 'workspace-1',
   )
-  const malformedCard = malformedModel.cards.find((card) => card.id === 'github-repository-surface')
-  assert.deepEqual(malformedCard, {
+  const malformedCards = new Map(malformedModel.cards.map((card) => [card.id, card]))
+  assert.deepEqual(malformedCards.get('github-repository-surface'), {
     id: 'github-repository-surface', kind: 'github-repositories', title: 'GitHub repositories',
-    badge: 'Unavailable',
-    body: 'GitHub repository data is unavailable right now. Use the setup page to review or reconnect it.',
+    badge: 'Needs attention',
+    body: 'GitHub needs attention before Cordia can read repositories.',
     link: { href: '/github.html', label: 'Open GitHub repositories' },
   })
+  assert.deepEqual(malformedCards.get('connector:github').items, [
+    { label: 'Consent', meta: 'confirmed' },
+    { label: 'Adapter', meta: 'live' },
+    { label: 'Lifecycle', meta: 'needs handoff' },
+    { label: 'Runtime', meta: 'needs attention' },
+  ])
   assert.equal(JSON.stringify(malformedModel).includes(privateValue), false)
 })
 
