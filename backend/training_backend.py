@@ -271,9 +271,10 @@ def call_llm(system, user, max_tokens=900):
 class H(BaseHTTPRequestHandler):
     def _cors(self):
         origin = self.headers.get('Origin', '')
+        self.send_header('Vary', 'Origin')
         if origin in ALLOWED_ORIGINS:
             self.send_header('Access-Control-Allow-Origin', origin)
-            self.send_header('Vary', 'Origin')
+            self.send_header('Access-Control-Allow-Credentials', 'true')
         self.send_header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
         self.send_header('Access-Control-Allow-Headers', 'Content-Type, Authorization')
 

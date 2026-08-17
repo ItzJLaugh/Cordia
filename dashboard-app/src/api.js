@@ -97,3 +97,12 @@ export async function postSkillExecute(skillId) {
     body: JSON.stringify({ id: skillId }),
   })
 }
+
+// Sign-out is intentionally fixed to the existing cookie-backed endpoint. It
+// accepts no caller-selected path, payload, or authorization header.
+export async function postLogout() {
+  return validatedRequest('/auth/logout', {
+    method: 'POST',
+    credentials: 'include',
+  })
+}

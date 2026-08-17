@@ -99,6 +99,32 @@ test('postSkillExecute exposes only the fixed skill route with one registered-lo
   }
 })
 
+test('postLogout exposes only the fixed cookie-authenticated sign-out request', async () => {
+  const originals = new Map()
+  const requests = []
+  replaceGlobal('location', { hostname: 'cordia.example.test' }, originals)
+  replaceGlobal('localStorage', { getItem: () => 'must-not-be-sent' }, originals)
+  replaceGlobal('fetch', async (url, options) => {
+    requests.push({ url, options })
+    return { ok: true, status: 200, json: async () => ({ ok: true }) }
+  }, originals)
+
+  try {
+    const api = await import('../src/api.js?logout-contract')
+    assert.equal(typeof api.postLogout, 'function')
+    assert.deepEqual(await api.postLogout(), { ok: true })
+    assert.deepEqual(requests, [{
+      url: '/auth/logout',
+      options: {
+        method: 'POST',
+        credentials: 'include',
+      },
+    }])
+  } finally {
+    restoreGlobals(originals)
+  }
+})
+
 test('API errors distinguish signed-out, rate-limited, and offline states without leaking transport details', async () => {
   const originals = new Map()
   replaceGlobal('location', { hostname: 'cordia.example.test' }, originals)
