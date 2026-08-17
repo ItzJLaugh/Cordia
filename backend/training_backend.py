@@ -11,6 +11,7 @@ sys.path.insert(0, '/opt/cordia/backend')
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))   # dev/local runs
 import cordia_auth as auth
 import cordaie_scoring as scoring
+from runtime_paths import corpus_directory
 
 # Embedding scoring is a research-only shadow signal. It must never keep the
 # authenticated product, Surveyor, or live workspace from starting when its
@@ -81,7 +82,7 @@ ALLOWED_ORIGINS = {
     'http://localhost:5500', 'http://127.0.0.1:5500',
 }
 
-DATA = '/var/lib/cordia/corpus'
+DATA = corpus_directory()
 CORPUS = os.path.join(DATA, 'corpus.jsonl')
 RATINGS = os.path.join(DATA, 'ratings.jsonl')
 CERTS = os.path.join(DATA, 'certifications.jsonl')

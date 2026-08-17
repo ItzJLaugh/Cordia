@@ -54,6 +54,8 @@ class DailyProductionReviewWorkflowTests(unittest.TestCase):
         )
         self.assertNotIn("group: cordia-daily-production-review-main", workflow)
         self.assertIn("cancel-in-progress: true", workflow)
+        deterministic = extract_job(workflow, "deterministic")
+        self.assertIn("CORDIA_CORPUS_DIR: ${{ runner.temp }}/cordia-corpus", deterministic)
         expected_guards = {
             "deterministic": "github.ref == 'refs/heads/main'",
             "ai_review": "github.ref == 'refs/heads/main'",
