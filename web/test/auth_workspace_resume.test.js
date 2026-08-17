@@ -63,6 +63,27 @@ test('fails closed when the interface response is failed or malformed', async ()
   }
 });
 
+test('fails closed without exposing a rejected interface-read error', async () => {
+  const calls = [];
+  const destinations = [];
+  const destination = await resumeAuthenticatedWorkspace({
+    apiBase: 'https://cordia.example.test:9995',
+    fetch: async (...args) => {
+      calls.push(args);
+      throw new Error('transport details must stay private');
+    },
+    navigate: (value) => destinations.push(value),
+  });
+
+  assert.equal(destination, 'surveyor.html');
+  assert.deepEqual(destinations, ['surveyor.html']);
+  assert.deepEqual(calls, [[
+    'https://cordia.example.test:9995/surveyor/interfaces',
+    { method: 'GET', credentials: 'same-origin' },
+  ]]);
+  assert.doesNotMatch(destination, /transport details|private/i);
+});
+
 test('does not scan past an unsafe first saved workspace id', async () => {
   for (const unsafeId of [
     '/private/workspace',
