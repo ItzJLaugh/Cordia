@@ -338,6 +338,46 @@ class OpenAiProductionReviewTests(unittest.TestCase):
             with self.subTest(sensitive_value=sensitive_value):
                 self.assertNotIn(sensitive_value, observable_text)
 
+    def test_common_credential_formats_and_private_dotfiles_never_enter_context(self):
+        private_paths = (
+            ".npmrc",
+            ".netrc",
+            ".pypirc",
+            ".git-credentials",
+            ".pgpass",
+        )
+        for path in private_paths:
+            with self.subTest(path=path):
+                self.assertTrue(self.module._is_private_path(path))
+
+        sensitive_values = (
+            "npm_REVIEW_SENTINEL_1234567890",
+            "sk_live_REVIEW_SENTINEL_1234567890",
+            "eyJhbGciOiJIUzI1NiJ9.REVIEW_SENTINEL.signature",
+            "refresh-token-review-sentinel",
+            "netrc-review-sentinel",
+            "multiline-review-sentinel",
+        )
+        unsafe_source = "".join(
+            (
+                "_authToken=npm_REVIEW_SENTINEL_1234567890\n",
+                "stripe = 'sk_live_REVIEW_SENTINEL_1234567890'\n",
+                "jwt = 'eyJhbGciOiJIUzI1NiJ9.REVIEW_SENTINEL.signature'\n",
+                "refreshToken: refresh-token-review-sentinel\n",
+                "password netrc-review-sentinel\n",
+                "password = (\n",
+                "    'multiline-review-sentinel'\n",
+                ")\n",
+            )
+        )
+
+        redacted = self.module._redact_sensitive_lines(unsafe_source)
+
+        self.assertIn(self.module.REDACTION_MARKER, redacted)
+        for sensitive_value in sensitive_values:
+            with self.subTest(sensitive_value=sensitive_value):
+                self.assertNotIn(sensitive_value, redacted)
+
     def test_invalid_deterministic_schema_never_reaches_the_opener(self):
         valid = json.loads((self.artifact_dir / "deterministic.json").read_text(encoding="utf-8"))
         invalid_values = []

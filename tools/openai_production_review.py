@@ -41,7 +41,10 @@ SHA_PATTERN = re.compile(r"[0-9a-f]{40}")
 SAFE_PATH_PATTERN = re.compile(r"[A-Za-z0-9_.-]+(?:/[A-Za-z0-9_.-]+)*")
 TOKEN_PATTERN = re.compile(
     r"(?:github_pat_|gh[pousr]_[A-Za-z0-9_]+|sk-[A-Za-z0-9_-]{8,}|"
-    r"xox[baprs]-|xapp-|AKIA[0-9A-Z]{16}|\b(?:Bearer|Basic)\s+[A-Za-z0-9._~+/=-]+)",
+    r"npm_[A-Za-z0-9_-]{8,}|(?:sk|rk)_(?:live|test)_[A-Za-z0-9_-]{8,}|"
+    r"eyJ[A-Za-z0-9_-]{6,}\.[A-Za-z0-9_-]{6,}\.[A-Za-z0-9_-]{6,}|"
+    r"xox[baprs]-|xapp-|AKIA[0-9A-Z]{16}|AIza[0-9A-Za-z_-]{20,}|"
+    r"ya29\.[A-Za-z0-9_-]{8,}|\b(?:Bearer|Basic)\s+[A-Za-z0-9._~+/=-]+)",
     re.IGNORECASE,
 )
 EMAIL_PATTERN = re.compile(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}")
@@ -50,10 +53,18 @@ LOCAL_PATH_PATTERN = re.compile(
     re.IGNORECASE,
 )
 SECRET_ASSIGNMENT_PATTERN = re.compile(
-    r"(?:^|[^A-Za-z0-9])[\"']?(?:[A-Za-z0-9]+[_-])*(?:api[_-]?key|access[_-]?key|"
-    r"secret|token|password|passwd|private[_-]?key|client[_-]?secret|credential|"
-    r"authorization|database[_-]?url|connection[_-]?string|dsn|cookie|session)\b[\"']?\s*(?:=|:)",
+    r"(?:^|[^A-Za-z0-9])[\"']?(?:api[_-]?key|access[_-]?(?:key|token)|"
+    r"refresh[_-]?token|auth(?:entication|orization)?[_-]?token|secret|token|password|"
+    r"passwd|private[_-]?key|client[_-]?secret|credential|authorization|database[_-]?url|"
+    r"connection[_-]?string|dsn|cookie|session)[\"']?\s*(?:=|:|\s+(?=\S))",
     re.IGNORECASE,
+)
+MULTILINE_SECRET_ASSIGNMENT_PATTERN = re.compile(
+    r"(?:^|[^A-Za-z0-9])[\"']?(?:api[_-]?key|access[_-]?(?:key|token)|"
+    r"refresh[_-]?token|auth(?:entication|orization)?[_-]?token|secret|token|password|"
+    r"passwd|private[_-]?key|client[_-]?secret|credential|authorization|database[_-]?url|"
+    r"connection[_-]?string|dsn|cookie|session)[\"']?\s*(?:=|:)\s*[([{]?\s*(?:\r?\n|\r)",
+    re.IGNORECASE | re.MULTILINE,
 )
 PRIVATE_KEY_BEGIN_PATTERN = re.compile(r"-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----", re.IGNORECASE)
 PRIVATE_KEY_END_PATTERN = re.compile(r"-----END [A-Z0-9 ]*PRIVATE KEY-----", re.IGNORECASE)
@@ -69,6 +80,18 @@ SENSITIVE_DIRECTORY_NAMES = {
     "credentials",
     "private",
     "secrets",
+}
+SENSITIVE_FILE_NAMES = {
+    ".git-credentials",
+    ".htpasswd",
+    ".netrc",
+    ".npmrc",
+    ".pgpass",
+    ".pypirc",
+    "id_dsa",
+    "id_ecdsa",
+    "id_ed25519",
+    "id_rsa",
 }
 REDACTION_MARKER = "[REDACTED SENSITIVE LINE]"
 
@@ -130,6 +153,8 @@ def _is_private_path(path: str) -> bool:
     return (
         any(part in SENSITIVE_DIRECTORY_NAMES for part in parts[:-1])
         or
+        name in SENSITIVE_FILE_NAMES
+        or
         name.startswith(".env")
         or ".env" in name
         or any(term in name for term in ("credential", "private", "secret", "key"))
@@ -139,6 +164,11 @@ def _is_private_path(path: str) -> bool:
 
 def _redact_sensitive_lines(value: str) -> str:
     """Replace unsafe source lines while preserving neighboring evidence and line count."""
+    if MULTILINE_SECRET_ASSIGNMENT_PATTERN.search(value) is not None:
+        return "".join(
+            REDACTION_MARKER + ("\n" if line.endswith("\n") else "")
+            for line in value.splitlines(keepends=True)
+        )
     redacted = []
     in_private_key = False
     for line in value.splitlines(keepends=True):
