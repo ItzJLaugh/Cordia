@@ -1,5 +1,6 @@
 import '@xyflow/react/dist/style.css'
 
+import SignOutControl from './SignOutControl.js'
 import WorkspaceView from './WorkspaceView.jsx'
 import { routeFromSearch } from './workspace-view.js'
 
@@ -24,6 +25,7 @@ export default function App() {
           <a href={route.workspaceHref} aria-current={route.view === 'workspace' ? 'page' : undefined}>Workspace</a>
           <a href={route.alidoraHref} aria-current={route.view === 'alidora' ? 'page' : undefined}>Alidora <span>Advanced</span></a>
         </nav>
+        <SignOutControl />
       </header>
       <WorkspaceView route={route} />
     </div>

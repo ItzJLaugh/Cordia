@@ -61,6 +61,35 @@ a { color: inherit; }
 .view-navigation a:hover { background: #f6f7f4; color: #0b0b0b; }
 .view-navigation a[aria-current="page"] { background: #e9eee5; color: #34402e; font-weight: 650; }
 .view-navigation a span { margin-left: 4px; color: #767676; font-size: 9px; letter-spacing: 0.07em; text-transform: uppercase; }
+.signout-control { position: relative; display: flex; align-items: center; }
+.signout-control button {
+  min-height: 32px;
+  padding: 0 11px;
+  border: 1px solid rgba(11, 11, 11, 0.12);
+  border-radius: 999px;
+  background: #ffffff;
+  color: #575757;
+  cursor: pointer;
+  font-family: "Work Sans", Inter, system-ui, sans-serif;
+  font-size: 11px;
+}
+.signout-control button:hover { background: #f6f7f4; color: #0b0b0b; }
+.signout-control button:disabled { cursor: default; opacity: 0.58; }
+.signout-control [role="alert"] {
+  position: absolute;
+  top: calc(100% + 9px);
+  right: 0;
+  width: max-content;
+  max-width: min(280px, 80vw);
+  padding: 8px 10px;
+  border: 1px solid rgba(122, 91, 46, 0.18);
+  border-radius: 9px;
+  background: #fbf6ec;
+  color: #6d4f28;
+  font-size: 11px;
+  line-height: 1.4;
+  box-shadow: 0 4px 16px rgba(11, 11, 11, 0.08);
+}
 
 .workspace-layout { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(292px, 340px) minmax(0, 1fr); }
 .assistant {
