@@ -131,12 +131,21 @@ Email-verified. Passwords hashed server-side.
   </div>
 </div>
 
+<script src="assets/workspace-navigation.js"></script>
 <script src="assets/cordia-auth-flow.js"></script>
 <script>
 /* ================= auth logic — unchanged ================= */
 const API = (location.hostname === 'localhost' || location.hostname === '127.0.0.1'
   ? 'http://127.0.0.1:9995'
   : location.protocol + '//' + location.hostname + (location.protocol === 'https:' ? '' : ':9995'));
+
+function resumeAuthenticatedWorkspace(){
+  return CordiaAuthFlow.resumeAuthenticatedWorkspace({
+    apiBase: API,
+    fetch,
+    navigate: destination => location.replace(destination),
+  });
+}
 
 /* --- session restore: the HttpOnly cookie is the session. If it exists and
      is valid, the browser sends it automatically — no token in JS at all. --- */
@@ -148,7 +157,7 @@ const API = (location.hostname === 'localhost' || location.hostname === '127.0.0
         sessionStorage.setItem('cordia-auth','1');
         sessionStorage.setItem('cordia-user', d.user.email);
         localStorage.setItem('cordia-learner', d.user.email);
-        location.replace('surveyor.html');
+        resumeAuthenticatedWorkspace();
       }
     })
     .catch(() => {});
@@ -226,7 +235,7 @@ function enterSpace(token, email){
   sessionStorage.setItem('cordia-user', email);
   localStorage.setItem('cordia-learner', email);
   loader.classList.add('show');
-  setTimeout(() => location.replace('surveyor.html'), 1400);
+  setTimeout(() => resumeAuthenticatedWorkspace(), 1400);
 }
 
 function updateForgotUI(){
