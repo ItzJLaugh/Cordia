@@ -4,6 +4,7 @@ import { apiErrorKind, getApi, postRun, postSkillExecute } from './api.js'
 import ArtifactCard from './ArtifactCard.jsx'
 import DefinitionGraph from './DefinitionGraph.jsx'
 import { alidoraMapToFlow } from './graph.js'
+import IntentCorrectionControl from './IntentCorrectionControl.js'
 import {
   assistantReplyModel,
   assistantTurnFailed,
@@ -23,7 +24,10 @@ function loadNotice(state, subject) {
   return `Unable to load ${subject}. Refresh to try again.`
 }
 
-function Assistant({ workspaceId, enabled, readOnly, state, setState, nextId, operationRef }) {
+export function Assistant({
+  workspaceId, enabled, readOnly, state, setState, nextId, operationRef,
+  externalBusy = false, onCorrectionBusyChange = () => {}, refresh = async () => {},
+}) {
   const inputRef = useRef(null)
   const scrollRef = useRef(null)
   const aliveRef = useRef(true)
@@ -50,7 +54,8 @@ function Assistant({ workspaceId, enabled, readOnly, state, setState, nextId, op
   }
 
   function send() {
-    if (!enabled || readOnly || state.busy || operationRef.current || !state.draft.trim()) return
+    if (!enabled || readOnly || state.busy || externalBusy
+        || operationRef.current || !state.draft.trim()) return
     const started = assistantTurnStarted(state, nextId())
     if (!started.pending) return
     operationRef.current = 'assistant'
@@ -84,7 +89,7 @@ function Assistant({ workspaceId, enabled, readOnly, state, setState, nextId, op
     send()
   }
 
-  const disabled = !enabled || readOnly || state.busy
+  const disabled = !enabled || readOnly || state.busy || externalBusy
   return (
     <aside className="assistant" aria-labelledby="assistant-title">
       <div className="assistant-heading">
@@ -128,6 +133,14 @@ function Assistant({ workspaceId, enabled, readOnly, state, setState, nextId, op
           Send
         </button>
       </form>
+      <IntentCorrectionControl
+        messages={state.transcript}
+        readOnly={readOnly}
+        disabled={disabled}
+        operation={operationRef}
+        onBusyChange={onCorrectionBusyChange}
+        refresh={refresh}
+      />
     </aside>
   )
 }
@@ -235,6 +248,7 @@ function AlidoraCanvas({ workspaceId }) {
 export default function WorkspaceView({ route }) {
   const [workspaceReady, setWorkspaceReady] = useState(false)
   const [refreshRevision, setRefreshRevision] = useState(0)
+  const [correctionBusy, setCorrectionBusy] = useState(false)
   const [assistantState, setAssistantState] = useState({
     transcript: [], draft: '', note: '', busy: false, pending: null,
   })
@@ -266,6 +280,9 @@ export default function WorkspaceView({ route }) {
         setState={setAssistantState}
         nextId={() => ++idRef.current}
         operationRef={operationRef}
+        externalBusy={correctionBusy}
+        onCorrectionBusyChange={setCorrectionBusy}
+        refresh={refreshCoordinatorRef.current.refresh}
       />
       <div className="workspace-surface">
         {isAlidora
@@ -279,7 +296,7 @@ export default function WorkspaceView({ route }) {
               onSkillAction={skillControllerRef.current.run}
               skillBusyId={assistantState.pending && assistantState.pending.kind === 'skill'
                 ? assistantState.pending.skillId : ''}
-              actionsDisabled={assistantState.busy}
+              actionsDisabled={assistantState.busy || correctionBusy}
             />
           )}
       </div>

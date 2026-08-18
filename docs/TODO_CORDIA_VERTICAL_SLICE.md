@@ -239,7 +239,9 @@ Acceptance criteria:
 
 # Phase 10 — Intent-Miss Loop
 
-- [ ] Add UI path for user to say an output missed intent.
+**Current evidence boundary:** After a real Cordia response, the primary React Workspace exposes a bounded correction form that posts one allow-listed category, correction, and future effect to the existing authenticated intent-miss endpoint. A successful write refreshes that same workspace's canonical artifact feeds; cancellation discards the browser draft, Alidora remains read-only, and failures retain the draft with bounded recovery copy. Dashboard API/component tests and the existing backend intent-miss/artifact tests prove the individual UI → persistence → recompilation links. A single automated test spanning a live authenticated correction through a subsequent model response is still pending, so the acceptance criterion remains open.
+
+- [x] Add UI path for user to say an output missed intent.
 - [x] Capture structured miss category.
 - [x] Capture user correction.
 - [x] Append/update `intent-misses.md`.

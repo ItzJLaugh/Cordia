@@ -38,6 +38,9 @@ function buildProvenance() {
     name: 'cordia-build-provenance',
     apply: 'build',
     closeBundle() {
+      const indexPath = join(outputRoot, 'index.html')
+      const canonicalIndex = readFileSync(indexPath, 'utf8').replace(/\r\n?/g, '\n')
+      writeFileSync(indexPath, canonicalIndex, 'utf8')
       const sourceFiles = [
         'package-lock.json',
         'package.json',

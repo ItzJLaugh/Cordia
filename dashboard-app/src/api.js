@@ -4,6 +4,12 @@ const API = (location.hostname === 'localhost' || location.hostname === '127.0.0
   ? 'http://127.0.0.1:9995'
   : ''
 
+const INTENT_MISS_CATEGORIES = new Set([
+  'missing_context', 'wrong_audience', 'too_generic', 'needs_evidence',
+  'wrong_format', 'wrong_constraint', 'unsafe_to_automate',
+  'needs_human_checkpoint',
+])
+
 class ApiResponseError extends Error {
   constructor(message, kind = 'error') {
     super(message)
@@ -104,5 +110,29 @@ export async function postLogout() {
   return validatedRequest('/auth/logout', {
     method: 'POST',
     credentials: 'include',
+  })
+}
+
+// Intent correction has one fixed structured write contract. The server owns
+// profile persistence and artifact recompilation; the renderer can submit only
+// a known category and bounded user-authored guidance.
+export async function postIntentMiss(category, correction, effect) {
+  const boundedCorrection = typeof correction === 'string' ? correction.trim().slice(0, 600) : ''
+  const boundedEffect = typeof effect === 'string' ? effect.trim().slice(0, 600) : ''
+  if (!INTENT_MISS_CATEGORIES.has(category) || !boundedCorrection || !boundedEffect) {
+    throw new ApiResponseError('Invalid correction request', 'error')
+  }
+  const headers = { 'Content-Type': 'application/json' }
+  const devToken = localStorage.getItem('cordia-dev-token')
+  if (devToken) headers.Authorization = `Bearer ${devToken}`
+  return validatedRequest('/surveyor/intent-miss', {
+    method: 'POST',
+    headers,
+    credentials: 'include',
+    body: JSON.stringify({
+      category,
+      correction: boundedCorrection,
+      effect: boundedEffect,
+    }),
   })
 }
