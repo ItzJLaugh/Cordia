@@ -290,7 +290,7 @@ Acceptance criteria:
 - [ ] Ensure agent cannot read/store password values.
 - [ ] Pause before sensitive token generation if the flow requires human confirmation.
 - [ ] Capture generated token directly into encrypted secret storage.
-- [ ] Return `secret_ref`/status to the agent instead of raw secret.
+- [x] Return `secret_ref`/status to the agent instead of raw secret for the current GitHub token route.
 - [ ] Validate connector using direct API/curl after setup.
 - [ ] Prefer direct runtime after browser-assisted setup.
 - [ ] Destroy/expire setup browser session after completion.
@@ -303,14 +303,14 @@ Acceptance criteria:
 
 # Phase 12 — Secret Handling
 
-**Current evidence boundary:** The vault and opaque reference contracts have direct tests. The complete token-store-to-agent-execution path does not, so broader prompt, network, logging, and runtime acceptance claims remain open.
+**Current evidence boundary:** The vault and opaque reference contracts have direct tests. A route-level sentinel test now proves the existing authenticated GitHub setup-to-ALLOW-skill path: validation receives the raw token only at the adapter boundary, persistence receives only ciphertext plus a bounded opaque reference, unconfirmed state stops before lookup, execution resolves only inside the allowed capability closure, and responses/audits exclude token, ciphertext, provider rows, and local paths. A malformed stored reference fails closed before decryption or adapter use. The test uses a deterministic adapter double, so a live external GitHub request, arbitrary token-bearing network restrictions, and broad claims about every future prompt remain open.
 
 - [x] Add encrypted secret store/vault abstraction.
 - [ ] Never inject raw secrets into normal LLM prompt context.
 - [x] Use `secret_ref` handles.
-- [ ] Resolve secrets only at execution boundary.
+- [x] Resolve secrets only at the current GitHub ALLOW execution boundary.
 - [ ] Restrict arbitrary token-bearing network calls.
-- [ ] Log secret usage without logging secret values.
+- [x] Log current GitHub secret usage without logging secret values.
 
 Acceptance criteria:
 

@@ -215,6 +215,10 @@ The first durable connector capability is intentionally narrow:
   metadata records after the user stores a GitHub token in the encrypted vault.
 - It runs only through the typed capability gateway after the shared permission
   check allows it; raw credentials never enter prompts or normal UI responses.
+- The authenticated setup-to-skill route is regression-tested with a sentinel:
+  setup persists only an opaque reference and ciphertext, execution resolves the
+  token only inside the allowed capability closure, and the usage audit retains
+  only the bounded connector, reference, and capability identifiers.
 - GitHub writes remain approval-required and are not implemented. Other common
   services are listed as planned connector manifests, not live adapters.
 - The workspace renders canonical connector lifecycle (`proposed`, `needs

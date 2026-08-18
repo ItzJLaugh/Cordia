@@ -48,6 +48,7 @@ except BaseException as _surv_err:            # noqa: BLE001 - must never be fat
           f'exam and auth unaffected', file=sys.stderr)
 
 PORT = 9995
+_GITHUB_SECRET_REF = re.compile(r'^secret_github_[0-9a-f]{16}$')
 
 
 # Bind address. Defaults to loopback: these services have no authentication on
@@ -684,8 +685,17 @@ class H(BaseHTTPRequestHandler):
             if not stored:
                 raise surveyor.vault.VaultUnavailable(
                     'Connect GitHub with a token before Cordia can read repositories.')
-            _secret_ref, ciphertext = stored
+            secret_ref, ciphertext = stored
+            if (not isinstance(secret_ref, str)
+                    or not _GITHUB_SECRET_REF.fullmatch(secret_ref)):
+                raise surveyor.vault.VaultUnavailable(
+                    'Stored GitHub connector reference is invalid.')
             token = surveyor.vault.from_environment().open(ciphertext)
+            surveyor.store.log_event(email, 'connector_secret_used', {
+                'connector': 'github',
+                'secret_ref': secret_ref,
+                'capability': 'github.read_repositories',
+            })
             return surveyor.github_connector.list_repositories(token)
 
         return surveyor.capability_gateway.execute(
