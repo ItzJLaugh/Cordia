@@ -125,6 +125,50 @@ test('postLogout exposes only the fixed cookie-authenticated sign-out request', 
   }
 })
 
+test('postIntentMiss exposes one fixed bounded structured correction request', async () => {
+  const originals = new Map()
+  const requests = []
+  replaceGlobal('location', { hostname: 'cordia.example.test' }, originals)
+  replaceGlobal('localStorage', { getItem: () => 'development-token' }, originals)
+  replaceGlobal('fetch', async (url, options) => {
+    requests.push({ url, options })
+    return { ok: true, status: 200, json: async () => ({ ok: true, artifacts: { private: 'ignored' } }) }
+  }, originals)
+
+  try {
+    const api = await import('../src/api.js?intent-miss-contract')
+    assert.equal(typeof api.postIntentMiss, 'function')
+    assert.equal((await api.postIntentMiss(
+      'wrong_audience', `  ${'c'.repeat(700)}  `, `  ${'e'.repeat(700)}  `,
+    )).ok, true)
+    assert.deepEqual(requests, [{
+      url: '/surveyor/intent-miss',
+      options: {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: 'Bearer development-token',
+        },
+        credentials: 'include',
+        body: JSON.stringify({
+          category: 'wrong_audience',
+          correction: 'c'.repeat(600),
+          effect: 'e'.repeat(600),
+        }),
+      },
+    }])
+
+    for (const values of [
+      ['invented', 'Use evidence.', 'Cite evidence.'],
+      ['needs_evidence', '', 'Cite evidence.'],
+      ['needs_evidence', 'Use evidence.', ''],
+    ]) await assert.rejects(api.postIntentMiss(...values), /Invalid correction request/)
+    assert.equal(requests.length, 1)
+  } finally {
+    restoreGlobals(originals)
+  }
+})
+
 test('API errors distinguish signed-out, rate-limited, and offline states without leaking transport details', async () => {
   const originals = new Map()
   replaceGlobal('location', { hostname: 'cordia.example.test' }, originals)

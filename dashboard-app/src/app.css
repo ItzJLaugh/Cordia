@@ -93,6 +93,7 @@ a { color: inherit; }
 
 .workspace-layout { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(292px, 340px) minmax(0, 1fr); }
 .assistant {
+  position: relative;
   min-height: 0;
   display: flex;
   flex-direction: column;
@@ -167,6 +168,73 @@ a { color: inherit; }
   font-weight: 600;
 }
 .composer button:disabled { opacity: 0.42; cursor: default; }
+
+.intent-correction { display: grid; gap: 7px; margin-top: 7px; }
+.intent-correction-toggle {
+  justify-self: start;
+  padding: 3px 2px;
+  border: 0;
+  background: transparent;
+  color: #596651;
+  cursor: pointer;
+  font-family: "Work Sans", Inter, system-ui, sans-serif;
+  font-size: 10.5px;
+  font-weight: 600;
+}
+.intent-correction-toggle:hover { color: #263121; text-decoration: underline; text-underline-offset: 3px; }
+.intent-correction-toggle:disabled { cursor: default; opacity: 0.45; text-decoration: none; }
+.intent-correction-form {
+  position: absolute;
+  z-index: 4;
+  right: 16px;
+  bottom: 15px;
+  left: 16px;
+  max-height: calc(100% - 34px);
+  overflow-y: auto;
+  display: grid;
+  gap: 11px;
+  padding: 16px;
+  border: 1px solid rgba(11, 11, 11, 0.12);
+  border-radius: 15px;
+  background: #ffffff;
+  box-shadow: 0 16px 48px rgba(11, 11, 11, 0.18);
+}
+.intent-correction-form p { margin: 0; color: #4f4f4f; font-size: 12px; line-height: 1.5; }
+.intent-correction-form label { display: grid; gap: 6px; color: #303030; font-size: 11px; font-weight: 600; }
+.intent-correction-form select,
+.intent-correction-form textarea {
+  width: 100%;
+  padding: 9px 10px;
+  border: 1px solid rgba(11, 11, 11, 0.15);
+  border-radius: 9px;
+  background: #ffffff;
+  color: #0b0b0b;
+  font: inherit;
+  font-weight: 400;
+  line-height: 1.45;
+}
+.intent-correction-form textarea { min-height: 68px; resize: vertical; }
+.intent-correction-form select:disabled,
+.intent-correction-form textarea:disabled { background: #f6f7f4; color: #767676; }
+.intent-correction-actions { display: flex; justify-content: flex-end; gap: 8px; }
+.intent-correction-actions button {
+  min-height: 32px;
+  padding: 0 11px;
+  border: 1px solid rgba(11, 11, 11, 0.12);
+  border-radius: 9px;
+  background: #ffffff;
+  color: #394533;
+  cursor: pointer;
+  font-family: "Work Sans", Inter, system-ui, sans-serif;
+  font-size: 10.5px;
+  font-weight: 650;
+}
+.intent-correction-actions button[type="submit"] { border-color: #4a5a42; background: #4a5a42; color: #ffffff; }
+.intent-correction-actions button:disabled { cursor: default; opacity: 0.45; }
+.intent-correction [role="status"],
+.intent-correction [role="alert"] { margin: 0; font-size: 10.5px; line-height: 1.45; }
+.intent-correction [role="status"] { color: #4a5a42; }
+.intent-correction [role="alert"] { color: #8c3b31; }
 
 .workspace-surface { min-width: 0; min-height: 0; overflow: hidden; background: #f6f7f4; }
 .artifact-canvas { height: 100%; overflow-y: auto; padding: clamp(20px, 3.1vw, 42px); }

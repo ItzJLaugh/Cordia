@@ -11,6 +11,7 @@
       "src/ArtifactItems.js",
       "src/ArtifactLink.js",
       "src/DefinitionGraph.jsx",
+      "src/IntentCorrectionControl.js",
       "src/SignOutControl.js",
       "src/SkillAction.js",
       "src/WorkspaceView.jsx",
@@ -25,20 +26,20 @@
       "src/workspace.js",
       "vite.config.js"
     ],
-    "sha256": "d3616f0a1b08255416a43c42eaeb71d239a6f8ab2198c07d2854f48a85d769f4"
+    "sha256": "1f55b98733f236ff85f737a6de7663f9b9b5fc8b943f46d21d563ed67580b4cd"
   },
   "outputs": [
     {
-      "path": "assets/index-BeBmvW98.css",
-      "sha256": "e2611435e53be499b2c91d6dc0f93bd4afcad8d59358fe43a2019c339282c84f"
+      "path": "assets/index-5bd3uUeB.js",
+      "sha256": "3f62e453128950836f25cd8e21c160eb645e28477631d298c7428c2d24cca7be"
     },
     {
-      "path": "assets/index-DxjWyWdL.js",
-      "sha256": "7edca39e13d7e873c8ea79e2f9673fd5596e6e832a454e1bc62464aaeb92225e"
+      "path": "assets/index-Dj67Dv6E.css",
+      "sha256": "ba39cb2dc578c5a67f890169b5a55a6766b0341a9205ecd91ea3ca7f70576c25"
     },
     {
       "path": "index.html",
-      "sha256": "0034a2f971343e88955a566ff76476f4c1d0de30168021065bc5d8a00ed5c511"
+      "sha256": "890eff090bd43775bd6146d797f1e356b8976846e7cf35a78b10875b7e6ac94f"
     }
   ]
 }
