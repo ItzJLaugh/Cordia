@@ -239,13 +239,14 @@ Acceptance criteria:
 
 # Phase 10 — Intent-Miss Loop
 
-**Current evidence boundary:** After a real Cordia response, the primary React Workspace exposes a bounded correction form that posts one allow-listed category, correction, and future effect to the existing authenticated intent-miss endpoint. A successful write refreshes that same workspace's canonical artifact feeds; cancellation discards the browser draft, Alidora remains read-only, and failures retain the draft with bounded recovery copy. Dashboard API/component tests and the existing backend intent-miss/artifact tests prove the individual UI → persistence → recompilation links. A single automated test spanning a live authenticated correction through a subsequent model response is still pending, so the acceptance criterion remains open.
+**Current evidence boundary:** After a real Cordia response, the primary React Workspace exposes a bounded correction form that posts one allow-listed category, correction, and future effect to the existing authenticated intent-miss endpoint. A successful write refreshes that same workspace's canonical artifact feeds; cancellation discards the browser draft, Alidora remains read-only, and failures retain the draft with bounded recovery copy. Dashboard API/component tests cover that UI boundary. A route-level backend integration test now proves one authenticated workspace run, correction, recompilation, and subsequent run: the saved effect enters the next runtime prompt and the deterministic Limited-mode response acknowledges that saved guidance without echoing the raw correction. This proves propagation and acknowledgement, not substantive model compliance with the requested effect.
 
 - [x] Add UI path for user to say an output missed intent.
 - [x] Capture structured miss category.
 - [x] Capture user correction.
 - [x] Append/update `intent-misses.md`.
 - [x] Recompile relevant `fde-tasks.md` guidance.
+- [x] Make Limited mode visibly acknowledge compiled saved guidance without echoing raw correction text.
 - [ ] Keep MVP weighting simple and inspectable.
 
 Possible miss categories:
