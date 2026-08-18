@@ -2,3 +2,12 @@
 psycopg2-binary>=2.9,<3
 # Required by surveyor.vault for authenticated encryption of per-user connector secrets.
 cryptography>=44,<46
+
+# CPU-only research shadow scorer. Rubric scoring remains authoritative if this
+# optional runtime fails, but production installs it so semantic shadow scoring
+# is available without pulling CUDA libraries onto the VPS.
+--extra-index-url https://download.pytorch.org/whl/cpu
+torch==2.13.0+cpu
+numpy>=2.2,<3
+sentence-transformers>=6,<7
+faiss-cpu>=1.15,<2
