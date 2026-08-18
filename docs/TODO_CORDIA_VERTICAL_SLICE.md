@@ -1,6 +1,6 @@
 # Cordia Vertical Slice TODO
 
-Last updated: 2026-08-16
+Last updated: 2026-08-18
 
 This checklist is the implementation companion to:
 
@@ -18,7 +18,7 @@ The goal is not to implement every connector or every long-term feature at once.
 
 Compact evidence index:
 
-- Surveyor artifacts and assessment contract: `backend/surveyor/artifacts.py`, `backend/surveyor/pipeline.py`, `backend/tests/test_artifacts.py`, `backend/tests/test_intent_misses.py`.
+- Surveyor artifacts and bounded operator-profile contract: `backend/surveyor/artifacts.py`, `backend/surveyor/operator_profile.py`, `backend/surveyor/pipeline.py`, `backend/tests/test_artifacts.py`, `backend/tests/test_operator_profile.py`, and `web/test/operator_profile.test.js`.
 - Canonical workspace and DashView: `backend/surveyor/workspace_state.py`, `dashboard-app/src/workspace-view.js`, `backend/tests/test_workspace_state.py`, `dashboard-app/test/workspace*.test.js`.
 - Alidora read-only projection: `backend/surveyor/alidora.py`, `dashboard-app/src/graph.js`, `backend/tests/test_alidora.py`, `dashboard-app/src/graph.test.js`.
 - Connector, skill, and permission boundaries: `backend/surveyor/{capability_gateway,skills,permissions,github_connector}.py` and their matching `backend/tests/test_*.py` files.
@@ -82,19 +82,26 @@ Acceptance criteria:
 
 # Phase 3 — Assessment View
 
-- [ ] Build Surveyor assessment page from artifact/profile data.
-- [ ] Remove overall score/percentile/pass-fail framing.
-- [ ] Show “What Cordia understands.”
-- [ ] Show profile signals using descriptive levels such as High / Medium / Emerging.
-- [ ] Show evidence snippets.
-- [ ] Show inferred/confirmed applications/connectors.
-- [ ] Show what Cordia is still learning.
-- [ ] Allow user to reopen Surveyor and refine the profile.
-- [ ] Provide a clear next action to build/open the workspace.
+- [x] Build Surveyor assessment page from artifact/profile data.
+- [x] Remove overall score/percentile/pass-fail framing.
+- [x] Show “What Cordia understands.”
+- [x] Show profile signals using descriptive levels such as High / Medium / Emerging.
+- [x] Show evidence snippets.
+- [x] Show inferred/confirmed applications/connectors.
+- [x] Show what Cordia is still learning.
+- [x] Allow user to reopen Surveyor and refine the profile.
+- [x] Provide a clear next action to build/open the workspace.
 
 Acceptance criteria:
 
-- [ ] The assessment feels like an inspectable operator profile, not a test result.
+- [x] The assessment feels like an inspectable operator profile, not a test result.
+
+Evidence boundary: `/surveyor/operator-profile` is an authenticated, owner-scoped,
+read-only projection of existing Surveyor profile, connector, and workspace state.
+The browser receives bounded descriptive evidence and fixed navigation only; it
+does not receive scoring criteria, numeric confidence/completeness, raw artifacts,
+workspace definitions, secrets, or local paths. Public signed-in deployment
+verification remains a release check rather than source-level evidence.
 
 ---
 

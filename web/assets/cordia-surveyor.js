@@ -309,7 +309,7 @@
         }
         (r.data.messages || []).forEach(function (m) { bubble(m.role, m.content, m.created); });
         chips(r.data.key, r.data.options);
-        if (r.data.profile && (r.data.profile.percent_complete || 0) >= 100) doneState();
+        if (r.data.profile && r.data.profile.complete === true) doneState();
         inputEl.focus();
       });
       api('/surveyor/profile').then(function (r) { setLive(r.data && r.data.llm); });
