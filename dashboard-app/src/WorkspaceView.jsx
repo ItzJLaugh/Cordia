@@ -4,6 +4,7 @@ import { apiErrorKind, getApi, postRun, postSkillExecute } from './api.js'
 import ArtifactCard from './ArtifactCard.jsx'
 import DefinitionGraph from './DefinitionGraph.jsx'
 import { alidoraMapToFlow } from './graph.js'
+import InspectionDock from './InspectionDock.js'
 import IntentCorrectionControl from './IntentCorrectionControl.js'
 import {
   assistantReplyModel,
@@ -11,6 +12,7 @@ import {
   assistantTurnStarted,
   createSkillInteractionController,
   createWorkspaceRefreshCoordinator,
+  inspectionDockModel,
   isAssistantSendKey,
   loadWorkspaceTruth,
   workspaceRendererModel,
@@ -179,31 +181,34 @@ function WorkspaceCanvas({
   }
 
   return (
-    <section className="artifact-canvas" aria-labelledby="workspace-heading">
-      <header className="canvas-heading">
-        <div>
-          <span className="eyebrow">Workspace</span>
-          <h1 id="workspace-heading">{state.model.title}</h1>
-          {state.model.description && <p>{state.model.description}</p>}
-        </div>
-        <span className="view-mode">DashView</span>
-      </header>
-      {state.model.cards.length ? (
-        <div className="artifact-grid">
-          {state.model.cards.map((card) => (
-            <ArtifactCard
-              key={card.id}
-              card={card}
-              actionBusy={card.action && card.action.id === skillBusyId}
-              actionsDisabled={actionsDisabled}
-              onAction={onSkillAction}
-            />
-          ))}
-        </div>
-      ) : (
-        <div className="canvas-empty">This workspace is ready for Cordia to shape its first artifacts.</div>
-      )}
-    </section>
+    <div className="workspace-primary">
+      <section className="artifact-canvas" aria-labelledby="workspace-heading">
+        <header className="canvas-heading">
+          <div>
+            <span className="eyebrow">Workspace</span>
+            <h1 id="workspace-heading">{state.model.title}</h1>
+            {state.model.description && <p>{state.model.description}</p>}
+          </div>
+          <span className="view-mode">DashView</span>
+        </header>
+        {state.model.cards.length ? (
+          <div className="artifact-grid">
+            {state.model.cards.map((card) => (
+              <ArtifactCard
+                key={card.id}
+                card={card}
+                actionBusy={card.action && card.action.id === skillBusyId}
+                actionsDisabled={actionsDisabled}
+                onAction={onSkillAction}
+              />
+            ))}
+          </div>
+        ) : (
+          <div className="canvas-empty">This workspace is ready for Cordia to shape its first artifacts.</div>
+        )}
+      </section>
+      <InspectionDock model={inspectionDockModel(state.model)} />
+    </div>
   )
 }
 

@@ -134,8 +134,8 @@ Acceptance criteria:
 - [ ] Use actual Cordia logo/wordmark assets available in the repository.
 - [ ] Create full-height Cordia Agent panel on the left.
 - [ ] Create visual workspace surface on the right.
-- [ ] Create bottom inspection dock.
-- [ ] Dock tabs: Connected / Skills / Access / Context / Automations / Activity.
+- [x] Create bottom inspection dock.
+- [x] Dock tabs: Connected / Skills / Access / Context / Automations / Activity.
 - [ ] Avoid node-graph edges between application windows.
 - [x] Render windows from canonical workspace state.
 - [ ] Support window move/resize if already aligned with existing contracts.
@@ -145,6 +145,13 @@ Acceptance criteria:
 
 - [ ] User can see Cordia Agent and workspace simultaneously.
 - [ ] Workspace changes appear immediately after state mutations.
+
+Evidence boundary: the primary React Workspace has a six-tab, read-only inspection
+dock derived from the existing renderer-safe workspace projection. Existing artifact
+cards remain the only skill-action surface, and Alidora does not render the dock.
+Automations reports a configured-empty state only for canonical `automations: []`;
+unknown and non-empty shapes remain unavailable until a typed automation contract
+exists. Public deployment and interactive browser verification remain release checks.
 
 ---
 
