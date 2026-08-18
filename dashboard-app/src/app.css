@@ -237,7 +237,8 @@ a { color: inherit; }
 .intent-correction [role="alert"] { color: #8c3b31; }
 
 .workspace-surface { min-width: 0; min-height: 0; overflow: hidden; background: #f6f7f4; }
-.artifact-canvas { height: 100%; overflow-y: auto; padding: clamp(20px, 3.1vw, 42px); }
+.workspace-primary { height: 100%; min-height: 0; display: grid; grid-template-rows: minmax(0, 1fr) auto; }
+.artifact-canvas { min-height: 0; overflow-y: auto; padding: clamp(20px, 3.1vw, 42px); }
 .canvas-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 24px; max-width: 1260px; margin: 0 auto 24px; }
 .eyebrow, .artifact-kind {
   display: block;
@@ -296,6 +297,56 @@ a { color: inherit; }
   font-size: 11px;
   line-height: 1.45;
 }
+.inspection-dock {
+  width: calc(100% - clamp(40px, 6.2vw, 84px));
+  max-width: 1260px;
+  margin: 0 auto clamp(20px, 3.1vw, 42px);
+  overflow: hidden;
+  border: 1px solid rgba(11, 11, 11, 0.09);
+  border-radius: 15px;
+  background: #ffffff;
+  box-shadow: 0 1px 2px rgba(11, 11, 11, 0.035);
+}
+.inspection-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 15px 17px 12px;
+}
+.inspection-heading h2 { margin: 4px 0 0; font-size: 14px; font-weight: 650; }
+.inspection-mode { color: #6e6e6e; font-size: 10px; letter-spacing: 0.06em; text-transform: uppercase; }
+.inspection-tabs {
+  display: flex;
+  gap: 2px;
+  overflow-x: auto;
+  padding: 0 12px;
+  border-top: 1px solid rgba(11, 11, 11, 0.065);
+  border-bottom: 1px solid rgba(11, 11, 11, 0.065);
+}
+.inspection-tabs button {
+  min-height: 40px;
+  flex: 0 0 auto;
+  padding: 0 10px;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  background: transparent;
+  color: #6e6e6e;
+  cursor: pointer;
+  font-family: "Work Sans", Inter, system-ui, sans-serif;
+  font-size: 11px;
+}
+.inspection-tabs button:hover { color: #263121; }
+.inspection-tabs button[aria-selected="true"] { border-bottom-color: #4a5a42; color: #34402e; font-weight: 650; }
+.inspection-panel { min-height: 94px; max-height: 154px; overflow-y: auto; padding: 4px 17px 12px; }
+.inspection-rows { display: grid; gap: 0; margin: 0; padding: 0; list-style: none; }
+.inspection-rows li { display: flex; align-items: baseline; justify-content: space-between; gap: 18px; padding: 11px 0; border-top: 1px solid rgba(11, 11, 11, 0.055); }
+.inspection-rows li:first-child { border-top: 0; }
+.inspection-row-main { min-width: 0; display: grid; gap: 3px; }
+.inspection-row-label { color: #202020; font-size: 12px; font-weight: 600; overflow-wrap: anywhere; }
+.inspection-row-detail { color: #6e6e6e; font-size: 10.5px; line-height: 1.45; overflow-wrap: anywhere; }
+.inspection-row-status { flex: 0 0 auto; max-width: 155px; color: #596651; font-size: 10.5px; line-height: 1.4; text-align: right; overflow-wrap: anywhere; }
+.inspection-empty { margin: 0; padding: 25px 0; color: #6e6e6e; font-size: 12px; text-align: center; }
 .canvas-notice, .canvas-empty { height: 100%; min-height: 260px; display: grid; place-items: center; padding: 40px; color: #6e6e6e; font-size: 14px; line-height: 1.55; text-align: center; }
 
 .alidora-canvas { height: 100%; min-height: 0; display: flex; flex-direction: column; }
@@ -333,7 +384,9 @@ a { color: inherit; }
   .workspace-layout { display: flex; flex-direction: column; min-height: calc(100vh - 100px); }
   .assistant { height: 46vh; min-height: 370px; border-right: 0; border-bottom: 1px solid rgba(11, 11, 11, 0.08); }
   .workspace-surface { min-height: 54vh; overflow: visible; }
+  .workspace-primary { height: auto; display: block; }
   .artifact-canvas { height: auto; overflow: visible; }
+  .inspection-dock { margin-top: 18px; }
   .artifact-card.artifact-mission, .artifact-card.artifact-workflow { grid-column: span 1; }
   .alidora-canvas { height: 62vh; }
 }
@@ -343,6 +396,12 @@ a { color: inherit; }
   .canvas-heading { display: block; }
   .view-mode { display: inline-block; margin-top: 14px; }
   .artifact-canvas { padding: 20px 14px 30px; }
+  .inspection-dock { width: calc(100% - 28px); margin-bottom: 20px; }
+  .inspection-heading { padding-inline: 14px; }
+  .inspection-tabs { padding-inline: 7px; }
+  .inspection-panel { padding-inline: 14px; }
+  .inspection-rows li { align-items: flex-start; flex-direction: column; gap: 5px; }
+  .inspection-row-status { max-width: none; text-align: left; }
   .alidora-heading { padding-inline: 16px; }
 }
 

@@ -17,6 +17,34 @@ const SUPPLEMENTAL_FEED_LABELS = {
   activity: 'Recent account activity',
 }
 const GITHUB_REPOSITORIES_ENDPOINT = '/surveyor/github/repositories'
+const INSPECTION_TABS = [
+  { id: 'connected', label: 'Connected', kind: 'connector', empty: 'No connectors available' },
+  { id: 'skills', label: 'Skills', kind: 'skill', empty: 'No skills available' },
+  { id: 'access', label: 'Access', kind: 'capability', empty: 'No access decisions available' },
+  { id: 'context', label: 'Context', kind: 'context', empty: 'No context available' },
+  { id: 'automations', label: 'Automations', kind: '', empty: 'Automation details are unavailable' },
+  { id: 'activity', label: 'Activity', kind: 'activity', empty: 'No recent account activity' },
+]
+const INSPECTION_FEEDS = {
+  skills: {
+    feed: 'skills',
+    partial: 'Skill details are unavailable in this partial view',
+    unavailable: 'Skill details are unavailable',
+    'rate-limited': 'Skill details are temporarily rate limited',
+  },
+  access: {
+    feed: 'capabilities',
+    partial: 'Access details are unavailable in this partial view',
+    unavailable: 'Access details are unavailable',
+    'rate-limited': 'Access details are temporarily rate limited',
+  },
+  activity: {
+    feed: 'activity',
+    partial: 'Activity details are unavailable in this partial view',
+    unavailable: 'Activity details are unavailable',
+    'rate-limited': 'Activity details are temporarily rate limited',
+  },
+}
 
 function safeId(value) {
   return isSafeIdentifier(value) ? value : ''
@@ -31,7 +59,7 @@ function safeText(value, limit = 160) {
 
 function safeRepositoryLabel(source) {
   if (!source || typeof source !== 'object' || Array.isArray(source) || source.kind !== 'github_repository') return ''
-  return safeRepositoryName(source.label)
+  return safeRepositoryName(source.label) || safeRepositoryName(source.id)
 }
 
 function safeRepositoryName(value) {
@@ -132,7 +160,7 @@ function missionCard(response) {
   return body ? { id: 'mission', kind: 'mission', title: 'Cordia mission', body } : null
 }
 
-function supplementalFeedStatusCard(status) {
+function supplementalFeedStatus(status) {
   if (!status || typeof status !== 'object' || Array.isArray(status)
       || Object.keys(status).sort().join('|') !== 'state|unavailable'
       || !['partial', 'rate-limited'].includes(status.state)
@@ -140,14 +168,20 @@ function supplementalFeedStatusCard(status) {
       || status.unavailable.length > Object.keys(SUPPLEMENTAL_FEED_LABELS).length
       || new Set(status.unavailable).size !== status.unavailable.length
       || status.unavailable.some((feed) => !Object.hasOwn(SUPPLEMENTAL_FEED_LABELS, feed))) return null
+  return { state: status.state, unavailable: [...status.unavailable] }
+}
+
+function supplementalFeedStatusCard(status) {
+  const safeStatus = supplementalFeedStatus(status)
+  if (!safeStatus) return null
   const unavailable = Object.keys(SUPPLEMENTAL_FEED_LABELS)
-    .filter((feed) => status.unavailable.includes(feed))
+    .filter((feed) => safeStatus.unavailable.includes(feed))
   return {
     id: 'supplemental-feed-status',
     kind: 'status',
     title: 'Workspace details are incomplete',
-    badge: status.state === 'rate-limited' ? 'Rate limited' : 'Partial view',
-    body: status.state === 'rate-limited'
+    badge: safeStatus.state === 'rate-limited' ? 'Rate limited' : 'Partial view',
+    body: safeStatus.state === 'rate-limited'
       ? 'Some supplemental workspace details are temporarily rate limited. Reload later to refresh the complete view.'
       : 'Some supplemental workspace details could not be loaded. Reload to refresh the complete view.',
     items: unavailable.map((feed) => ({
@@ -165,6 +199,13 @@ function contextCard(workspace) {
     .filter(Boolean)
     .sort((left, right) => left.label.localeCompare(right.label))
   return items.length ? { id: 'context', kind: 'context', title: 'Active context', items } : null
+}
+
+function contextProjection(workspace) {
+  if (!Array.isArray(workspace.context_sources)) return { card: null, state: 'unavailable' }
+  if (workspace.context_sources.length === 0) return { card: null, state: 'empty' }
+  const card = contextCard(workspace)
+  return { card, state: card ? 'available' : 'unavailable' }
 }
 
 function workflowCard(model) {
@@ -373,6 +414,86 @@ function activityCards(response) {
   }).filter(Boolean)
 }
 
+function inspectionDetail(items) {
+  if (!Array.isArray(items)) return ''
+  const details = items.slice(0, 6).map((item) => {
+    if (!item || typeof item !== 'object' || Array.isArray(item)) return ''
+    const label = safeText(item.label, 160)
+    const meta = safeText(item.meta, 160)
+    if (!label || !meta) return ''
+    return `${label}: ${meta}`
+  }).filter(Boolean)
+  return safeText(details.join(' · '), 600)
+}
+
+function inspectionRows(cards, kind, tabId) {
+  const rows = []
+  for (const card of cards.filter((candidate) => candidate && candidate.kind === kind)) {
+    if ((kind === 'context' || kind === 'activity') && Array.isArray(card.items)) {
+      for (const item of card.items.slice(0, 20)) {
+        if (!item || typeof item !== 'object' || Array.isArray(item)) continue
+        const label = safeText(item.label, 160)
+        const status = safeText(item.meta, 160)
+        const detail = safeText(item.detail, 320)
+        if (!label) continue
+        rows.push({
+          id: `${tabId}-${String(rows.length).padStart(4, '0')}`,
+          label,
+          ...(status ? { status } : {}),
+          ...(detail ? { detail } : {}),
+        })
+      }
+      continue
+    }
+    const label = safeText(card.title, 160)
+    const status = safeText(card.badge, 160)
+    const detail = safeText(card.body, 320) || inspectionDetail(card.items)
+    if (!label) continue
+    rows.push({
+      id: `${tabId}-${String(rows.length).padStart(4, '0')}`,
+      label,
+      ...(status ? { status } : {}),
+      ...(detail ? { detail } : {}),
+    })
+  }
+  return rows
+}
+
+// This dock is a read-only projection of the already-sanitized renderer model.
+// It deliberately drops card actions, links, policy reasons, and activity payloads.
+export function inspectionDockModel(rendererModel) {
+  const model = rendererModel && typeof rendererModel === 'object' && !Array.isArray(rendererModel)
+    ? rendererModel : {}
+  const cards = Array.isArray(model.cards) ? model.cards : []
+  return {
+    tabs: INSPECTION_TABS.map((tab) => {
+      const rows = tab.kind ? inspectionRows(cards, tab.kind, tab.id) : []
+      let empty = tab.empty
+      if (tab.id === 'automations' && model.automationState === 'empty') empty = 'No automations configured'
+      if (tab.id === 'context' && model.contextState !== 'empty') empty = 'Context details are unavailable'
+      const feedCopy = INSPECTION_FEEDS[tab.id]
+      if (feedCopy) {
+        const state = model.feedStates && model.feedStates[feedCopy.feed]
+        if (state !== 'available') empty = feedCopy[state] || feedCopy.unavailable
+      }
+      return { id: tab.id, label: tab.label, rows, empty }
+    }),
+  }
+}
+
+function supplementalFeedStates(supplemental) {
+  const safeStatus = supplementalFeedStatus(supplemental.feedStatus)
+  const states = {}
+  for (const feed of ['skills', 'capabilities', 'activity']) {
+    const response = supplemental[feed]
+    const available = response && typeof response === 'object' && !Array.isArray(response)
+      && response.ok === true && Array.isArray(response[feed])
+    states[feed] = available ? 'available' : 'unavailable'
+    if (safeStatus && safeStatus.unavailable.includes(feed)) states[feed] = safeStatus.state
+  }
+  return states
+}
+
 export function routeFromSearch(search) {
   const params = new URLSearchParams(typeof search === 'string' ? search : '')
   const workspaceId = safeId(params.get('workspace'))
@@ -398,10 +519,11 @@ export function workspaceRendererModel(response, supplemental = {}, expectedWork
   const canonical = overlayGithubRuntime(
     workspaceToRendererModel(response), supplemental.github, Object.hasOwn(supplemental, 'github'),
   )
+  const context = contextProjection(workspace)
   const cards = [
     missionCard(supplemental.artifacts),
     supplementalFeedStatusCard(supplemental.feedStatus),
-    contextCard(workspace),
+    context.card,
     workflowCard(canonical),
     ...agentCards(workspace),
     ...connectorCards(canonical),
@@ -417,6 +539,10 @@ export function workspaceRendererModel(response, supplemental = {}, expectedWork
     description: safeText(workspace.description, 320),
     cards,
     viewMode: canonical.viewMode,
+    contextState: context.state,
+    feedStates: supplementalFeedStates(supplemental),
+    automationState: Array.isArray(workspace.automations) && workspace.automations.length === 0
+      ? 'empty' : 'unavailable',
   }
 }
 
