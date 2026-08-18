@@ -26,7 +26,7 @@
       "src/workspace.js",
       "vite.config.js"
     ],
-    "sha256": "c5e32a4f6a9d096de4bdc5cb0d8932c967a2cbdfc3ab2fbd3637d4f4b3005691"
+    "sha256": "1f55b98733f236ff85f737a6de7663f9b9b5fc8b943f46d21d563ed67580b4cd"
   },
   "outputs": [
     {
@@ -39,7 +39,7 @@
     },
     {
       "path": "index.html",
-      "sha256": "c77a24cd903e4bb34fc3833d5efc7757244a76714562bab247947dce2665ec87"
+      "sha256": "890eff090bd43775bd6146d797f1e356b8976846e7cf35a78b10875b7e6ac94f"
     }
   ]
 }

@@ -37,6 +37,12 @@ function buildProvenance() {
   return {
     name: 'cordia-build-provenance',
     apply: 'build',
+    transformIndexHtml: {
+      order: 'pre',
+      handler(html) {
+        return html.replace(/\r\n?/g, '\n')
+      },
+    },
     closeBundle() {
       const indexPath = join(outputRoot, 'index.html')
       const canonicalIndex = readFileSync(indexPath, 'utf8').replace(/\r\n?/g, '\n')
