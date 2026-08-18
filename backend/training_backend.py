@@ -390,6 +390,8 @@ class H(BaseHTTPRequestHandler):
             self._manifest()
         elif p == '/surveyor/profile':
             self._surv_profile()
+        elif p == '/surveyor/operator-profile':
+            self._surv_operator_profile()
         elif p == '/account/profile':
             self._account_profile()
         elif p == '/surveyor/conversation':
@@ -472,6 +474,19 @@ class H(BaseHTTPRequestHandler):
         if stop: return
         self._json({'ok': True, 'llm': surveyor.llm.status(nous_key),
                     **surveyor.pipeline.public_profile(email)})
+
+    def _surv_operator_profile(self):
+        """Read-only, least-privilege bridge from Surveyor to one workspace action."""
+        email, stop = self._surv_guard()
+        if stop: return
+        profile = surveyor.pipeline.load_profile(email)
+        connector_states = surveyor.store.get_connector_states(email)
+        interfaces = surveyor.store.list_interfaces(email)
+        self._json({
+            'ok': True,
+            'operator_profile': surveyor.operator_profile.build(
+                profile, connector_states, interfaces),
+        })
 
     def _surv_conversation(self):
         email, stop = self._surv_guard()

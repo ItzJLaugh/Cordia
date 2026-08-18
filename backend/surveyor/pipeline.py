@@ -19,7 +19,7 @@ already told us because a model returned bad JSON.
 
 from __future__ import annotations
 
-from . import (adaptation, artifacts, extractor, freeform, identifiers, intent_misses, prompts,
+from . import (adaptation, artifacts, extractor, freeform, identifiers, intent_misses, operator_profile, prompts,
                question_strategy as qs, scenarios, scorer, store, types)
 
 MAX_ANSWER = 4000
@@ -92,14 +92,14 @@ def load_profile(email) -> dict:
 
 
 def public_profile(email, profile=None) -> dict:
-    """What the browser is allowed to see: the three identifiers, progress, and
-    the next action. No scores, no evidence, no criteria names."""
+    """Positive browser profile without scores, criteria, or numeric grading."""
     p = profile or load_profile(email)
+    action = operator_profile.next_action(p)
     return {
-        "identifiers": p.get("identifiers") or [],
-        "percent_complete": int(round(100 * float(p.get("confidence") or 0.0))),
+        "identifiers": operator_profile.public_identifiers(p.get("identifiers")),
+        "complete": operator_profile.is_complete(p),
         "questions_answered": int(p.get("questions_answered") or 0),
-        "next_action": identifiers.next_best_action(p),
+        "next_action": action,
         "personalization": adaptation.effective_mode(p),
         "simple_mode_forced": bool(p.get("simple_mode_forced")),
     }

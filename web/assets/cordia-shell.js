@@ -35,7 +35,7 @@
     ['Certification', 'certification.html',
       'M24,6 C33.5,6 41.5,14 41.5,23.5 C41.5,33 33.5,41 24,41 C14.5,41 6.5,33 6.5,23.5 C6.5,14 14.5,6 24,6',
       'M16,23 L21.5,28.5 L32,18'],
-    ['Assessment', 'assessment.html',
+    ['Assessment', 'profile.html#aiSection',
       'M8,40 C8,32 8,24 8,16', 'M18,40 C18,28 18,18 18,10',
       'M28,40 C28,30 28,22 28,20', 'M38,40 C38,26 38,16 38,8'],
     ['Billing', 'pricing.html',
