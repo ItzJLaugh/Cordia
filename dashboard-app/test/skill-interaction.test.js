@@ -74,23 +74,67 @@ test('a rendered runnable skill click submits immediately once and records only 
 
     execution.resolve({
       ok: true,
-      skill: { name: 'Injected name', prompt: 'Do not render this prompt' },
-      capability: { authorization: 'Do not render this authorization' },
-      result: { token: 'Do not render this result' },
+      skill_id: 'github_repository_review',
+      result: { repository_count: 12 },
     })
     await execution.promise
     await new Promise((resolve) => setTimeout(resolve, 0))
 
     assert.deepEqual(state.transcript, [
       { id: 1, who: 'you', text: 'Run skill: Review GitHub repositories.' },
-      { id: 2, who: 'cordia', text: 'Review GitHub repositories completed.' },
+      { id: 2, who: 'cordia', text: 'Reviewed 12 GitHub repositories.' },
     ])
     assert.equal(state.busy, false)
     assert.equal(refreshes, 1)
-    assert.equal(JSON.stringify(state).includes('Injected name'), false)
-    assert.equal(JSON.stringify(state).includes('Do not render'), false)
   } finally {
     await act(async () => { renderer.unmount() })
+  }
+})
+
+test('GitHub receipt is exact-bound, pluralized, and injected results fall back safely', async () => {
+  const cases = [
+    {
+      response: { ok: true, skill_id: 'github_repository_review', result: { repository_count: 1 } },
+      expected: 'Reviewed 1 GitHub repository.',
+    },
+    {
+      response: { ok: true, skill_id: 'another_skill', result: { repository_count: 4 } },
+      expected: 'Review GitHub repositories completed.',
+    },
+    {
+      response: {
+        ok: true, skill_id: 'github_repository_review',
+        result: { repository_count: 4, token: 'private' },
+      },
+      expected: 'Review GitHub repositories completed.',
+    },
+    {
+      response: { ok: true, skill_id: 'github_repository_review', result: { repository_count: 31 } },
+      expected: 'Review GitHub repositories completed.',
+    },
+  ]
+
+  for (const [index, item] of cases.entries()) {
+    const operation = { current: '' }
+    let refreshes = 0
+    let state = { transcript: [], draft: '', note: '', busy: false, pending: null }
+    const controller = workspaceView.createSkillInteractionController({
+      executeSkill: () => Promise.resolve(item.response),
+      errorKind: () => 'error',
+      nextId: (() => { let id = index * 10; return () => ++id })(),
+      operation,
+      updateState: (update) => { state = update(state) },
+      refresh: () => { refreshes += 1 },
+    })
+    assert.equal(controller.run({
+      kind: 'skill', id: 'github_repository_review',
+      request: 'Run skill: Review GitHub repositories.', enabled: true, reason: '',
+    }), true)
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    assert.equal(state.transcript.at(-1).text, item.expected)
+    assert.equal(refreshes, 1)
+    assert.doesNotMatch(JSON.stringify(state), /private|token/i)
   }
 })
 

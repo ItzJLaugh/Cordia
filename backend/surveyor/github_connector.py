@@ -51,7 +51,7 @@ def list_repositories(token: str, transport=None) -> dict:
     if not isinstance(rows, list):
         raise ConnectorUnavailable("GitHub returned an unexpected repository response.")
     return {
-        "repositories": [_summary(row) for row in rows if isinstance(row, dict)],
+        "repositories": [_summary(row) for row in rows[:30] if isinstance(row, dict)],
         "repository_limit": 30,
     }
 

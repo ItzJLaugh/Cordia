@@ -55,6 +55,15 @@ class TestGitHubConnector(unittest.TestCase):
             "secret-value", transport=lambda _url, _headers: [])
         self.assertEqual(result, {"repositories": [], "repository_limit": 30})
 
+    def test_never_returns_more_than_the_declared_repository_limit(self):
+        rows = [{"full_name": f"owner/repository-{index}"} for index in range(35)]
+
+        result = github_connector.list_repositories(
+            "secret-value", transport=lambda _url, _headers: rows)
+
+        self.assertEqual(len(result["repositories"]), 30)
+        self.assertEqual(result["repository_limit"], 30)
+
     def test_classifies_rejected_authorization_separately_from_provider_outage(self):
         rejected = urllib.error.HTTPError('https://api.github.com', 401, 'Unauthorized', {}, None)
         with self.assertRaises(github_connector.AuthorizationRejected):
