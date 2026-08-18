@@ -16,6 +16,7 @@ CORDIA_PG_DSN=postgresql://...
 CORDIA_VAULT_KEY=<Fernet key>
 GMAIL_USER=ops@example.com
 GMAIL_APP_PASSWORD=<Gmail app password>
+HF_HOME=/var/lib/cordia/huggingface
 ```
 
 Generate a new Fernet key in the target environment only:
@@ -25,9 +26,11 @@ Generate a new Fernet key in the target environment only:
 ```
 
 Install the required backend packages, then run the non-secret readiness
-check. The historical embedding shadow scorer remains optional: its absence is
-reported in preflight but does not block the authoritative rubric scorer,
-Surveyor, or live workspace:
+check. The requirements select the official CPU-only PyTorch wheel so the
+embedding shadow scorer does not pull CUDA libraries onto the server. Its
+failure remains non-blocking: the authoritative rubric scorer, Surveyor, and
+the live workspace continue operating, and preflight reports the missing
+runtime components without exposing configuration values:
 
 ```powershell
 pip install -r requirements.txt
@@ -67,7 +70,7 @@ On a Debian/Ubuntu VPS, the safe rollout order is:
 
 ```bash
 # From the checked-out Cordia repository.
-sudo install -d -m 0750 -o cordia -g cordia /etc/cordia /var/lib/cordia
+sudo install -d -m 0750 -o cordia -g cordia /etc/cordia /var/lib/cordia /var/lib/cordia/huggingface
 sudo install -m 0640 -o root -g cordia backend/.env.surveyor.example /etc/cordia/cordia.env
 # Edit /etc/cordia/cordia.env locally on the server; replace every placeholder.
 
