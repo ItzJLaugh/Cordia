@@ -227,7 +227,7 @@ Acceptance criteria:
 
 # Phase 9 — Permissions Runtime
 
-**Current evidence boundary:** ALLOW / ASK / DENY decisions, execution gates, and checkpoint primitives have component tests. No user-accessible ASK action with protected external-write continuation or resume has been proven.
+**Current evidence boundary:** ALLOW / ASK / DENY decisions, execution gates, and checkpoint primitives have component tests. The authenticated Review GitHub repositories skill now proves one real ALLOW read through the existing skill and capability gates, returns only a bounded count receipt to chat, and triggers one canonical DashView refresh. No user-accessible ASK action with protected external-write continuation or resume has been proven.
 
 - [x] Implement ALLOW / ASK / DENY.
 - [x] Bind tool/skill execution to required permissions.
@@ -238,7 +238,7 @@ Acceptance criteria:
 
 Acceptance criteria:
 
-- [ ] One real action is allowed automatically.
+- [x] One real action is allowed automatically.
 - [ ] One real action pauses for approval.
 - [ ] One real action is denied.
 

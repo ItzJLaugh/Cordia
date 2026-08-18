@@ -711,9 +711,20 @@ class H(BaseHTTPRequestHandler):
         if not outcome.get('ok'):
             self._json(outcome, 409)
             return
+        result = outcome.get('result')
+        repositories = result.get('repositories') if isinstance(result, dict) else None
+        if skill_id != 'github_repository_review' or not isinstance(repositories, list):
+            self._json({'ok': False, 'error': 'skill returned an unexpected result'}, 502)
+            return
+        repository_count = min(30, len(repositories))
         self._surv_connector_runtime(email, 'github', 'live')
-        surveyor.store.log_event(email, 'skill_executed', {'id': skill_id})
-        self._json({'ok': True, **outcome})
+        surveyor.store.log_event(email, 'skill_executed', {
+            'id': skill_id, 'repository_count': repository_count})
+        self._json({
+            'ok': True,
+            'skill_id': skill_id,
+            'result': {'repository_count': repository_count},
+        })
 
     def _surv_connector_runtime(self, email, connector_id, runtime_status):
         """Best-effort runtime health projection into every saved workspace."""

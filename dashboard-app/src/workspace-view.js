@@ -521,12 +521,28 @@ function skillTurnStarted(state, operation) {
   }
 }
 
-function skillTurnCompleted(state, operation, replyId) {
+function githubSkillReceipt(response, expectedSkillId) {
+  if (expectedSkillId !== 'github_repository_review' || !response
+      || typeof response !== 'object' || Array.isArray(response)
+      || Object.keys(response).sort().join('|') !== 'ok|result|skill_id'
+      || response.ok !== true || response.skill_id !== expectedSkillId
+      || !response.result || typeof response.result !== 'object' || Array.isArray(response.result)
+      || Object.keys(response.result).join('|') !== 'repository_count'
+      || !Number.isInteger(response.result.repository_count)
+      || response.result.repository_count < 0 || response.result.repository_count > 30) return ''
+  const count = response.result.repository_count
+  return `Reviewed ${count} GitHub ${count === 1 ? 'repository' : 'repositories'}.`
+}
+
+function skillTurnCompleted(state, operation, replyId, response) {
   if (!state || !state.pending || state.pending.kind !== 'skill' || state.pending.id !== operation.id) return state
   const name = skillNameFromRequest(operation.action.request)
   if (!name) return state
+  const receipt = githubSkillReceipt(response, operation.action.id)
   return {
-    transcript: [...state.transcript, { id: replyId, who: 'cordia', text: `${name} completed.` }],
+    transcript: [...state.transcript, {
+      id: replyId, who: 'cordia', text: receipt || `${name} completed.`,
+    }],
     draft: state.draft, note: '', busy: false, pending: null,
   }
 }
@@ -604,7 +620,7 @@ export function createSkillInteractionController({
     try {
       const response = await executeSkill(pending.action.id)
       if (!response || response.ok !== true) throw new Error('skill execution failed')
-      updateState((state) => skillTurnCompleted(state, pending, nextId()))
+      updateState((state) => skillTurnCompleted(state, pending, nextId(), response))
     } catch (error) {
       failed = true
       updateState((state) => skillTurnFailed(state, pending, skillFailureCopy(errorKind(error))))
