@@ -190,7 +190,7 @@ CLOSING_FULL = ("That's everything. I've put together how I'd set your system up
                 "based on what you said and what you chose.")
 
 
-def next_step(profile, asked=()):
+def next_step(profile, history=None):
     """The single place that decides what the survey asks next.
 
     Returns {stage, key, text, options, intro}. Stages run in increasing order
@@ -201,23 +201,33 @@ def next_step(profile, asked=()):
     """
     from . import freeform, scenarios
 
-    sig = next_signal(profile, asked)
-    if sig and len(answered(profile)) < types.ENOUGH_SIGNALS:
+    profile = profile if isinstance(profile, dict) else {}
+    history = history if isinstance(history, list) else []
+    if types.onboarding_complete(profile):
+        return {"stage": "done", "key": None, "text": CLOSING_FULL,
+                "options": [], "intro": None}
+
+    preference_attempts = attempted_keys(history, "preferences")
+    scenario_attempts = attempted_keys(history, "scenarios")
+    freeform_attempts = attempted_keys(history, "freeform")
+
+    sig = next_signal(profile, preference_attempts)
+    if sig and len(preference_attempts) < types.ONBOARDING_PREFERENCE_LIMIT:
         return {"stage": "preferences", "key": sig, "text": QUESTIONS[sig],
                 "options": choices_for(sig), "intro": None}
 
-    scn = scenarios.next_scenario(profile.get("scenarios") or {})
-    if scn:
-        first = not (profile.get("scenarios") or {})
+    scn = scenarios.next_scenario_excluding(
+        profile.get("scenarios") or {}, scenario_attempts)
+    if scn and len(scenario_attempts) < types.ONBOARDING_SCENARIO_LIMIT:
         return {"stage": "scenarios", "key": scn["id"], "text": scn["text"],
                 "options": scenarios.choices_for(scn["id"]),
-                "intro": STAGE_INTRO["scenarios"] if first else None}
+                "intro": STAGE_INTRO["scenarios"] if not scenario_attempts else None}
 
-    key, text = freeform.next_question(profile.get("freeform") or {})
-    if key:
-        first = not (profile.get("freeform") or {})
+    key, text = freeform.next_question_excluding(
+        profile.get("freeform") or {}, freeform_attempts)
+    if key and len(freeform_attempts) < types.ONBOARDING_FREEFORM_LIMIT:
         return {"stage": "freeform", "key": key, "text": text, "options": [],
-                "intro": STAGE_INTRO["freeform"] if first else None}
+                "intro": STAGE_INTRO["freeform"] if not freeform_attempts else None}
 
     return {"stage": "done", "key": None, "text": CLOSING_FULL,
             "options": [], "intro": None}
@@ -244,3 +254,27 @@ def asked_signals(history) -> list:
                 out.append(s)
                 break
     return out
+
+
+def attempted_keys(history, stage) -> list:
+    """Known prompt keys presented for one bounded onboarding stage."""
+    from . import freeform, scenarios
+
+    known = {
+        "preferences": set(QUESTIONS),
+        "scenarios": set(scenarios.IDS),
+        "freeform": set(freeform.KEYS),
+    }.get(stage, set())
+    output = []
+    for message in history or []:
+        if not isinstance(message, dict) or message.get("role") != "assistant":
+            continue
+        meta = message.get("meta") if isinstance(message.get("meta"), dict) else {}
+        key = meta.get("key")
+        if meta.get("stage") == stage and key in known and key not in output:
+            output.append(key)
+    if stage == "preferences":
+        for key in asked_signals(history):
+            if key in known and key not in output:
+                output.append(key)
+    return output

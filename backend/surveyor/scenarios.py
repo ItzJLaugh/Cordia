@@ -122,6 +122,16 @@ def next_scenario(answered):
     return None
 
 
+def next_scenario_excluding(answers, attempted=()):
+    """Next unanswered scenario not already presented in this conversation."""
+    answers = answers if isinstance(answers, dict) else {}
+    blocked = {item for item in attempted or () if item in IDS}
+    for scenario in SCENARIOS:
+        if scenario["id"] not in blocked and not answers.get(scenario["id"]):
+            return scenario
+    return None
+
+
 # ---------------------------------------------------------------- tensions
 
 # Keyed by (dimension, direction). direction is 'less' when the person revealed

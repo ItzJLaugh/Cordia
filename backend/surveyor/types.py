@@ -104,6 +104,14 @@ SIGNAL_PRIORITY = (
 # completion data should override it.
 ENOUGH_SIGNALS = 9
 
+# Beta onboarding is deliberately bounded. These are prompt-attempt limits,
+# not scores: malformed or free-text answers still consume the prompt and the
+# saved evidence remains available for later refinement.
+ONBOARDING_TURN_LIMIT = 12
+ONBOARDING_PREFERENCE_LIMIT = 6
+ONBOARDING_SCENARIO_LIMIT = 3
+ONBOARDING_FREEFORM_LIMIT = 3
+
 _MAX_TEXT = 400
 _MAX_LIST = 8
 
@@ -252,6 +260,41 @@ def profile_completeness(profile: dict) -> float:
     scn = len(p.get("scenarios") or {}) / float(len(scenarios.IDS))
     free = freeform.answered_count(p.get("freeform") or {}) / float(len(freeform.KEYS))
     return round(min(1.0, 0.45 * prefs + 0.30 * min(1.0, scn) + 0.25 * min(1.0, free)), 3)
+
+
+def onboarding_complete(profile: dict) -> bool:
+    """Whether the bounded, non-scored beta intake is complete."""
+    from . import freeform, scenarios
+
+    profile = profile if isinstance(profile, dict) else {}
+    try:
+        answered = max(0, int(profile.get("questions_answered") or 0))
+    except (TypeError, ValueError):
+        answered = 0
+    if answered >= ONBOARDING_TURN_LIMIT:
+        return True
+
+    signals = validate_signals(profile.get("signals"))
+    scenario_answers = (
+        profile.get("scenarios") if isinstance(profile.get("scenarios"), dict) else {}
+    )
+    freeform_answers = (
+        profile.get("freeform") if isinstance(profile.get("freeform"), dict) else {}
+    )
+    return (
+        len([key for key in SIGNAL_PRIORITY if signals.get(key)])
+        >= ONBOARDING_PREFERENCE_LIMIT
+        and len([key for key in scenarios.IDS if scenario_answers.get(key)])
+        >= ONBOARDING_SCENARIO_LIMIT
+        and len(
+            [
+                key
+                for key in freeform.KEYS
+                if freeform.clean(freeform_answers.get(key))
+            ]
+        )
+        >= ONBOARDING_FREEFORM_LIMIT
+    )
 
 
 # ---------------------------------------------------------------- guard rail

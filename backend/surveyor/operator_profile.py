@@ -66,6 +66,7 @@ def is_complete(profile):
     raw_scenarios = profile.get("scenarios")
     raw_freeform = profile.get("freeform")
     completion_profile = {
+        "questions_answered": profile.get("questions_answered"),
         "signals": types.validate_signals(profile.get("signals")),
         "scenarios": {
             key: value for key, value in (raw_scenarios.items()
@@ -78,7 +79,7 @@ def is_complete(profile):
             if key in freeform.KEYS and freeform.clean(value)
         },
     }
-    return types.profile_completeness(completion_profile) >= 1.0
+    return types.onboarding_complete(completion_profile)
 
 
 def _validated_assessment_profile(profile):

@@ -105,6 +105,22 @@ def public_profile(email, profile=None) -> dict:
     }
 
 
+def onboarding_status(profile: dict) -> dict:
+    """Bounded, non-scored progress safe for the browser."""
+    profile = profile if isinstance(profile, dict) else {}
+    try:
+        used = max(0, int(profile.get("questions_answered") or 0))
+    except (TypeError, ValueError):
+        used = 0
+    used = min(types.ONBOARDING_TURN_LIMIT, used)
+    return {
+        "turn_limit": types.ONBOARDING_TURN_LIMIT,
+        "turns_used": used,
+        "turns_remaining": types.ONBOARDING_TURN_LIMIT - used,
+        "complete": types.onboarding_complete(profile),
+    }
+
+
 def start(email) -> dict:
     """Open (or resume) the conversation and return the transcript."""
     cid = store.open_conversation(email)
@@ -116,12 +132,13 @@ def start(email) -> dict:
     # Re-derive the outstanding step rather than trusting stored meta, so a
     # conversation started before stages existed still resumes correctly.
     profile = load_profile(email)
-    step = qs.next_step(profile, qs.asked_signals(history))
+    step = qs.next_step(profile, history)
     return {"conversation_id": cid, "messages": history,
             "stage": step["stage"],
             "signal": step["key"] if step["stage"] == "preferences" else None,
             "key": step["key"],
             "options": step["options"],
+            "onboarding": onboarding_status(profile),
             "profile": public_profile(email, profile)}
 
 
@@ -226,8 +243,7 @@ def turn(email, answer, call_llm, choice=None) -> dict:
 
     # next step — rules only, across all three stages
     history_now = store.messages(cid)
-    asked = qs.asked_signals(history_now)
-    step = qs.next_step(profile, asked)
+    step = qs.next_step(profile, history_now)
     done = step["stage"] == "done"
 
     # Once the survey is complete, keep talking like a person rather than
@@ -256,6 +272,7 @@ def turn(email, answer, call_llm, choice=None) -> dict:
         "signal": step["key"] if step["stage"] == "preferences" else None,
         "key": step["key"],
         "options": step["options"],
+        "onboarding": onboarding_status(profile),
         "profile": public_profile(email, profile),
         "extraction_ok": err is None,
     }
