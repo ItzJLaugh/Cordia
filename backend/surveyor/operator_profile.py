@@ -44,7 +44,8 @@ def build(profile, connector_states=None, interfaces=None):
         "evidence": _evidence(assessment.get("evidence")),
         "connectors": _connectors(assessment.get("connectors")),
         "still_learning": _still_learning(assessment_profile, connector_states),
-        "next_action": _next_action(_validated_action_profile(profile)),
+        "next_action": _next_action(
+            _validated_action_profile(profile), complete=is_complete(profile)),
         "latest_workspace": _latest_workspace(interfaces),
     }
 
@@ -56,8 +57,9 @@ def public_identifiers(items):
 
 def next_action(profile):
     """Return the existing forward action after validating legacy profile shapes."""
-    return _next_action(_validated_action_profile(
-        profile if isinstance(profile, dict) else {}))
+    profile = profile if isinstance(profile, dict) else {}
+    return _next_action(
+        _validated_action_profile(profile), complete=is_complete(profile))
 
 
 def is_complete(profile):
@@ -66,6 +68,7 @@ def is_complete(profile):
     raw_scenarios = profile.get("scenarios")
     raw_freeform = profile.get("freeform")
     completion_profile = {
+        "questions_answered": profile.get("questions_answered"),
         "signals": types.validate_signals(profile.get("signals")),
         "scenarios": {
             key: value for key, value in (raw_scenarios.items()
@@ -78,7 +81,7 @@ def is_complete(profile):
             if key in freeform.KEYS and freeform.clean(value)
         },
     }
-    return types.profile_completeness(completion_profile) >= 1.0
+    return types.onboarding_complete(completion_profile)
 
 
 def _validated_assessment_profile(profile):
@@ -197,7 +200,13 @@ def _still_learning(profile, connector_states):
     return items[:5]
 
 
-def _next_action(profile):
+def _next_action(profile, complete=False):
+    if complete:
+        return {
+            "type": "create_interface",
+            "label": "Build my workspace",
+            "reason": "Your Surveyor intake is complete and ready to shape a workspace.",
+        }
     action_profile = dict(profile)
     action_profile["scores"] = (profile.get("scores")
                                 if isinstance(profile.get("scores"), dict) else {})
@@ -205,6 +214,13 @@ def _next_action(profile):
                                  if isinstance(profile.get("signals"), dict) else {})
     action = identifiers.next_best_action(action_profile)
     action_type = action.get("type")
+    if action_type == "create_interface":
+        action = {
+            "type": "refine_profile",
+            "label": "Continue with Surveyor",
+            "reason": "Finish the bounded intake before Cordia builds your workspace.",
+        }
+        action_type = action["type"]
     label = _safe_text(action.get("label"), 80)
     reason = _safe_text(action.get("reason"), 240)
     if action_type not in _ACTION_TYPES or not label or not reason:

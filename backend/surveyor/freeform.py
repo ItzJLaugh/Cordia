@@ -56,6 +56,16 @@ def next_question(answers):
     return None, None
 
 
+def next_question_excluding(answers, attempted=()):
+    """Next unanswered freeform prompt not already presented."""
+    answers = answers if isinstance(answers, dict) else {}
+    blocked = {item for item in attempted or () if item in KEYS}
+    for key in KEYS:
+        if key not in blocked and not answers.get(key):
+            return key, BY_KEY[key]
+    return None, None
+
+
 def clean(text):
     t = " ".join(str(text or "").split())
     return t[:MAX_CHARS] if len(t) >= MIN_CHARS else None

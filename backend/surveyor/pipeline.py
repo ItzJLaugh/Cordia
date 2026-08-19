@@ -105,24 +105,96 @@ def public_profile(email, profile=None) -> dict:
     }
 
 
+def onboarding_status(profile: dict) -> dict:
+    """Bounded, non-scored progress safe for the browser."""
+    profile = profile if isinstance(profile, dict) else {}
+    try:
+        used = max(0, int(profile.get("questions_answered") or 0))
+    except (TypeError, ValueError):
+        used = 0
+    used = min(types.ONBOARDING_TURN_LIMIT, used)
+    return {
+        "turn_limit": types.ONBOARDING_TURN_LIMIT,
+        "turns_used": used,
+        "turns_remaining": types.ONBOARDING_TURN_LIMIT - used,
+        "complete": types.onboarding_complete(profile),
+    }
+
+
 def start(email) -> dict:
     """Open (or resume) the conversation and return the transcript."""
     cid = store.open_conversation(email)
     history = store.messages(cid)
+    profile = load_profile(email)
+    step = _outstanding_step(history) or qs.next_step(profile, history)
     if not history:
-        store.add_message(cid, "assistant", qs.OPENING, {"signal": None, "opening": True})
+        # The welcome and first real prompt share one assistant turn. A separate
+        # "ready?" message would consume one of the bounded twelve user turns
+        # without collecting any preference, scenario, or freeform evidence.
+        store.add_message(cid, "assistant", qs.OPENING + "\n\n" + step["text"], {
+            "stage": step["stage"],
+            "key": step["key"],
+            "signal": step["key"] if step["stage"] == "preferences" else None,
+            "opening": True,
+        })
         store.log_event(email, "survey_started")
         history = store.messages(cid)
-    # Re-derive the outstanding step rather than trusting stored meta, so a
-    # conversation started before stages existed still resumes correctly.
-    profile = load_profile(email)
-    step = qs.next_step(profile, qs.asked_signals(history))
     return {"conversation_id": cid, "messages": history,
             "stage": step["stage"],
             "signal": step["key"] if step["stage"] == "preferences" else None,
             "key": step["key"],
             "options": step["options"],
+            "onboarding": onboarding_status(profile),
             "profile": public_profile(email, profile)}
+
+
+def _outstanding_step(history):
+    """Recover the exact unanswered stored prompt without skipping on reload."""
+    last = next(
+        (
+            message
+            for message in reversed(history or [])
+            if isinstance(message, dict) and message.get("role") == "assistant"
+        ),
+        None,
+    )
+    if not last:
+        return None
+    meta = last.get("meta") if isinstance(last.get("meta"), dict) else {}
+    stage, key = meta.get("stage"), meta.get("key")
+    if stage == "preferences" and key in qs.QUESTIONS:
+        return {
+            "stage": stage,
+            "key": key,
+            "text": qs.QUESTIONS[key],
+            "options": qs.choices_for(key),
+            "intro": None,
+        }
+    if stage == "scenarios" and key in scenarios.BY_ID:
+        return {
+            "stage": stage,
+            "key": key,
+            "text": scenarios.BY_ID[key]["text"],
+            "options": scenarios.choices_for(key),
+            "intro": None,
+        }
+    if stage == "freeform" and key in freeform.BY_KEY:
+        return {
+            "stage": stage,
+            "key": key,
+            "text": freeform.BY_KEY[key],
+            "options": [],
+            "intro": None,
+        }
+    if stage == "done" and meta.get("closing"):
+        return {
+            "stage": "done",
+            "key": None,
+            "text": qs.CLOSING_FULL,
+            "options": [],
+            "intro": None,
+        }
+    return None
 
 
 def turn(email, answer, call_llm, choice=None) -> dict:
@@ -226,8 +298,7 @@ def turn(email, answer, call_llm, choice=None) -> dict:
 
     # next step — rules only, across all three stages
     history_now = store.messages(cid)
-    asked = qs.asked_signals(history_now)
-    step = qs.next_step(profile, asked)
+    step = qs.next_step(profile, history_now)
     done = step["stage"] == "done"
 
     # Once the survey is complete, keep talking like a person rather than
@@ -256,6 +327,7 @@ def turn(email, answer, call_llm, choice=None) -> dict:
         "signal": step["key"] if step["stage"] == "preferences" else None,
         "key": step["key"],
         "options": step["options"],
+        "onboarding": onboarding_status(profile),
         "profile": public_profile(email, profile),
         "extraction_ok": err is None,
     }

@@ -19,8 +19,8 @@ work, the right move is to delete the feature, not to grow one.
 
 from . import (adaptation, alidora, artifacts, capability_gateway, extractor, fde_registry, fde_routing, freeform, github_connector, hitl_policy, identifiers, intent_misses, llm, mock, operator_profile, permissions, pipeline, skills,
                prompts, question_strategy, recommendation, runtime_config, scenarios, scorer, store,
-               types, vault, workspace_state)
+               types, vault, workspace_generation, workspace_state)
 
 __all__ = ["adaptation", "alidora", "artifacts", "capability_gateway", "extractor", "fde_registry", "fde_routing", "freeform", "github_connector", "hitl_policy", "identifiers", "intent_misses", "llm", "mock", "operator_profile", "permissions", "skills",
            "pipeline", "prompts", "question_strategy", "recommendation", "runtime_config", "scenarios",
-           "scorer", "store", "types", "vault", "workspace_state"]
+           "scorer", "store", "types", "vault", "workspace_generation", "workspace_state"]

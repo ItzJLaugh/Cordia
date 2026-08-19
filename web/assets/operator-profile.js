@@ -137,7 +137,7 @@
       primary = { kind: 'link', label: 'Open ' + latest.name, href: latest.href }
       if (action.type !== 'create_interface') secondary = { kind: 'surveyor', label: 'Refine with Surveyor' }
     } else if (action.type === 'create_interface') {
-      primary = { kind: 'link', label: 'Build this workspace', href: 'builder.html?from=surveyor' }
+      primary = { kind: 'generate', label: 'Build my workspace' }
     } else {
       primary = { kind: 'surveyor', label: action.label }
     }

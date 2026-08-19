@@ -344,6 +344,54 @@ def save_workspace(email: str, workspace_id: str, state: dict) -> None:
         """, (workspace_id, email, _J(state)))
 
 
+def ensure_initial_workspace(email: str, prepared: dict) -> tuple[str, bool]:
+    """Create one owner's first workspace atomically, or return the existing one."""
+    source = {
+        key: value
+        for key, value in prepared["artifacts"].items()
+        if key.startswith("source/")
+    }
+    runtime = {
+        key: value
+        for key, value in prepared["artifacts"].items()
+        if key.startswith("runtime/")
+    }
+    with _lock, _conn() as connection, connection.cursor() as cursor:
+        cursor.execute("SELECT pg_advisory_xact_lock(hashtext(%s))", (email,))
+        cursor.execute(
+            "SELECT id FROM surveyor_interfaces "
+            "WHERE email=%s AND archived=FALSE ORDER BY updated DESC LIMIT 1",
+            (email,),
+        )
+        existing = cursor.fetchone()
+        if existing:
+            return existing[0], False
+        cursor.execute(
+            "INSERT INTO surveyor_interfaces"
+            "(id,email,name,description,definition,theme) "
+            "VALUES(%s,%s,%s,%s,%s,%s)",
+            (
+                prepared["id"],
+                email,
+                prepared["name"],
+                prepared["description"],
+                _J(prepared["definition"]),
+                _J({}),
+            ),
+        )
+        cursor.execute(
+            "INSERT INTO surveyor_workspaces(id,email,state) VALUES(%s,%s,%s)",
+            (prepared["id"], email, _J(prepared["workspace"])),
+        )
+        cursor.execute(
+            "INSERT INTO surveyor_artifacts(email,source,runtime) VALUES(%s,%s,%s) "
+            "ON CONFLICT(email) DO UPDATE SET source=EXCLUDED.source, "
+            "runtime=EXCLUDED.runtime, updated=(now() AT TIME ZONE 'utc')",
+            (email, _J(source), _J(runtime)),
+        )
+    return prepared["id"], True
+
+
 def get_workspace(email: str, workspace_id: str) -> dict | None:
     with _conn() as c, c.cursor() as cur:
         cur.execute("SELECT state FROM surveyor_workspaces WHERE id=%s AND email=%s",

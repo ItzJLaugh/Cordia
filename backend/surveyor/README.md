@@ -1,7 +1,8 @@
 # Cordia Surveyor — Agentic Interface Builder (MVP)
 
 A conversational intake agent that turns a chat into an inspectable profile, and
-uses that profile to shape an agentic workspace the user builds and runs.
+uses that profile to let the Cordia Agent/FDE generate an agentic workspace the
+user can inspect and run.
 
 The premise: **intent cannot be measured, but it can be surveyed.**
 
@@ -14,9 +15,13 @@ A working vertical slice:
 1. **Surveyor** — a chat agent that asks adaptively about how you work.
 2. **Profile** — what it learns, stored and inspectable.
 3. **Cordia profile** — three positive identifiers telling you how to use AI.
-4. **Builder** — create/edit agents, tools and workflow steps, pre-shaped by the profile.
-5. **Runtime** — run an interface and see output.
-6. **Kill switch** — turn personalization off globally or per user.
+4. **Workspace generation** — the Cordia Agent/FDE compiles the completed profile
+   into one canonical, account-owned workspace.
+5. **Builder compatibility** — the same transaction retains an interface row for
+   existing routes; the manual builder remains available but is not the primary
+   beta onboarding path.
+6. **Runtime** — run an interface and see output.
+7. **Kill switch** — turn personalization off globally or per user.
 
 ## What this is **not**
 
@@ -99,6 +104,13 @@ builder defaults. With `adaptive`, output is identical to `simple`.
 
 A chat agent, not a questionnaire. It asks one question at a time, adapts to what
 it already knows, and stops when it has enough.
+
+The Release 1 beta intake is bounded to twelve real user replies: six preference
+prompts, three trade-off scenarios, and three freeform questions about the
+person's work. The welcome and first preference prompt share one assistant turn,
+so a separate “ready?” reply cannot consume the evidence budget. Reloading the
+page resumes from persisted conversation/profile state rather than starting a
+second intake.
 
 Pipeline, one turn (`pipeline.turn`):
 
@@ -209,6 +221,22 @@ Surveyor now compiles its evidence into inspectable source artifacts
 artifacts (`fde-tasks.md`, `permissions.md`, and `workspace-plan.md`). The
 workspace persists one canonical state shared by the human and Cordia.
 
+After the bounded intake, `/surveyor/operator-profile` provides the non-scored,
+inspectable Surveyor assessment. Its fixed **Build my workspace** action calls
+authenticated `POST /surveyor/workspace/generate` with an empty JSON object. The
+server accepts no caller-supplied workspace fields, compiles the profile and
+connector truth, and atomically creates:
+
+- a compatibility interface row for existing routes;
+- the canonical workspace state with the same ID; and
+- the inspectable source/runtime artifact bundle.
+
+Generation is owner-scoped and idempotent: a retry returns the existing ID with
+`created: false`. Successful generation and later authentication both navigate
+through the same safe `/dashboard/?workspace=<id>` contract. CordiaAIE courses,
+certifications, and rubric scoring remain separate from Surveyor and do not
+participate in this generation path.
+
 The first durable connector capability is intentionally narrow:
 
 - `github.read_repositories` reads at most 30 recently updated repository
@@ -266,9 +294,12 @@ the module failed to import.
 |---|---|
 | GET | `/surveyor/profile` |
 | GET | `/surveyor/conversation` |
+| GET | `/surveyor/operator-profile` |
 | GET | `/surveyor/interfaces` |
+| GET | `/surveyor/workspace?id=<id>` |
 | GET | `/surveyor/admin` (restricted to `CORDIA_ADMINS`) |
 | POST | `/surveyor/message` |
+| POST | `/surveyor/workspace/generate` (empty object only) |
 | POST | `/surveyor/interface` |
 | POST | `/surveyor/archive` |
 | POST | `/surveyor/run` |
