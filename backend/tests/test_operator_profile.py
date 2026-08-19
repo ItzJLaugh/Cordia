@@ -114,7 +114,7 @@ class TestOperatorProfileProjection(unittest.TestCase):
         )
         self.assertEqual(result["latest_workspace"], {
             "id": "workspace-1", "name": "Inspection workspace"})
-        self.assertEqual(result["next_action"]["type"], "create_interface")
+        self.assertEqual(result["next_action"]["type"], "refine_profile")
         self.assertNotIn("score", repr(result).lower())
         self.assertNotIn("criterion", repr(result).lower())
         self.assertNotIn("must-not-leak", repr(result))
@@ -164,11 +164,25 @@ class TestOperatorProfileProjection(unittest.TestCase):
 
         self.assertEqual(empty["next_action"]["type"], "continue_survey")
         self.assertEqual(partial["next_action"]["type"], "refine_profile")
-        self.assertEqual(ready["next_action"]["type"], "create_interface")
+        self.assertEqual(ready["next_action"]["type"], "refine_profile")
         self.assertTrue(empty["still_learning"])
         self.assertTrue(partial["still_learning"])
         self.assertEqual(ready["still_learning"], ["Which systems should be connected"])
         self.assertNotIn("percent", repr((empty, partial, ready)).lower())
+
+    def test_generation_action_uses_the_same_canonical_completion_rule_as_the_route(self):
+        sparse_at_cap = types.empty_profile()
+        sparse_at_cap["questions_answered"] = types.ONBOARDING_TURN_LIMIT
+
+        rich_but_incomplete = ready_profile()
+
+        completed = operator_profile.build(sparse_at_cap, {}, [])
+        incomplete = operator_profile.build(rich_but_incomplete, {}, [])
+
+        self.assertTrue(operator_profile.is_complete(sparse_at_cap))
+        self.assertEqual(completed["next_action"]["type"], "create_interface")
+        self.assertFalse(operator_profile.is_complete(rich_but_incomplete))
+        self.assertNotEqual(incomplete["next_action"]["type"], "create_interface")
 
     def test_malformed_legacy_rows_are_dropped_instead_of_breaking_projection(self):
         result = operator_profile.build({
