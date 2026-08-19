@@ -19,6 +19,7 @@ The goal is not to implement every connector or every long-term feature at once.
 Compact evidence index:
 
 - Surveyor artifacts and bounded operator-profile contract: `backend/surveyor/artifacts.py`, `backend/surveyor/operator_profile.py`, `backend/surveyor/pipeline.py`, `backend/tests/test_artifacts.py`, `backend/tests/test_operator_profile.py`, and `web/test/operator_profile.test.js`.
+- Release 1 intake continuity and owner-scoped generation: `backend/tests/test_surveyor_onboarding.py`, `backend/tests/test_workspace_generation.py`, `backend/tests/test_beta_intake_journey.py`, `web/test/surveyor_flow.test.js`, `web/test/workspace_generation.test.js`, and `web/test/beta_intake_journey.test.js`.
 - Canonical workspace and DashView: `backend/surveyor/workspace_state.py`, `dashboard-app/src/workspace-view.js`, `backend/tests/test_workspace_state.py`, `dashboard-app/test/workspace*.test.js`.
 - Alidora read-only projection: `backend/surveyor/alidora.py`, `dashboard-app/src/graph.js`, `backend/tests/test_alidora.py`, `dashboard-app/src/graph.test.js`.
 - Connector, skill, and permission boundaries: `backend/surveyor/{capability_gateway,skills,permissions,github_connector}.py` and their matching `backend/tests/test_*.py` files.
@@ -46,8 +47,8 @@ Compact evidence index:
 
 # Phase 1 — Surveyor → Source Artifacts
 
-- [ ] Ensure Surveyor remains conversational rather than form-first.
-- [ ] Persist Surveyor conversation/evidence.
+- [x] Ensure Surveyor remains conversational rather than form-first.
+- [x] Persist Surveyor conversation/evidence.
 - [x] Generate/update `operator.md` from Surveyor evidence.
 - [x] Generate/update `connectors.md` from Surveyor evidence and user confirmation.
 - [x] Create `intent-misses.md` as structured appendable memory.
@@ -56,7 +57,7 @@ Compact evidence index:
 
 Acceptance criteria:
 
-- [ ] A new user can complete a short Surveyor conversation.
+- [x] A new user can complete a short Surveyor conversation.
 - [x] Cordia produces an inspectable `operator.md`.
 - [x] Cordia produces an inspectable `connectors.md`.
 - [x] No numeric overall assessment score is required.
@@ -102,6 +103,12 @@ The browser receives bounded descriptive evidence and fixed navigation only; it
 does not receive scoring criteria, numeric confidence/completeness, raw artifacts,
 workspace definitions, secrets, or local paths. Public signed-in deployment
 verification remains a release check rather than source-level evidence.
+
+Release 1 bounds the conversation to twelve actual user replies: six preference
+prompts, three scenarios, and three freeform work questions. The welcome carries
+the first prompt rather than consuming a separate turn. The completed profile's
+primary action is fixed workspace generation; it does not route through the
+legacy builder, assessment/certification pages, or CordiaAIE rubric logic.
 
 ---
 
@@ -333,8 +340,8 @@ Acceptance criteria:
 
 # Phase 14 — Save Cloud Workspace
 
-- [ ] Persist the completed workspace against the user’s Cordia account.
-- [ ] Persist workspace artifacts/configuration.
+- [x] Persist the completed workspace against the user’s Cordia account.
+- [x] Persist workspace artifacts/configuration.
 - [ ] Persist connector status and secret references.
 - [ ] Persist permissions.
 - [ ] Persist window layout.
@@ -343,6 +350,14 @@ Acceptance criteria:
 Acceptance criteria:
 
 - [ ] User can log out/in and recover the same workspace.
+
+Evidence boundary: authenticated `POST /surveyor/workspace/generate` accepts no
+caller fields and atomically writes one owner-scoped compatibility interface,
+canonical workspace with the same ID, and compiled artifact bundle. Repeated
+generation returns that same ID without a second workspace. Browser generation
+and authentication resume share the same fixed safe dashboard navigation. A
+real deployed logout/login recovery journey and broader workspace state such as
+durable layout, permissions, and connector-secret continuity remain open.
 
 ---
 
