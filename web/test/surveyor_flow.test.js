@@ -57,6 +57,7 @@ test('classifies a failed submission only from canonical persisted progress', ()
   assert.equal(flow.reconcileSubmission(3, payload(4)).state, 'saved')
   assert.equal(flow.reconcileSubmission(3, payload(3)).state, 'retry')
   assert.equal(flow.reconcileSubmission(3, payload(5)).state, 'unknown')
+  assert.equal(flow.reconcileSubmission(12, payload(12)).state, 'unknown')
   assert.equal(flow.reconcileSubmission(3, { ok: false }).state, 'unknown')
 })
 

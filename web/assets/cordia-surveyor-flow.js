@@ -30,6 +30,10 @@
     var view = model(payload)
     if (!Number.isInteger(turnsBefore) || turnsBefore < 0 || turnsBefore > 12 ||
         !view || view.state !== 'ready') return { state: 'unknown' }
+    // Progress is clamped at the intake cap, so equal progress cannot prove
+    // whether a post-completion refinement was saved. Fail closed rather than
+    // make the user resend a potentially committed reply.
+    if (turnsBefore === 12) return { state: 'unknown' }
     if (view.turnsUsed === turnsBefore + 1) return { state: 'saved', view: view }
     if (view.turnsUsed === turnsBefore) return { state: 'retry', view: view }
     return { state: 'unknown' }
