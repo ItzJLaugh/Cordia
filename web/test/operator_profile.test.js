@@ -186,7 +186,9 @@ test('the account assessment entry targets the operator profile and legacy page 
   assert.match(page, /surveyor\/operator-profile/)
   assert.doesNotMatch(page, /surveyor\/artifacts/)
   assert.match(page, /cordia:profile-updated/)
-  assert.match(surveyor, /profile\.complete === true/)
+  assert.match(shell, /cordia-surveyor-flow\.js/)
+  assert.match(surveyor, /setProgress\(r\.data\)/)
+  assert.doesNotMatch(surveyor, /profile\.complete === true/)
   assert.doesNotMatch(surveyor, /percent_complete/)
 })
 

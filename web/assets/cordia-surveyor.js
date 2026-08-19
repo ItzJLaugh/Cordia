@@ -3,6 +3,7 @@
    A modal rather than a page, because Surveyor should be summonable from
    wherever someone already is. Include it anywhere:
 
+     <script src="assets/cordia-surveyor-flow.js"></script>
      <script src="assets/cordia-surveyor.js"></script>
 
    and call Cordia.surveyor.open(), or add data-surveyor to any element to have
@@ -15,7 +16,9 @@
   'use strict';
 
   var API = location.hostname === 'localhost' ? 'http://127.0.0.1:9995' : '';
-  var root = null, listEl = null, inputEl = null, sendEl = null, statusEl = null;
+  var flow = window.CordiaSurveyorFlow;
+  var root = null, listEl = null, inputEl = null, sendEl = null;
+  var statusEl = null, progressEl = null;
   var busy = false, opened = false;
 
   function api(path, body) {
@@ -75,6 +78,8 @@
     '  color:var(--c-ink-3,#666);display:flex;align-items:center;gap:5px;margin-top:2px}',
     '.sv-dot{width:6px;height:6px;border-radius:50%;background:var(--c-moss,#4A5A42)}',
     '.sv-dot[data-off="1"]{background:#B08A3E}',
+    '.sv-progress{font-family:var(--f-label,sans-serif);font-size:var(--t-xs,11px);',
+    '  color:var(--c-ink-3,#666);padding:8px 18px;border-bottom:1px solid var(--c-hair,rgba(11,11,11,.08))}',
     '.sv-x{border:0;background:transparent;cursor:pointer;width:32px;height:32px;border-radius:50%;',
     '  color:var(--c-ink-3,#666);font-size:17px;line-height:1;display:grid;place-items:center}',
     '.sv-x:hover{background:var(--c-wash,#F6F7F4);color:var(--c-ink,#0B0B0B)}',
@@ -144,6 +149,7 @@
             '<div class="sv-state" id="svState"><span class="sv-dot"></span><span>Online</span></div></div>' +
           '<button class="sv-x" id="svClose" type="button" aria-label="Close Surveyor">&#10005;</button>' +
         '</div>' +
+        '<div class="sv-progress" id="svProgress" aria-live="polite">Progress unavailable</div>' +
         '<div class="sv-body" id="svBody" aria-live="polite"></div>' +
         '<div class="sv-foot">' +
           '<div class="sv-compose">' +
@@ -151,11 +157,7 @@
               'aria-label="Your message"></textarea>' +
             '<button class="sv-send" id="svSend" type="button">Send</button>' +
           '</div>' +
-          '<div class="sv-acts">' +
-            '<button class="sv-act" data-act="refine" type="button">Refine my profile</button>' +
-            '<button class="sv-act" data-act="build" type="button">Build my workspace</button>' +
-            '<button class="sv-act" data-act="certs" type="button">Show recommended certification</button>' +
-          '</div>' +
+          '<div class="sv-acts"></div>' +
         '</div>' +
       '</div>';
     document.body.appendChild(root);
@@ -164,6 +166,7 @@
     inputEl = root.querySelector('#svInput');
     sendEl = root.querySelector('#svSend');
     statusEl = root.querySelector('#svState');
+    progressEl = root.querySelector('#svProgress');
 
     root.querySelector('#svClose').addEventListener('click', close);
     root.addEventListener('mousedown', function (e) { if (e.target === root) close(); });
@@ -185,9 +188,7 @@
       var b = e.target.closest('.sv-act');
       if (!b) return;
       var a = b.dataset.act;
-      if (a === 'rec') location.href = 'profile.html';
-      else if (a === 'build') location.href = 'builder.html';
-      else if (a === 'certs') location.href = 'certifications.html';
+      if (a === 'assessment') location.href = flow.completionDestination();
       else { inputEl.focus(); }
     });
   }
@@ -256,10 +257,24 @@
     if (!acts || acts.dataset.done === '1') return;
     acts.dataset.done = '1';
     acts.innerHTML =
-      '<button class="sv-act" data-act="rec" type="button" ' +
+      '<button class="sv-act" data-act="assessment" type="button" ' +
         'style="background:var(--c-moss,#4A5A42);color:#fff;border-color:transparent">' +
-        'See how to set up my system</button>' +
+        'Review what Cordia understands</button>' +
       '<button class="sv-act" data-act="refine" type="button">Add more detail</button>';
+  }
+
+  function setProgress(payload) {
+    var view = flow && flow.model(payload);
+    if (!progressEl) return view;
+    if (!view || view.state !== 'ready') {
+      progressEl.textContent = 'Progress unavailable';
+      return { state: 'error' };
+    }
+    progressEl.textContent = view.complete
+      ? 'Intake complete'
+      : 'Question ' + Math.min(view.turnLimit, view.turnsUsed + 1) + ' of 12';
+    if (view.complete) doneState();
+    return view;
   }
 
   function setLive(status) {
@@ -307,9 +322,13 @@
           inputEl.disabled = sendEl.disabled = true;
           return;
         }
+        if (setProgress(r.data).state !== 'ready') {
+          bubble('assistant', 'Surveyor could not load your progress. Try again.');
+          inputEl.disabled = sendEl.disabled = true;
+          return;
+        }
         (r.data.messages || []).forEach(function (m) { bubble(m.role, m.content, m.created); });
         chips(r.data.key, r.data.options);
-        if (r.data.profile && r.data.profile.complete === true) doneState();
         inputEl.focus();
       });
       api('/surveyor/profile').then(function (r) { setLive(r.data && r.data.llm); });
@@ -329,6 +348,7 @@
     if (busy) return;
     var text = preset != null ? preset : (inputEl.value || '').trim();
     if (!text) return;
+    var draft = text;
     if (preset == null) { inputEl.value = ''; inputEl.style.height = 'auto'; }
     var old = listEl.querySelector('.sv-chips');
     if (old) old.remove();
@@ -340,26 +360,32 @@
     var payload = { message: text };
     if (choice) payload.choice = choice;
 
-    api('/surveyor/message', payload).then(function (r) {
+    function failed() {
       typing(false);
       busy = false;
       sendEl.disabled = false;
-      if (r.code !== 200 || !r.data.ok) {
-        bubble('assistant', r.data && r.data.error
-          ? r.data.error
-          : 'Something went wrong sending that. Your profile is unchanged — try again.');
+      if (!inputEl.value) inputEl.value = draft;
+      bubble('assistant', 'Cordia could not save that answer. Your draft is still here — try again.');
+      inputEl.focus();
+    }
+
+    api('/surveyor/message', payload).then(function (r) {
+      var progress = flow && flow.model(r.data);
+      if (r.code !== 200 || !r.data || r.data.ok !== true ||
+          typeof r.data.reply !== 'string' || !progress || progress.state !== 'ready') {
+        failed();
         return;
       }
+      typing(false);
+      busy = false;
+      sendEl.disabled = false;
       bubble('assistant', r.data.reply);
       setLive(r.data.llm);
+      setProgress(r.data);
       chips(r.data.key, r.data.options);
       document.dispatchEvent(new CustomEvent('cordia:profile-updated', { detail: r.data.profile }));
-      if (r.data.done) doneState();
       inputEl.focus();
-    }).catch(function () {
-      typing(false); busy = false; sendEl.disabled = false;
-      bubble('assistant', 'Connection lost. Your profile is unchanged — try again.');
-    });
+    }).catch(failed);
   }
 
   document.addEventListener('click', function (e) {

@@ -140,11 +140,24 @@
   function loadSurveyor() {
     if (window.Cordia && window.Cordia.surveyor) return;
     if (document.querySelector('script[data-cordia-surveyor]')) return;
-    var s = document.createElement('script');
-    s.src = 'assets/cordia-surveyor.js?v=28c08944';
-    s.defer = true;
-    s.setAttribute('data-cordia-surveyor', '1');
-    document.head.appendChild(s);
+    function appendSurveyor() {
+      if (document.querySelector('script[data-cordia-surveyor]')) return;
+      var s = document.createElement('script');
+      s.src = 'assets/cordia-surveyor.js?v=beta-r1';
+      s.defer = true;
+      s.setAttribute('data-cordia-surveyor', '1');
+      document.head.appendChild(s);
+    }
+    if (window.CordiaSurveyorFlow) {
+      appendSurveyor();
+      return;
+    }
+    var flow = document.createElement('script');
+    flow.src = 'assets/cordia-surveyor-flow.js?v=beta-r1';
+    flow.defer = true;
+    flow.onload = appendSurveyor;
+    flow.setAttribute('data-cordia-surveyor-flow', '1');
+    document.head.appendChild(flow);
   }
 
   function boot() { mount(); loadSurveyor(); }
