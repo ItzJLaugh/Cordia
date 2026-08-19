@@ -654,6 +654,42 @@ class H(BaseHTTPRequestHandler):
                                   'kind': body.get('mutation', {}).get('kind')})
         self._json({'ok': True, 'workspace': changed})
 
+    def _surv_generate_workspace(self, body):
+        """Create or recover the signed-in owner's initial canonical workspace."""
+        email, stop = self._surv_guard()
+        if stop:
+            return
+        if not isinstance(body, dict) or body:
+            self._json(
+                {'ok': False, 'error': 'workspace generation takes no fields'},
+                400,
+            )
+            return
+        profile = surveyor.pipeline.load_profile(email)
+        if not surveyor.types.onboarding_complete(profile):
+            self._json(
+                {
+                    'ok': False,
+                    'error': 'Complete Surveyor before building your workspace.',
+                },
+                409,
+            )
+            return
+        candidate = uuid.uuid4().hex
+        prepared = surveyor.workspace_generation.prepare(
+            candidate,
+            profile,
+            surveyor.store.get_connector_states(email),
+        )
+        workspace_id, created = surveyor.store.ensure_initial_workspace(
+            email, prepared
+        )
+        if created:
+            surveyor.store.log_event(
+                email, 'workspace_generated', {'id': workspace_id}
+            )
+        self._json({'ok': True, 'id': workspace_id, 'created': created})
+
     def _surv_github_repositories(self):
         """Read-only GitHub summary through the first connector-native surface."""
         email, stop = self._surv_guard()
@@ -1287,6 +1323,8 @@ class H(BaseHTTPRequestHandler):
             self._surv_intent_miss(body)
         elif p == '/surveyor/workspace/mutate':
             self._surv_workspace_mutation(body)
+        elif p == '/surveyor/workspace/generate':
+            self._surv_generate_workspace(body)
         elif p == '/surveyor/approval/decision':
             self._surv_decide_approval(body)
         elif p == '/surveyor/skill/execute':
