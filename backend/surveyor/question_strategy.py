@@ -16,7 +16,7 @@ from __future__ import annotations
 from . import types
 
 OPENING = ("Welcome. I'm Surveyor. I'll ask a few questions so Cordia can shape "
-           "your workspace around how you think and work. Ready to begin?")
+           "your workspace around how you think and work. Let's begin.")
 
 # signal -> the question that surfaces it. Conversational, never a test.
 QUESTIONS = {

@@ -125,14 +125,20 @@ def start(email) -> dict:
     """Open (or resume) the conversation and return the transcript."""
     cid = store.open_conversation(email)
     history = store.messages(cid)
-    if not history:
-        store.add_message(cid, "assistant", qs.OPENING, {"signal": None, "opening": True})
-        store.log_event(email, "survey_started")
-        history = store.messages(cid)
-    # Re-derive the outstanding step rather than trusting stored meta, so a
-    # conversation started before stages existed still resumes correctly.
     profile = load_profile(email)
     step = qs.next_step(profile, history)
+    if not history:
+        # The welcome and first real prompt share one assistant turn. A separate
+        # "ready?" message would consume one of the bounded twelve user turns
+        # without collecting any preference, scenario, or freeform evidence.
+        store.add_message(cid, "assistant", qs.OPENING + "\n\n" + step["text"], {
+            "stage": step["stage"],
+            "key": step["key"],
+            "signal": step["key"] if step["stage"] == "preferences" else None,
+            "opening": True,
+        })
+        store.log_event(email, "survey_started")
+        history = store.messages(cid)
     return {"conversation_id": cid, "messages": history,
             "stage": step["stage"],
             "signal": step["key"] if step["stage"] == "preferences" else None,
