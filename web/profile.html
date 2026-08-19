@@ -119,12 +119,14 @@
 </main>
 
 <script src="assets/workspace-navigation.js?v=3f1066c1"></script>
+<script src="assets/cordia-workspace-generation.js?v=beta-r1"></script>
 <script src="assets/operator-profile.js?v=1a4f8872"></script>
 <script src="assets/cordia-shell.js?v=93dc4041" data-nav="profile"></script>
 <script>
 (function () {
   'use strict';
   var API = location.hostname === 'localhost' ? 'http://127.0.0.1:9995' : '';
+  var generating = false;
   var els = {
     email: document.getElementById('email'),
     displayName: document.getElementById('displayName'),
@@ -198,7 +200,37 @@
     if (action.kind === 'link') {
       return '<a class="' + cls + '" href="' + esc(action.href) + '">' + esc(action.label) + '</a>';
     }
+    if (action.kind === 'generate') {
+      return '<button class="' + cls + '" type="button" data-generate-workspace>' +
+        esc(action.label) + '</button><span class="sub" data-generation-status ' +
+        'aria-live="polite"></span>';
+    }
     return '<button class="' + cls + '" type="button" data-surveyor>' + esc(action.label) + '</button>';
+  }
+
+  function bindGeneration() {
+    var button = els.ai.querySelector('[data-generate-workspace]');
+    if (!button) return;
+    var status = els.ai.querySelector('[data-generation-status]');
+    button.addEventListener('click', async function () {
+      if (generating) return;
+      generating = true;
+      button.disabled = true;
+      button.textContent = 'Cordia is building your workspace…';
+      if (status) status.textContent = '';
+      try {
+        var result = await window.CordiaWorkspaceGeneration.generate({
+          fetch: function (path, options) { return fetch(API + path, options); },
+          navigation: window.CordiaWorkspaceNavigation
+        });
+        location.replace(result.href);
+      } catch (_) {
+        generating = false;
+        button.disabled = false;
+        button.textContent = 'Build my workspace';
+        if (status) status.textContent = 'Cordia could not build your workspace. Try again.';
+      }
+    });
   }
 
   async function loadAI() {
@@ -244,6 +276,7 @@
           '<p class="sub">' + esc(model.nextAction.reason) + '</p><div class="actions">' +
           actionMarkup(model.primaryAction, false) + actionMarkup(model.secondaryAction, true) + '</div></div>' +
       '</div>';
+    bindGeneration();
   }
 
   loadAccount().catch(function () {});
