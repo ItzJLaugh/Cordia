@@ -714,4 +714,3 @@ The beta is usable only when all items below are directly demonstrated:
       provenance.
 - [ ] The complete path passes on the public deployment and a clean Windows
       machine.
-
