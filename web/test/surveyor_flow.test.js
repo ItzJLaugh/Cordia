@@ -43,6 +43,24 @@ test('fails closed for inconsistent progress', () => {
 })
 
 
+test('classifies a failed submission only from canonical persisted progress', () => {
+  const payload = (turnsUsed) => ({
+    ok: true,
+    onboarding: {
+      turn_limit: 12,
+      turns_used: turnsUsed,
+      turns_remaining: 12 - turnsUsed,
+      complete: turnsUsed === 12,
+    },
+  })
+
+  assert.equal(flow.reconcileSubmission(3, payload(4)).state, 'saved')
+  assert.equal(flow.reconcileSubmission(3, payload(3)).state, 'retry')
+  assert.equal(flow.reconcileSubmission(3, payload(5)).state, 'unknown')
+  assert.equal(flow.reconcileSubmission(3, { ok: false }).state, 'unknown')
+})
+
+
 test('Surveyor source has no builder or certification destination', () => {
   const source = fs.readFileSync(
     path.resolve(__dirname, '..', 'assets', 'cordia-surveyor.js'), 'utf8'
@@ -100,6 +118,7 @@ function makeElement(tag = 'div') {
     get() { return item._innerHTML },
     set(value) {
       item._innerHTML = String(value)
+      item.children = []
       if (!String(value).includes('class="sv-win"')) return
       const body = makeElement('div')
       body.id = 'svBody'
@@ -130,7 +149,7 @@ function makeElement(tag = 'div') {
 }
 
 
-async function runRejectedDraft() {
+async function runRejectedDraft(mode = 'not-saved') {
   const source = fs.readFileSync(
     path.resolve(__dirname, '..', 'assets', 'cordia-surveyor.js'), 'utf8'
   )
@@ -144,6 +163,7 @@ async function runRejectedDraft() {
     dispatchEvent() {},
   }
   const requests = []
+  let conversationReads = 0
   const context = {
     CordiaSurveyorFlow: flow,
     CustomEvent: function CustomEvent(name, options) { this.name = name; this.detail = options && options.detail },
@@ -153,6 +173,28 @@ async function runRejectedDraft() {
       requests.push(String(url))
       if (String(url).endsWith('/auth/session')) return { ok: true }
       if (String(url).endsWith('/surveyor/conversation')) {
+        conversationReads += 1
+        if (mode === 'unknown' && conversationReads > 1) {
+          throw new Error('ambiguous transport failure')
+        }
+        if (mode === 'committed' && conversationReads > 1) {
+          return {
+            status: 200,
+            json: async () => ({
+              ok: true,
+              messages: [
+                { role: 'assistant', content: 'Welcome and first prompt.' },
+                { role: 'user', content: 'My original draft' },
+                { role: 'assistant', content: 'Canonical next prompt.' },
+              ],
+              key: 'role_tendency',
+              options: [{ value: 'prototyper', label: 'A builder' }],
+              onboarding: {
+                turn_limit: 12, turns_used: 1, turns_remaining: 11, complete: false,
+              },
+            }),
+          }
+        }
         return {
           status: 200,
           json: async () => ({
@@ -209,4 +251,29 @@ test('rejected submit restores the draft and renders only fixed recovery copy', 
   assert.equal(page.root.querySelector('#svProgress').textContent, 'Question 1 of 12')
   assert.match(rendered, /Cordia could not save that answer\. Your draft is still here — try again\./)
   assert.doesNotMatch(rendered, /github_pat_PRIVATE|private\\workspace|token=/)
+})
+
+
+test('response loss after commit reconciles canonical progress without resubmitting the draft', async () => {
+  const page = await runRejectedDraft('committed')
+  const body = page.root.querySelector('#svBody')
+  const rendered = body.children.map((item) => item.innerHTML).join(' ')
+
+  assert.equal(page.input.value, '')
+  assert.equal(page.root.querySelector('#svProgress').textContent, 'Question 2 of 12')
+  assert.match(rendered, /Canonical next prompt/)
+  assert.doesNotMatch(rendered, /could not save that answer|try again/i)
+  assert.equal(page.requests.filter((url) => url.endsWith('/surveyor/message')).length, 1)
+  assert.equal(body.children.filter((item) => item.dataset.who === 'user').length, 1)
+})
+
+
+test('ambiguous reconciliation keeps the draft but locks retry until reload', async () => {
+  const page = await runRejectedDraft('unknown')
+  const body = page.root.querySelector('#svBody')
+  const rendered = body.children.map((item) => item.innerHTML).join(' ')
+
+  assert.equal(page.input.value, 'My original draft')
+  assert.equal(page.root.querySelector('#svSend').disabled, true)
+  assert.match(rendered, /Reload Surveyor before trying again/)
 })

@@ -26,8 +26,18 @@
     return 'profile.html#aiSection'
   }
 
+  function reconcileSubmission(turnsBefore, payload) {
+    var view = model(payload)
+    if (!Number.isInteger(turnsBefore) || turnsBefore < 0 || turnsBefore > 12 ||
+        !view || view.state !== 'ready') return { state: 'unknown' }
+    if (view.turnsUsed === turnsBefore + 1) return { state: 'saved', view: view }
+    if (view.turnsUsed === turnsBefore) return { state: 'retry', view: view }
+    return { state: 'unknown' }
+  }
+
   return {
     completionDestination: completionDestination,
     model: model,
+    reconcileSubmission: reconcileSubmission,
   }
 }))

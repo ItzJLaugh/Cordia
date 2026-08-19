@@ -19,6 +19,7 @@
   var flow = window.CordiaSurveyorFlow;
   var root = null, listEl = null, inputEl = null, sendEl = null;
   var statusEl = null, progressEl = null;
+  var progressView = null;
   var busy = false, opened = false;
 
   function api(path, body) {
@@ -267,9 +268,11 @@
     var view = flow && flow.model(payload);
     if (!progressEl) return view;
     if (!view || view.state !== 'ready') {
+      progressView = null;
       progressEl.textContent = 'Progress unavailable';
       return { state: 'error' };
     }
+    progressView = view;
     progressEl.textContent = view.complete
       ? 'Intake complete'
       : 'Question ' + Math.min(view.turnLimit, view.turnsUsed + 1) + ' of 12';
@@ -349,6 +352,8 @@
     var text = preset != null ? preset : (inputEl.value || '').trim();
     if (!text) return;
     var draft = text;
+    var turnsBefore = progressView && progressView.state === 'ready'
+      ? progressView.turnsUsed : null;
     if (preset == null) { inputEl.value = ''; inputEl.style.height = 'auto'; }
     var old = listEl.querySelector('.sv-chips');
     if (old) old.remove();
@@ -360,13 +365,46 @@
     var payload = { message: text };
     if (choice) payload.choice = choice;
 
-    function failed() {
+    function renderCanonical(payload) {
+      listEl.innerHTML = '';
+      (Array.isArray(payload.messages) ? payload.messages : []).forEach(function (message) {
+        if (message && typeof message.content === 'string') {
+          bubble(message.role, message.content, message.created);
+        }
+      });
+      setProgress(payload);
+      chips(payload.key, payload.options);
+    }
+
+    function settleUnknown() {
       typing(false);
       busy = false;
-      sendEl.disabled = false;
       if (!inputEl.value) inputEl.value = draft;
-      bubble('assistant', 'Cordia could not save that answer. Your draft is still here — try again.');
+      sendEl.disabled = true;
+      bubble('assistant', 'Cordia could not confirm whether that answer was saved. Reload Surveyor before trying again.');
       inputEl.focus();
+    }
+
+    function failed() {
+      api('/surveyor/conversation').then(function (reloaded) {
+        var result = flow && flow.reconcileSubmission(
+          turnsBefore, reloaded.code === 200 ? reloaded.data : null);
+        if (!result || result.state === 'unknown') {
+          settleUnknown();
+          return;
+        }
+        typing(false);
+        busy = false;
+        sendEl.disabled = false;
+        renderCanonical(reloaded.data);
+        if (result.state === 'saved') {
+          inputEl.value = '';
+        } else {
+          inputEl.value = draft;
+          bubble('assistant', 'Cordia could not save that answer. Your draft is still here — try again.');
+        }
+        inputEl.focus();
+      }).catch(settleUnknown);
     }
 
     api('/surveyor/message', payload).then(function (r) {
