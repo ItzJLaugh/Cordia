@@ -126,7 +126,7 @@ def start(email) -> dict:
     cid = store.open_conversation(email)
     history = store.messages(cid)
     profile = load_profile(email)
-    step = qs.next_step(profile, history)
+    step = _outstanding_step(history) or qs.next_step(profile, history)
     if not history:
         # The welcome and first real prompt share one assistant turn. A separate
         # "ready?" message would consume one of the bounded twelve user turns
@@ -146,6 +146,55 @@ def start(email) -> dict:
             "options": step["options"],
             "onboarding": onboarding_status(profile),
             "profile": public_profile(email, profile)}
+
+
+def _outstanding_step(history):
+    """Recover the exact unanswered stored prompt without skipping on reload."""
+    last = next(
+        (
+            message
+            for message in reversed(history or [])
+            if isinstance(message, dict) and message.get("role") == "assistant"
+        ),
+        None,
+    )
+    if not last:
+        return None
+    meta = last.get("meta") if isinstance(last.get("meta"), dict) else {}
+    stage, key = meta.get("stage"), meta.get("key")
+    if stage == "preferences" and key in qs.QUESTIONS:
+        return {
+            "stage": stage,
+            "key": key,
+            "text": qs.QUESTIONS[key],
+            "options": qs.choices_for(key),
+            "intro": None,
+        }
+    if stage == "scenarios" and key in scenarios.BY_ID:
+        return {
+            "stage": stage,
+            "key": key,
+            "text": scenarios.BY_ID[key]["text"],
+            "options": scenarios.choices_for(key),
+            "intro": None,
+        }
+    if stage == "freeform" and key in freeform.BY_KEY:
+        return {
+            "stage": stage,
+            "key": key,
+            "text": freeform.BY_KEY[key],
+            "options": [],
+            "intro": None,
+        }
+    if stage == "done" and meta.get("closing"):
+        return {
+            "stage": "done",
+            "key": None,
+            "text": qs.CLOSING_FULL,
+            "options": [],
+            "intro": None,
+        }
+    return None
 
 
 def turn(email, answer, call_llm, choice=None) -> dict:

@@ -141,6 +141,7 @@ class TestBetaIntakeJourney(unittest.TestCase):
         prompted_stages = []
         with patch.object(pipeline, "store", self.memory):
             current = pipeline.start(self.owner)
+            conversation_id = current["conversation_id"]
             public_trace.append(current)
 
             for index in range(types.ONBOARDING_TURN_LIMIT):
@@ -156,6 +157,26 @@ class TestBetaIntakeJourney(unittest.TestCase):
                     self.owner, answer, self.call_llm, choice=choice
                 )
                 public_trace.append(current)
+                if index == 5:
+                    transcript_size = len(
+                        self.memory.transcripts[
+                            self.memory.conversations[self.owner]
+                        ]
+                    )
+                    resumed = pipeline.start(self.owner)
+                    self.assertEqual(resumed["conversation_id"], conversation_id)
+                    self.assertEqual(resumed["stage"], current["stage"])
+                    self.assertEqual(resumed["key"], current["key"])
+                    self.assertEqual(
+                        len(
+                            self.memory.transcripts[
+                                self.memory.conversations[self.owner]
+                            ]
+                        ),
+                        transcript_size,
+                    )
+                    current = resumed
+                    public_trace.append(resumed)
 
             self.assertEqual(
                 prompted_stages,
