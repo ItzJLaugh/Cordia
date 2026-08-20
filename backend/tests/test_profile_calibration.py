@@ -42,6 +42,26 @@ class TestProfileCalibrationContract(unittest.TestCase):
             with self.assertRaises(ValueError):
                 profile_calibration.validate_result(bad)
 
+    def test_rejects_credential_and_local_path_metadata_before_compilation(self):
+        for bad in (
+            {**VALID, "survey_version": "sk-live-example-token"},
+            {**VALID, "survey_version": "xoxb-example-token"},
+            {**VALID, "survey_version": "AKIAEXAMPLEKEY"},
+            {**VALID, "survey_version": "C:private"},
+            {**VALID, "profile_id": "github_pat_example_token"},
+            {**VALID, "domains": [{"id": "github_pat_example_token",
+                                     "self_rating": 5, "calibration": "consistent"}]},
+            {**VALID, "domains": [{"id": "secret_example_token",
+                                     "self_rating": 5, "calibration": "consistent"}]},
+            {**VALID, "natural_requests": ["Bearer example-token"]},
+            {**VALID, "natural_requests": ["Review C:\\private\\workspace dependencies."]},
+            {**VALID, "natural_requests": ["Review /srv/cordia dependencies."]},
+        ):
+            with self.assertRaises(ValueError):
+                profile_calibration.validate_result(bad)
+            with self.assertRaises(ValueError):
+                profile_calibration.compile_memory(bad)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -58,6 +58,20 @@ class TestProfileMemory(unittest.TestCase):
         for forbidden in ("ALLOW", "connected", "approved", "live connector"):
             self.assertNotIn(forbidden, memory)
 
+    def test_compile_memory_rejects_credential_and_path_shaped_metadata(self):
+        for bad in (
+            {**VALID, "survey_version": "sk-live-example-token"},
+            {**VALID, "survey_version": "xoxb-example-token"},
+            {**VALID, "survey_version": "AKIAEXAMPLEKEY"},
+            {**VALID, "survey_version": "C:private"},
+            {**VALID, "domains": [{"id": "github_pat_example_token",
+                                     "self_rating": 5, "calibration": "consistent"}]},
+            {**VALID, "natural_requests": ["Bearer example-token"]},
+            {**VALID, "natural_requests": ["Review /srv/cordia dependencies."]},
+        ):
+            with self.assertRaises(ValueError):
+                profile_calibration.compile_memory(bad)
+
     def test_workspace_memory_is_compiled_from_calibration_without_replacing_legacy_artifacts(self):
         profile = types.empty_profile()
 

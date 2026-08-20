@@ -13,6 +13,21 @@ _TOP_KEYS = {"schema_version", "survey_version", "profile_id", "communication",
 _COMMUNICATION_KEYS = {"explicit_implicit", "detail_big_picture",
                        "indirect_direct", "reasoning_before_conclusion",
                        "infer_unstated_context"}
+_CREDENTIAL = re.compile(
+    r"(?:^|[^A-Za-z0-9])(?:sk-|pk-|rk-|gh[pousr]_|github_pat_|xox[baprs]-|"
+    r"AKIA|(?:api[-_.]?key|access[-_.]?token|token|secret|password|authorization|"
+    r"credential)(?:[-_.:=]|\s*=)|bearer\s+|"
+    r"-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----)", re.IGNORECASE)
+_LOCAL_PATH = re.compile(
+    r"(?:^|[^A-Za-z0-9_/.])(?:[A-Za-z]:(?:[\\/]|(?=[^\s\\/]))|"
+    r"\\\\[^\s]+|(?:file|path)://|\.{1,2}[\\/][^\s]+|"
+    r"/(?:tmp|home|Users|var|etc|opt|srv|run|mnt|workspace|Library)(?:/[^\s]*)?|"
+    r"/{1,2}(?:[^\s/]+/)+[^\s/]+)", re.IGNORECASE)
+
+
+def _unsafe_metadata(value: str) -> bool:
+    """Keep provider/user metadata out of this compiler's safe input contract."""
+    return bool(_CREDENTIAL.search(value) or _LOCAL_PATH.search(value))
 
 
 def validate_result(value: object) -> dict:
@@ -33,7 +48,8 @@ def validate_result(value: object) -> dict:
         raise ValueError("profile communication choices are invalid")
     for key, limit in (("survey_version", 80), ("profile_id", 120)):
         field = value.get(key)
-        if not isinstance(field, str) or not re.fullmatch(r"[A-Za-z0-9._:-]+", field) or len(field) > limit:
+        if (not isinstance(field, str) or not re.fullmatch(r"[A-Za-z0-9._:-]+", field)
+                or len(field) > limit or _unsafe_metadata(field)):
             raise ValueError(f"profile {key} is invalid")
     domains = value.get("domains")
     if not isinstance(domains, list) or len(domains) > 20:
@@ -43,6 +59,7 @@ def validate_result(value: object) -> dict:
                 or set(row) != {"id", "self_rating", "calibration"}
                 or not isinstance(row["id"], str)
                 or not re.fullmatch(r"[a-z][a-z0-9_]{0,63}", row["id"])
+                or _unsafe_metadata(row["id"])
                 or isinstance(row["self_rating"], bool)
                 or not isinstance(row["self_rating"], int)
                 or not 1 <= row["self_rating"] <= 5
@@ -54,7 +71,7 @@ def validate_result(value: object) -> dict:
     requests = value.get("natural_requests")
     if (not isinstance(requests, list) or len(requests) > 20
             or any(not isinstance(item, str) or not item.strip() or len(item) > 600
-                   for item in requests)):
+                   or _unsafe_metadata(item) for item in requests)):
         raise ValueError("profile natural requests are invalid")
     completed = value.get("completed_at")
     if not isinstance(completed, str) or not completed.endswith("Z"):
