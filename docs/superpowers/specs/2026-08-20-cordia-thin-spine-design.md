@@ -3,8 +3,8 @@
 ## Status and authority
 
 This design records the approved smaller Cordia direction from the August 20,
-2026 product discussion. It is pending written review before implementation
-planning.
+2026 product discussion. The product owner approved Option 1, the thin-spine
+architecture, for implementation planning.
 
 For the initial working Cordia journey, this document is more specific than
 `docs/superpowers/specs/2026-08-18-cordia-beta-mvp-design.md`. Where the two
