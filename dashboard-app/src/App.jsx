@@ -4,6 +4,7 @@ import { api } from './api.js'
 import ChatPanel from './ChatPanel.jsx'
 import DefinitionGraph from './DefinitionGraph.jsx'
 import EditorPanel from './EditorPanel.jsx'
+import RunPanel from './RunPanel.jsx'
 import { addAgent, insertStepAfter } from './mutations.js'
 import { cardDetailFor, seedDefinition } from './seed.js'
 
@@ -473,6 +474,15 @@ export default function App() {
               onClose={() => setSelection(null)}
             />
           </div>
+          {selected && !creating && (
+            <RunPanel
+              interfaceId={selected.id}
+              savedDefinition={selected.definition}
+              savedStamp={selected.updated}
+              dirty={dirty}
+              readOnly={readOnly}
+            />
+          )}
         </section>
       </main>
     </div>
