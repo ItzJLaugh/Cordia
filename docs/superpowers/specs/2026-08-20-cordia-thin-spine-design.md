@@ -298,7 +298,9 @@ valid skill fields.
 - authentication and account ownership;
 - PostgreSQL profile, conversation, secret, and workspace persistence;
 - existing Markdown artifact storage and compilation;
-- `model_provider.py` and the honest live/limited model boundary;
+- the existing environment-driven model call in `training_backend.py` and the
+  live/limited selection seam in `llm.py`, extracted into a focused provider
+  module during Sprint 2;
 - the vault and opaque secret references;
 - capability permissions and gateway;
 - GitHub adapter as one connector example;
