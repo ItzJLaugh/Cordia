@@ -4,21 +4,26 @@ from __future__ import annotations
 
 from copy import deepcopy
 
-from . import adaptation, artifacts, pipeline, workspace_state
+from . import adaptation, artifacts, pipeline, profile_calibration, workspace_state
 
 
 def prepare(
     workspace_id: str,
     profile: dict,
     connector_states: dict | None = None,
+    calibration: dict | None = None,
 ) -> dict:
     """Return a fixed-name interface definition, state, and compiled artifacts."""
     connector_states = artifacts.normalize_connector_states(connector_states or {})
     bundle = pipeline.compile_artifact_bundle(profile, connector_states)
+    description = "A Cordia workspace shaped from your Surveyor profile."
+    if calibration is not None:
+        bundle["source/memory.md"] = profile_calibration.compile_memory(calibration)
+        description = "A Cordia workspace shaped from your profile calibration."
     defaults = adaptation.builder_defaults(profile)
     definition = {
         "name": "My Workspace",
-        "description": "A Cordia workspace shaped from your Surveyor profile.",
+        "description": description,
         "surface": deepcopy(
             defaults.get("surface") or {"type": "chat", "theme": "minimal"}
         ),

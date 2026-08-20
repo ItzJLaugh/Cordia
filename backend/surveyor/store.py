@@ -16,6 +16,7 @@ import json
 import os
 import threading
 import uuid
+from copy import deepcopy
 
 _lock = threading.RLock()
 
@@ -157,6 +158,7 @@ ALTER TABLE surveyor_profiles ADD COLUMN IF NOT EXISTS freeform    JSONB NOT NUL
 ALTER TABLE surveyor_profiles ADD COLUMN IF NOT EXISTS intent_misses JSONB NOT NULL DEFAULT '[]'::jsonb;
 ALTER TABLE surveyor_profiles ADD COLUMN IF NOT EXISTS tensions    JSONB NOT NULL DEFAULT '[]'::jsonb;
 ALTER TABLE surveyor_profiles ADD COLUMN IF NOT EXISTS reliability JSONB NOT NULL DEFAULT '{}'::jsonb;
+ALTER TABLE surveyor_profiles ADD COLUMN IF NOT EXISTS profile_calibration JSONB;
 """
 
 
@@ -270,6 +272,29 @@ def set_simple_mode(email, forced: bool) -> None:
                 simple_mode_forced=EXCLUDED.simple_mode_forced,
                 updated=(now() AT TIME ZONE 'utc')
         """, (email, bool(forced)))
+
+
+def save_profile_calibration(email: str, calibration: dict) -> None:
+    """Persist strict calibration beside the owner's existing Surveyor profile."""
+    from . import profile_calibration
+    validated = profile_calibration.validate_result(calibration)
+    with _conn() as connection, connection.cursor() as cursor:
+        cursor.execute("""
+            INSERT INTO surveyor_profiles(email, profile_calibration)
+            VALUES (%s,%s)
+            ON CONFLICT (email) DO UPDATE SET
+                profile_calibration=EXCLUDED.profile_calibration,
+                updated=(now() AT TIME ZONE 'utc')
+        """, (email, _J(validated)))
+
+
+def get_profile_calibration(email: str) -> dict | None:
+    """Return a detached calibration for the named owner, if one exists."""
+    with _conn() as connection, connection.cursor() as cursor:
+        cursor.execute("SELECT profile_calibration FROM surveyor_profiles WHERE email=%s",
+                       (email,))
+        row = cursor.fetchone()
+    return deepcopy(row[0]) if row and isinstance(row[0], dict) else None
 
 
 # --------------------------------------------------------- FDE artifacts
