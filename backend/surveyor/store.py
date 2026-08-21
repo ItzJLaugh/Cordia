@@ -19,6 +19,7 @@ import uuid
 from copy import deepcopy
 
 _lock = threading.RLock()
+_WORKSPACE_TURN_KIND = "cordia_workspace_turn_v1"
 
 _JSON_COLUMNS = {
     "signals", "scores", "evidence", "identifiers", "adaptation",
@@ -153,9 +154,11 @@ CREATE TABLE IF NOT EXISTS surveyor_workspaces(
 CREATE INDEX IF NOT EXISTS surveyor_workspaces_email_idx ON surveyor_workspaces(email, updated);
 
 ALTER TABLE surveyor_runs ADD COLUMN IF NOT EXISTS idempotency_key TEXT;
-CREATE UNIQUE INDEX IF NOT EXISTS surveyor_runs_owner_workspace_key_idx
+ALTER TABLE surveyor_runs ADD COLUMN IF NOT EXISTS turn_kind TEXT;
+DROP INDEX IF EXISTS surveyor_runs_owner_workspace_key_idx;
+CREATE UNIQUE INDEX IF NOT EXISTS surveyor_runs_owner_workspace_turn_key_idx
 ON surveyor_runs(email, interface_id, idempotency_key)
-WHERE idempotency_key IS NOT NULL;
+WHERE idempotency_key IS NOT NULL AND turn_kind='cordia_workspace_turn_v1';
 
 -- Stage 2 and 3, added after the table already existed in production.
 ALTER TABLE surveyor_profiles ADD COLUMN IF NOT EXISTS scenarios   JSONB NOT NULL DEFAULT '{}'::jsonb;
@@ -369,13 +372,40 @@ def get_secret(email: str, connector: str) -> tuple[str, bytes] | None:
 
 
 def save_workspace(email: str, workspace_id: str, state: dict) -> None:
-    with _conn() as c, c.cursor() as cur:
-        cur.execute("""
+    """Persist canonical state under a lock and advance its revision for each change."""
+    with _conn() as connection, connection.cursor() as cursor:
+        cursor.execute("SELECT state FROM surveyor_workspaces WHERE id=%s AND email=%s FOR UPDATE",
+                       (workspace_id, email))
+        row = cursor.fetchone()
+        candidate = deepcopy(state if isinstance(state, dict) else {})
+        if row:
+            current = deepcopy(row[0]) if isinstance(row[0], dict) else {}
+            if candidate == current:
+                return
+            candidate["revision"] = _workspace_revision(current) + 1
+            candidate["pending_actions"] = _pending_actions(candidate)
+            cursor.execute("UPDATE surveyor_workspaces SET state=%s, "
+                           "updated=(now() AT TIME ZONE 'utc') WHERE id=%s AND email=%s",
+                           (_J(candidate), workspace_id, email))
+            return
+        candidate["revision"] = _workspace_revision(candidate)
+        candidate["pending_actions"] = _pending_actions(candidate)
+        cursor.execute("""
             INSERT INTO surveyor_workspaces(id, email, state) VALUES (%s,%s,%s)
             ON CONFLICT (id) DO UPDATE SET state=EXCLUDED.state,
                 updated=(now() AT TIME ZONE 'utc')
             WHERE surveyor_workspaces.email=EXCLUDED.email
-        """, (workspace_id, email, _J(state)))
+        """, (workspace_id, email, _J(candidate)))
+
+
+def _workspace_revision(state: dict) -> int:
+    revision = state.get("revision", 0) if isinstance(state, dict) else 0
+    return revision if isinstance(revision, int) and not isinstance(revision, bool) and revision >= 0 else 0
+
+
+def _pending_actions(state: dict) -> list:
+    pending = state.get("pending_actions") if isinstance(state, dict) else None
+    return deepcopy(pending) if isinstance(pending, list) else []
 
 
 def _split_artifacts(bundle: dict) -> tuple[dict, dict]:
@@ -481,7 +511,8 @@ def get_workspace(email: str, workspace_id: str) -> dict | None:
 def get_run_by_idempotency(email: str, workspace_id: str, key: str) -> dict | None:
     with _conn() as connection, connection.cursor() as cursor:
         cursor.execute("SELECT meta FROM surveyor_runs WHERE email=%s AND interface_id=%s "
-                       "AND idempotency_key=%s", (email, workspace_id, key))
+                       "AND idempotency_key=%s AND turn_kind=%s",
+                       (email, workspace_id, key, _WORKSPACE_TURN_KIND))
         row = cursor.fetchone()
     return deepcopy(row[0]) if row and isinstance(row[0], dict) else None
 
@@ -490,8 +521,9 @@ def recent_workspace_turns(email: str, workspace_id: str, limit: int = 12) -> li
     bounded = max(1, min(int(limit), 12))
     with _conn() as connection, connection.cursor() as cursor:
         cursor.execute("SELECT input,output FROM surveyor_runs "
-                       "WHERE email=%s AND interface_id=%s ORDER BY id DESC LIMIT %s",
-                       (email, workspace_id, bounded))
+                       "WHERE email=%s AND interface_id=%s AND turn_kind=%s "
+                       "AND idempotency_key IS NOT NULL ORDER BY id DESC LIMIT %s",
+                       (email, workspace_id, _WORKSPACE_TURN_KIND, bounded))
         rows = cursor.fetchall()
     return [{"user": str(row[0] or "")[:6000], "assistant": str(row[1] or "")[:4000]}
             for row in reversed(rows)]
@@ -499,8 +531,9 @@ def recent_workspace_turns(email: str, workspace_id: str, limit: int = 12) -> li
 
 def has_workspace_turns(email: str, workspace_id: str) -> bool:
     with _conn() as connection, connection.cursor() as cursor:
-        cursor.execute("SELECT 1 FROM surveyor_runs WHERE email=%s AND interface_id=%s LIMIT 1",
-                       (email, workspace_id))
+        cursor.execute("SELECT 1 FROM surveyor_runs WHERE email=%s AND interface_id=%s "
+                       "AND turn_kind=%s AND idempotency_key IS NOT NULL LIMIT 1",
+                       (email, workspace_id, _WORKSPACE_TURN_KIND))
         return cursor.fetchone() is not None
 
 
@@ -515,22 +548,28 @@ def commit_workspace_turn(email: str, workspace_id: str, expected_revision: int,
         if not row:
             return {"status": "missing"}
         cursor.execute("SELECT meta FROM surveyor_runs WHERE email=%s AND interface_id=%s "
-                       "AND idempotency_key=%s", (email, workspace_id, key))
+                       "AND idempotency_key=%s AND turn_kind=%s",
+                       (email, workspace_id, key, _WORKSPACE_TURN_KIND))
         prior = cursor.fetchone()
         if prior:
             return {"status": "prior", "result": deepcopy(prior[0])}
         current = (row[0] or {}) if isinstance(row[0], dict) else {}
-        if int(current.get("revision", 0)) != expected_revision:
+        stored_revision = current.get("revision", 0)
+        if ("revision" in current and (isinstance(stored_revision, bool)
+                                       or not isinstance(stored_revision, int)
+                                       or stored_revision < 0)):
+            return {"status": "conflict"}
+        if stored_revision != expected_revision:
             return {"status": "conflict"}
         cursor.execute("UPDATE surveyor_workspaces SET state=%s, "
                        "updated=(now() AT TIME ZONE 'utc') WHERE id=%s AND email=%s",
                        (_J(next_state), workspace_id, email))
         cursor.execute("INSERT INTO surveyor_runs"
-                       "(interface_id,email,input,output,meta,idempotency_key) "
-                       "VALUES(%s,%s,%s,%s,%s,%s)",
+                       "(interface_id,email,input,output,meta,idempotency_key,turn_kind) "
+                       "VALUES(%s,%s,%s,%s,%s,%s,%s)",
                        (workspace_id, email, str(user_message)[:6000],
                         str(public_result.get("speech") or "")[:4000],
-                        _J(public_result), key))
+                        _J(public_result), key, _WORKSPACE_TURN_KIND))
     return {"status": "committed", "result": deepcopy(public_result)}
 
 

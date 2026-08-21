@@ -5,6 +5,8 @@ from copy import deepcopy
 import json
 import re
 
+from . import operator_profile
+
 
 _ACTION_FIELDS = {
     "speak": {"kind", "speech"},
@@ -21,12 +23,18 @@ _PROPOSAL_FIELDS = {
 }
 _ID = re.compile(r"^[a-z][a-z0-9_]{0,79}$")
 _REQUEST_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$")
-_UNSAFE_TEXT = re.compile(
-    r"(?:secret(?:_ref)?|ciphertext|authorization|bearer\s+|(?:[A-Za-z]:[\\/])|file://|\\\\|/home/|/Users/)",
-    re.IGNORECASE,
-)
 _SAFE_SETUP_KINDS = {"api_key", "openapi", "remote_mcp"}
 _SAFE_VIEW_MODES = {"dash", "list", "document"}
+_SPEAK_FALSE_CLAIM = re.compile(
+    r"(?:\b(?:connector|skill|action|integration|setup)\b(?:\s+\w+){0,6}\s+"
+    r"(?:is|was|were|has|have)(?:\s+been)?\s+(?:(?:fully|successfully|now)\s+)?"
+    r"(?:connected|executed|run|completed|approved|available)\b|"
+    r"\b(?:connector|skill|action|integration|setup)\s+(?:was\s+)?"
+    r"(?:connected|executed|run|ran|completed|approved)\b|"
+    r"\b(?:i|we|cordia)\s+(?:have\s+)?(?:executed|ran|completed|approved)\b"
+    r".{0,80}\b(?:connector|skill|action|integration|setup)\b)",
+    re.IGNORECASE,
+)
 
 
 class InvalidAgentResponse(ValueError):
@@ -39,16 +47,15 @@ def _exact_object(value, fields, message):
 
 
 def _safe_text(value, limit, message):
-    if not isinstance(value, str):
-        raise ValueError(message)
-    text = value.strip()
-    if not text or len(text) > limit or _UNSAFE_TEXT.search(text):
+    text = operator_profile._safe_text(value, limit)
+    if not text:
         raise ValueError(message)
     return text
 
 
 def _identifier(value, message, request=False):
-    if not isinstance(value, str) or not ( _REQUEST_ID if request else _ID).fullmatch(value):
+    if (not isinstance(value, str) or not ( _REQUEST_ID if request else _ID).fullmatch(value)
+            or not operator_profile._safe_identifier(value)):
         raise ValueError(message)
     return value
 
@@ -73,6 +80,8 @@ def validate_envelope(value: object) -> dict:
     _exact_object(value, _ACTION_FIELDS[kind], "Invalid Cordia Agent action.")
     speech = _safe_text(value["speech"], 6000, "Invalid Cordia Agent action.")
     if kind == "speak":
+        if _SPEAK_FALSE_CLAIM.search(speech):
+            raise ValueError("Invalid Cordia Agent action.")
         return {"kind": kind, "speech": speech}
     proposal = value["proposal"]
     _exact_object(proposal, _PROPOSAL_FIELDS[kind], "Invalid Cordia Agent action.")
@@ -131,12 +140,14 @@ def build_context(memory: str, workspace: dict, recent_turns: list[dict]) -> dic
             safe_workspace[key] = _safe_text(state.get(key), limit, "unsafe")
         except ValueError:
             safe_workspace[key] = ""
+    artifact_source = state.get("windows") if isinstance(state.get("windows"), list) else state.get("artifacts")
     safe_workspace["artifacts"] = [item for item in (
         _summary(value, {"id": 80, "title": 160, "summary": 600})
-        for value in (state.get("windows") if isinstance(state.get("windows"), list) else [])[:30]
+        for value in (artifact_source if isinstance(artifact_source, list) else [])[:30]
     ) if item]
     safe_workspace["connectors"] = [item for item in (
-        _summary(value, {"id": 80, "display_name": 160, "status": 80, "setup_kind": 80})
+        _summary(value, {"id": 80, "display_name": 160, "status": 80, "setup_kind": 80,
+                         "implementation_status": 80, "lifecycle": 80, "runtime_status": 80})
         for value in (state.get("connectors") if isinstance(state.get("connectors"), list) else [])[:30]
     ) if item]
     safe_workspace["skills"] = [item for item in (

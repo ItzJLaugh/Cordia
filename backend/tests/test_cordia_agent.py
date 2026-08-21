@@ -65,6 +65,24 @@ class TestCordiaAgent(unittest.TestCase):
             with self.subTest(value=bad), self.assertRaises(ValueError):
                 cordia_agent.validate_turn_request(bad)
 
+    def test_text_fields_reject_credentials_and_local_paths_but_allow_safe_remote_urls(self):
+        for unsafe in (
+            "sk-private-token", "ghp_privatetoken", "github_pat_privatetoken",
+            "AKIA1234567890ABCD", "token=private", "-----BEGIN PRIVATE KEY-----",
+            "C:\\private\\workspace", "..\\private", "/etc/cordia/secret", "\\\\host\\share",
+        ):
+            with self.subTest(unsafe=unsafe):
+                with self.assertRaises(ValueError):
+                    cordia_agent.validate_turn_request({
+                        "id": "workspace_1", "revision": 0, "message": unsafe,
+                        "idempotency_key": "turn_abc123",
+                    })
+                with self.assertRaises(ValueError):
+                    cordia_agent.validate_envelope({"kind": "speak", "speech": unsafe})
+        self.assertEqual(cordia_agent.validate_envelope({
+            "kind": "speak", "speech": "See https://example.test/docs for the public guide.",
+        })["kind"], "speak")
+
     def test_prompt_context_has_only_compiled_memory_and_safe_workspace_summaries(self):
         state = workspace_state.empty("workspace_1")
         state.update({
@@ -83,10 +101,29 @@ class TestCordiaAgent(unittest.TestCase):
         prompt = cordia_agent.build_system_prompt(context)
         self.assertIn("Compiled memory.", prompt)
         self.assertIn("Planning", prompt)
+        self.assertIn("Weekly plan", prompt)
         self.assertIn("Prior safe user message", prompt)
         for private in ("secret-1", "private reason", "private provider", "C:\\private",
                         "never prompt", "nope", "raw"):
             self.assertNotIn(private, prompt)
+
+    def test_prompt_retains_only_bounded_connector_truth_fields(self):
+        context = cordia_agent.build_context("Compiled memory.", {
+            "title": "Planning", "description": "Coordinate work.",
+            "windows": [{"id": "weekly_plan", "title": "Weekly plan", "summary": "Safe plan."}],
+            "connectors": [{
+                "id": "issue_tracker", "status": "confirmed", "implementation_status": "live",
+                "lifecycle": "needs_handoff", "runtime_status": "not_observed",
+                "secret_ref": "secret_issue_1", "reason": "private reason",
+            }],
+            "skills": [],
+        }, [])
+        prompt = cordia_agent.build_system_prompt(context)
+        for expected in ("weekly_plan", "Weekly plan", "Safe plan.", "confirmed", "live",
+                         "needs_handoff", "not_observed"):
+            self.assertIn(expected, prompt)
+        self.assertNotIn("secret_issue_1", prompt)
+        self.assertNotIn("private reason", prompt)
 
     def test_run_turn_accepts_only_one_strict_json_envelope(self):
         seen = {}
@@ -127,6 +164,18 @@ class TestCordiaAgent(unittest.TestCase):
         self.assertEqual(next_state, state)
         self.assertEqual(public["action"], {"kind": "run_approved_skill", "state": "approval_required",
                                              "skill_id": "review_issues"})
+
+    def test_speak_cannot_claim_an_unperformed_connector_or_skill_action(self):
+        for speech in (
+            "Your connector is connected.", "The skill completed.",
+            "The action was approved.", "The connector is fully connected.",
+            "The skill has completed.", "I executed the integration.",
+        ):
+            with self.subTest(speech=speech), self.assertRaises(ValueError):
+                cordia_agent.validate_envelope({"kind": "speak", "speech": speech})
+        self.assertEqual(cordia_agent.validate_envelope({
+            "kind": "speak", "speech": "I can propose a connector setup for your approval.",
+        })["speech"], "I can propose a connector setup for your approval.")
 
 
 if __name__ == "__main__":
