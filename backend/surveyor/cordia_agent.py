@@ -27,6 +27,7 @@ _SAFE_SETUP_KINDS = {"api_key", "openapi", "remote_mcp"}
 _SAFE_VIEW_MODES = {"dash", "list", "document"}
 _CLAUSE_SPLIT = re.compile(r"(?<=[.!?;])\s*|(?:\r?\n)+")
 _COORDINATED_CLAUSE_SPLIT = re.compile(r"\s*,?\s+(?:and|but|or|nor|yet|so)\s+", re.IGNORECASE)
+_LEADING_COORDINATOR = re.compile(r"^(?:and|but|or|nor|yet|so)\b\s*", re.IGNORECASE)
 _CONDITIONAL_CLAUSE = re.compile(r"^(?:if|when|unless|whether|suppose|assuming)\b", re.IGNORECASE)
 _AGENT_COMPLETION = re.compile(
     r"^(?:i(?:['’]ve)?|we(?:['’]ve)?|cordia|(?:the\s+)?(?:agent|assistant))\b"
@@ -84,7 +85,7 @@ def _false_speak_claim(speech: str, known_connector_names=()) -> bool:
     clauses = (subclause for clause in _CLAUSE_SPLIT.split(speech)
                for subclause in _COORDINATED_CLAUSE_SPLIT.split(clause))
     for clause in clauses:
-        clause = clause.strip()
+        clause = _LEADING_COORDINATOR.sub("", clause.strip())
         if not clause or clause.endswith("?") or _CONDITIONAL_CLAUSE.match(clause):
             continue
         bare_clause = clause.rstrip(".!?; ")
@@ -141,9 +142,9 @@ def validate_envelope(value: object, known_connector_names=()) -> dict:
     _exact_object(value, _ACTION_FIELDS[kind], "Invalid Cordia Agent action.")
     raw_speech = value["speech"]
     speech = _safe_text(raw_speech, 6000, "Invalid Cordia Agent action.")
+    if _false_speak_claim(raw_speech, known_connector_names):
+        raise ValueError("Invalid Cordia Agent action.")
     if kind == "speak":
-        if _false_speak_claim(raw_speech, known_connector_names):
-            raise ValueError("Invalid Cordia Agent action.")
         return {"kind": kind, "speech": speech}
     proposal = value["proposal"]
     _exact_object(proposal, _PROPOSAL_FIELDS[kind], "Invalid Cordia Agent action.")

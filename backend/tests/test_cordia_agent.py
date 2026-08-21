@@ -254,9 +254,37 @@ class TestCordiaAgent(unittest.TestCase):
             "This feature is available in the catalog, and\nAssistant has successfully deployed everything.",
             "This feature is available after approval, but\nWe've completed everything.",
             "This feature is available after approval, but\nWe’ve completed everything.",
+            "This feature is available in the catalog,\nand Assistant has successfully deployed everything.",
+            "This feature is available after approval,\nbut We've completed everything.",
+            "This feature is available after approval,\nbut We’ve completed everything.",
         ):
             with self.subTest(speech=speech), self.assertRaises(ValueError):
                 cordia_agent.validate_envelope({"kind": "speak", "speech": speech})
+
+    def test_every_envelope_rejects_false_agent_completion_before_any_proposal(self):
+        false_speech = "Assistant has successfully deployed everything."
+        envelopes = (
+            {"kind": "speak", "speech": false_speech},
+            {"kind": "propose_connector", "speech": false_speech,
+             "proposal": CONNECTOR["proposal"]},
+            {"kind": "create_artifact", "speech": false_speech, "proposal": {
+                "artifact_id": "weekly_plan", "title": "Weekly plan",
+                "view_mode": "dash", "summary": "A focused weekly plan.",
+            }},
+            {"kind": "propose_skill", "speech": false_speech, "proposal": {
+                "skill_id": "review_issues", "name": "Review issues",
+                "purpose": "Review issues.", "connector_id": "issue_tracker",
+                "operation_id": "list_issues", "artifact_id": "weekly_plan",
+            }},
+            {"kind": "run_approved_skill", "speech": false_speech,
+             "proposal": {"skill_id": "review_issues"}},
+        )
+        for envelope in envelopes:
+            with self.subTest(kind=envelope["kind"]):
+                state = workspace_state.empty("workspace_1")
+                with self.assertRaises(ValueError):
+                    cordia_agent.apply_proposal(state, envelope)
+                self.assertEqual(state, workspace_state.empty("workspace_1"))
 
 
 if __name__ == "__main__":

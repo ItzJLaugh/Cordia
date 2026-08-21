@@ -58,3 +58,49 @@ embedding runtime test, `test_embedding_runtime.TestEmbeddingRuntime.test_declar
   was added.
 - Provider evidence remains `Not yet verified`; no provider or connector call
   was made.
+
+## Review-fix round 1 of 5
+
+### Corrections
+
+- Every punctuation/newline fragment now removes a leading coordinating word
+  (`and`, `but`, `or`, `nor`, `yet`, or `so`) before agent-completion
+  classification. A newline before the coordinator therefore cannot hide a
+  later completion claim behind a catalog or approval clause.
+- False-speech validation now runs for all five exact Cordia Agent envelopes
+  before kind-specific proposal processing. A proposal cannot carry a false
+  completion claim into a pending action.
+- Added `store.mutate_workspace`, a reusable server-derived mutation primitive.
+  It locks the owner workspace, reads the current canonical state, recomputes
+  the requested projection from that state, retains pending actions, and
+  increments revision once per changed projection. Client-authored
+  `save_workspace` expected-revision CAS remains unchanged.
+- Interface merges, connector preference/token refreshes, and connector runtime
+  projections use the primitive. Their successful routes now stop with a 409
+  rather than reporting success when the canonical projection cannot be stored.
+  The legacy workspace materialization route returns the stored truth on a
+  concurrent save instead of returning its stale candidate.
+
+### Independent RED/GREEN
+
+- Cordia Agent RED: 15 tests ran with seven expected failures: three
+  newline-leading coordinator bypasses and four proposal-envelope false-speech
+  bypasses. GREEN: 15/15.
+- Production-store RED: the new locked mutation regression reached the missing
+  `mutate_workspace` API. GREEN: 6/6; it commits an intervening agent proposal,
+  then independently proves fresh interface and connector projections retain
+  the pending action and increment revision once per projection.
+- Route RED: 9 tests ran with three expected failures: stale interface and
+  connector projections were silently dropped, and derived conflicts still
+  returned 200. GREEN: 9/9.
+
+### Final verification
+
+- Task 4/4B focused and adjacent backend: Cordia Agent 15/15, operator profile
+  13/13, workspace-turn route 9/9, and workspace-turn comparison 6/6
+  (43/43 total).
+- Full dashboard: 88/88 passed.
+- Full backend: 241/242 passed. The sole unchanged failure remains
+  `test_embedding_runtime.TestEmbeddingRuntime.test_declared_runtime_can_import_the_shadow_scorer` because the optional `sentence_transformers` package is absent.
+- No live provider or connector operation was invoked. Provider evidence remains
+  `Not yet verified`.

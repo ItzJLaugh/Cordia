@@ -8,7 +8,7 @@ from unittest.mock import patch
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from surveyor import cordia_agent, workspace_state
+from surveyor import artifacts, cordia_agent, workspace_state
 
 
 class MemoryStore:
@@ -17,9 +17,17 @@ class MemoryStore:
         self.artifacts = {"source/memory.md": "Compiled profile memory."}
         self.runs = {}
         self.write_calls = []
+        self.workspace_read = None
+        self.workspace_listing = None
+        self.connector_states = {}
+        self.interfaces = {"workspace_1": {"id": "workspace_1"}}
+        self.mutation_status = None
+        self.save_status = None
 
     def get_workspace(self, _email, workspace_id):
-        return deepcopy(self.workspace) if workspace_id == "workspace_1" else None
+        if workspace_id != "workspace_1":
+            return None
+        return deepcopy(self.workspace_read if self.workspace_read is not None else self.workspace)
 
     def get_run_by_idempotency(self, _email, workspace_id, key):
         return deepcopy(self.runs.get((workspace_id, key)))
@@ -45,12 +53,40 @@ class MemoryStore:
         return {"status": "committed", "result": deepcopy(public_result)}
 
     def save_workspace(self, _email, workspace_id, state, expected_revision):
+        if self.save_status:
+            return {"status": self.save_status, "workspace": deepcopy(self.workspace)}
         if workspace_id != "workspace_1" or self.workspace["revision"] != expected_revision:
             return {"status": "conflict", "workspace": deepcopy(self.workspace)}
         saved = deepcopy(state)
         saved["revision"] = expected_revision + 1
         self.workspace = saved
         return {"status": "saved", "workspace": deepcopy(saved)}
+
+    def mutate_workspace(self, _email, workspace_id, mutate):
+        if self.mutation_status:
+            return {"status": self.mutation_status, "workspace": deepcopy(self.workspace)}
+        if workspace_id != "workspace_1":
+            return {"status": "missing"}
+        changed = mutate(deepcopy(self.workspace))
+        changed["revision"] = self.workspace["revision"] + 1
+        self.workspace = deepcopy(changed)
+        return {"status": "saved", "workspace": deepcopy(self.workspace)}
+
+    def workspaces(self, _email):
+        return deepcopy(self.workspace_listing if self.workspace_listing is not None
+                        else [("workspace_1", self.workspace)])
+
+    def get_connector_states(self, _email):
+        return deepcopy(self.connector_states)
+
+    def save_connector_states(self, _email, states):
+        self.connector_states = deepcopy(states)
+
+    def get_interface(self, _email, workspace_id):
+        return deepcopy(self.interfaces.get(workspace_id))
+
+    def save_interface(self, _email, existing, _name, _description, _definition, _theme):
+        return existing or "workspace_1"
 
     def log_event(self, *_args, **_kwargs):
         return None
@@ -81,6 +117,8 @@ class TestWorkspaceTurnRoute(unittest.TestCase):
             workspace_state=workspace_state,
             store=self.store,
             llm=SimpleNamespace(call=self.call_model),
+            artifacts=artifacts,
+            pipeline=SimpleNamespace(artifact_bundle=lambda _email: {}),
         )
 
     def call_model(self, _system, _message, max_tokens):
@@ -169,6 +207,56 @@ class TestWorkspaceTurnRoute(unittest.TestCase):
         self.assertEqual(status, 200)
         self.assertEqual(response["workspace"], self.store.workspace)
         self.assertEqual(response["workspace"]["revision"], 1)
+
+    def test_interface_projection_recomputes_after_an_intervening_agent_revision(self):
+        stale = workspace_state.empty("workspace_1")
+        self.store.workspace, _ = cordia_agent.apply_proposal(stale, {
+            "kind": "propose_connector", "speech": "I can prepare that.", "proposal": {
+                "connector_id": "issues", "display_name": "Issues",
+                "setup_kind": "api_key", "purpose": "Review issues.",
+            },
+        })
+        self.store.workspace_read = stale
+        response, status = self.post({
+            "id": "workspace_1", "name": "Fresh interface", "description": "Fresh description",
+            "definition": {},
+        }, path="/surveyor/interface")
+        self.assertEqual((response, status), ({"ok": True, "id": "workspace_1"}, 200))
+        self.assertEqual((self.store.workspace["revision"],
+                          len(self.store.workspace["pending_actions"]),
+                          self.store.workspace["title"]), (2, 1, "Fresh interface"))
+
+    def test_connector_refresh_recomputes_after_an_intervening_agent_revision(self):
+        stale = workspace_state.empty("workspace_1")
+        self.store.workspace, _ = cordia_agent.apply_proposal(stale, {
+            "kind": "propose_connector", "speech": "I can prepare that.", "proposal": {
+                "connector_id": "issues", "display_name": "Issues",
+                "setup_kind": "api_key", "purpose": "Review issues.",
+            },
+        })
+        self.store.workspace_listing = [("workspace_1", stale)]
+        response, status = self.post({"connector_states": {"github": "confirmed"}},
+                                     path="/surveyor/connectors")
+        self.assertEqual(status, 200)
+        self.assertTrue(response["ok"])
+        self.assertEqual((self.store.workspace["revision"],
+                          len(self.store.workspace["pending_actions"]),
+                          self.store.workspace["connectors"]),
+                         (2, 1, [{"id": "github", "status": "confirmed",
+                                 "implementation_status": "live",
+                                 "lifecycle": "needs_handoff"}]))
+
+    def test_server_derived_conflict_never_returns_success(self):
+        self.store.save_status = "conflict"
+        self.store.mutation_status = "conflict"
+        interface, interface_status = self.post({
+            "id": "workspace_1", "name": "Fresh interface", "description": "Fresh description",
+            "definition": {},
+        }, path="/surveyor/interface")
+        connector, connector_status = self.post({"connector_states": {"github": "confirmed"}},
+                                                 path="/surveyor/connectors")
+        self.assertEqual((interface["ok"], interface_status), (False, 409))
+        self.assertEqual((connector["ok"], connector_status), (False, 409))
 
 
 if __name__ == "__main__":

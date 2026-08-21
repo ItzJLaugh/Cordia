@@ -408,6 +408,36 @@ def save_workspace(email: str, workspace_id: str, state: dict, expected_revision
     return {"status": "saved", "workspace": candidate}
 
 
+def mutate_workspace(email: str, workspace_id: str, mutate) -> dict:
+    """Recompute one server-derived update from the current owner-locked workspace."""
+    if not callable(mutate):
+        raise ValueError("workspace mutation is invalid")
+    with _conn() as connection, connection.cursor() as cursor:
+        cursor.execute("SELECT state FROM surveyor_workspaces WHERE id=%s AND email=%s FOR UPDATE",
+                       (workspace_id, email))
+        row = cursor.fetchone()
+        if not row:
+            return {"status": "missing"}
+        current = deepcopy(row[0]) if isinstance(row[0], dict) else {}
+        current_revision = _stored_workspace_revision(current)
+        if current_revision is None:
+            return {"status": "conflict", "workspace": current}
+        try:
+            candidate = mutate(deepcopy(current))
+        except Exception:
+            return {"status": "failed", "workspace": current}
+        if not isinstance(candidate, dict):
+            return {"status": "failed", "workspace": current}
+        if candidate == current:
+            return {"status": "unchanged", "workspace": current}
+        candidate["revision"] = current_revision + 1
+        candidate["pending_actions"] = _pending_actions(candidate)
+        cursor.execute("UPDATE surveyor_workspaces SET state=%s, "
+                       "updated=(now() AT TIME ZONE 'utc') WHERE id=%s AND email=%s",
+                       (_J(candidate), workspace_id, email))
+    return {"status": "saved", "workspace": candidate}
+
+
 def _is_workspace_revision(value: object) -> bool:
     return isinstance(value, int) and not isinstance(value, bool) and value >= 0
 
