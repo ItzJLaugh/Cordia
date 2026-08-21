@@ -321,13 +321,7 @@ def get_connector_states(email: str) -> dict:
 
 def save_connector_states(email: str, states: dict) -> None:
     with _conn() as c, c.cursor() as cur:
-        cur.execute("""
-            INSERT INTO surveyor_connector_preferences(email, connector_states)
-            VALUES (%s,%s)
-            ON CONFLICT (email) DO UPDATE SET
-                connector_states=EXCLUDED.connector_states,
-                updated=(now() AT TIME ZONE 'utc')
-        """, (email, _J(states)))
+        _save_connector_states(cur, email, states)
 
 
 def save_artifacts(email: str, bundle: dict) -> None:
@@ -355,10 +349,7 @@ def get_artifacts(email: str) -> dict | None:
 
 def save_secret(secret_ref: str, email: str, connector: str, ciphertext: bytes) -> None:
     with _conn() as c, c.cursor() as cur:
-        cur.execute("""
-            INSERT INTO surveyor_secrets(secret_ref, email, connector, ciphertext)
-            VALUES (%s,%s,%s,%s)
-        """, (secret_ref, email, connector, bytes(ciphertext)))
+        _save_secret(cur, secret_ref, email, connector, ciphertext)
 
 
 def get_secret(email: str, connector: str) -> tuple[str, bytes] | None:
@@ -401,41 +392,181 @@ def save_workspace(email: str, workspace_id: str, state: dict, expected_revision
         candidate["pending_actions"] = _pending_actions(candidate)
         cursor.execute("""
             INSERT INTO surveyor_workspaces(id, email, state) VALUES (%s,%s,%s)
-            ON CONFLICT (id) DO UPDATE SET state=EXCLUDED.state,
-                updated=(now() AT TIME ZONE 'utc')
-            WHERE surveyor_workspaces.email=EXCLUDED.email
+            ON CONFLICT (id) DO NOTHING
+            RETURNING state
         """, (workspace_id, email, _J(candidate)))
+        created = cursor.fetchone()
+        if not created:
+            # The id is globally unique. A raced creator may be this owner or a
+            # different owner; in neither case may this request overwrite it.
+            return {"status": "conflict", "workspace": None}
     return {"status": "saved", "workspace": candidate}
 
 
-def mutate_workspace(email: str, workspace_id: str, mutate) -> dict:
-    """Recompute one server-derived update from the current owner-locked workspace."""
-    if not callable(mutate):
-        raise ValueError("workspace mutation is invalid")
-    with _conn() as connection, connection.cursor() as cursor:
-        cursor.execute("SELECT state FROM surveyor_workspaces WHERE id=%s AND email=%s FOR UPDATE",
-                       (workspace_id, email))
-        row = cursor.fetchone()
-        if not row:
-            return {"status": "missing"}
-        current = deepcopy(row[0]) if isinstance(row[0], dict) else {}
-        current_revision = _stored_workspace_revision(current)
-        if current_revision is None:
-            return {"status": "conflict", "workspace": current}
-        try:
-            candidate = mutate(deepcopy(current))
-        except Exception:
-            return {"status": "failed", "workspace": current}
-        if not isinstance(candidate, dict):
-            return {"status": "failed", "workspace": current}
-        if candidate == current:
-            return {"status": "unchanged", "workspace": current}
-        candidate["revision"] = current_revision + 1
-        candidate["pending_actions"] = _pending_actions(candidate)
-        cursor.execute("UPDATE surveyor_workspaces SET state=%s, "
-                       "updated=(now() AT TIME ZONE 'utc') WHERE id=%s AND email=%s",
-                       (_J(candidate), workspace_id, email))
-    return {"status": "saved", "workspace": candidate}
+class _AtomicAbort(Exception):
+    """Cause the connection context to roll back a bounded derived write."""
+
+    def __init__(self, status: str):
+        self.status = status
+
+
+def _save_connector_states(cursor, email: str, states: dict) -> None:
+    cursor.execute("""
+        INSERT INTO surveyor_connector_preferences(email, connector_states)
+        VALUES (%s,%s)
+        ON CONFLICT (email) DO UPDATE SET
+            connector_states=EXCLUDED.connector_states,
+            updated=(now() AT TIME ZONE 'utc')
+    """, (email, _J(states)))
+
+
+def _save_secret(cursor, secret_ref: str, email: str, connector: str,
+                 ciphertext: bytes) -> None:
+    cursor.execute("""
+        INSERT INTO surveyor_secrets(secret_ref, email, connector, ciphertext)
+        VALUES (%s,%s,%s,%s)
+    """, (secret_ref, email, connector, bytes(ciphertext)))
+
+
+def _save_interface(cursor, email: str, iface_id: str, name: str,
+                    description: str, definition: dict, theme: dict) -> bool:
+    cursor.execute("""
+        INSERT INTO surveyor_interfaces(id, email, name, description, definition, theme)
+        VALUES (%s,%s,%s,%s,%s,%s)
+        ON CONFLICT (id) DO UPDATE SET
+            name=EXCLUDED.name,
+            description=EXCLUDED.description,
+            definition=EXCLUDED.definition,
+            theme=EXCLUDED.theme,
+            updated=(now() AT TIME ZONE 'utc')
+        WHERE surveyor_interfaces.email = EXCLUDED.email
+        RETURNING id
+    """, (iface_id, email, name, description, _J(definition), _J(theme or {})))
+    return bool(cursor.fetchone())
+
+
+def _store_derived_workspace(cursor, email: str, workspace_id: str,
+                             current: dict, candidate: dict) -> dict:
+    """Advance one fresh, owner-locked canonical projection exactly once."""
+    revision = _stored_workspace_revision(current)
+    if revision is None or not isinstance(candidate, dict):
+        raise _AtomicAbort("conflict")
+    candidate = deepcopy(candidate)
+    if candidate == current:
+        return current
+    candidate["revision"] = revision + 1
+    candidate["pending_actions"] = _pending_actions(candidate)
+    cursor.execute("UPDATE surveyor_workspaces SET state=%s, "
+                   "updated=(now() AT TIME ZONE 'utc') WHERE id=%s AND email=%s",
+                   (_J(candidate), workspace_id, email))
+    if cursor.rowcount != 1:
+        raise _AtomicAbort("conflict")
+    return candidate
+
+
+def _owner_workspaces_locked(cursor, email: str) -> list[tuple[str, dict]]:
+    cursor.execute("SELECT id, state FROM surveyor_workspaces WHERE email=%s "
+                   "ORDER BY id FOR UPDATE", (email,))
+    return [(workspace_id, deepcopy(state) if isinstance(state, dict) else {})
+            for workspace_id, state in cursor.fetchall()]
+
+
+def _connector_states_locked(cursor, email: str) -> dict:
+    """Serialize an owner's preference merge, including the absent-row case."""
+    cursor.execute("SELECT pg_advisory_xact_lock(hashtext(%s))",
+                   ("surveyor-connector-preferences:" + email,))
+    cursor.execute("SELECT connector_states FROM surveyor_connector_preferences "
+                   "WHERE email=%s FOR UPDATE", (email,))
+    row = cursor.fetchone()
+    return deepcopy(row[0]) if row and isinstance(row[0], dict) else {}
+
+
+def save_interface_projection(email: str, iface_id: str | None, name: str,
+                              description: str, definition: dict, theme: dict | None) -> dict:
+    """Atomically persist one interface and its corresponding workspace view."""
+    from . import workspace_state
+    iface_id = iface_id or uuid.uuid4().hex
+    workspace_definition = dict(definition or {})
+    workspace_definition.update({"name": name, "description": description})
+    try:
+        with _conn() as connection, connection.cursor() as cursor:
+            # A newly created workspace projects the current consent state, not
+            # a route snapshot that may have gone stale before this transaction.
+            connector_states = _connector_states_locked(cursor, email)
+            if not _save_interface(cursor, email, iface_id, name, description,
+                                   definition, theme or {}):
+                raise _AtomicAbort("missing")
+            cursor.execute("SELECT state FROM surveyor_workspaces "
+                           "WHERE id=%s AND email=%s FOR UPDATE", (iface_id, email))
+            row = cursor.fetchone()
+            if row:
+                current = deepcopy(row[0]) if isinstance(row[0], dict) else {}
+                workspace = _store_derived_workspace(
+                    cursor, email, iface_id, current,
+                    workspace_state.merge_interface(current, workspace_definition))
+            else:
+                workspace = workspace_state.from_interface(
+                    iface_id, workspace_definition, connector_states)
+                cursor.execute("""
+                    INSERT INTO surveyor_workspaces(id, email, state) VALUES (%s,%s,%s)
+                    ON CONFLICT (id) DO NOTHING
+                    RETURNING state
+                """, (iface_id, email, _J(workspace)))
+                if not cursor.fetchone():
+                    raise _AtomicAbort("conflict")
+    except _AtomicAbort as exc:
+        return {"status": exc.status}
+    except Exception:
+        return {"status": "failed"}
+    return {"status": "committed", "id": iface_id, "workspace": workspace}
+
+
+def save_connector_projection(email: str, states: dict, *,
+                              secret: tuple[str, str, bytes] | None = None,
+                              runtime_status: str | None = None) -> dict:
+    """Atomically save explicit connector state, optional credential, and views."""
+    from . import artifacts, workspace_state
+    try:
+        with _conn() as connection, connection.cursor() as cursor:
+            states = artifacts.merge_connector_states(
+                _connector_states_locked(cursor, email), states)
+            _save_connector_states(cursor, email, states)
+            if secret is not None:
+                secret_ref, connector, ciphertext = secret
+                _save_secret(cursor, secret_ref, email, connector, ciphertext)
+            workspace_ids = []
+            for workspace_id, current in _owner_workspaces_locked(cursor, email):
+                candidate = workspace_state.refresh_connectors(current, states)
+                if runtime_status is not None:
+                    candidate = workspace_state.record_connector_runtime(
+                        candidate, "github", runtime_status)
+                _store_derived_workspace(cursor, email, workspace_id, current, candidate)
+                workspace_ids.append(workspace_id)
+    except _AtomicAbort as exc:
+        return {"status": exc.status}
+    except Exception:
+        return {"status": "failed"}
+    return {"status": "committed", "connector_states": states,
+            "workspace_ids": workspace_ids}
+
+
+def save_connector_runtime_projection(email: str, connector_id: str,
+                                      runtime_status: str) -> dict:
+    """Atomically project one observed connector runtime state to every workspace."""
+    from . import workspace_state
+    try:
+        with _conn() as connection, connection.cursor() as cursor:
+            workspace_ids = []
+            for workspace_id, current in _owner_workspaces_locked(cursor, email):
+                candidate = workspace_state.record_connector_runtime(
+                    current, connector_id, runtime_status)
+                _store_derived_workspace(cursor, email, workspace_id, current, candidate)
+                workspace_ids.append(workspace_id)
+    except _AtomicAbort as exc:
+        return {"status": exc.status}
+    except Exception:
+        return {"status": "failed"}
+    return {"status": "committed", "workspace_ids": workspace_ids}
 
 
 def _is_workspace_revision(value: object) -> bool:
@@ -669,17 +800,9 @@ def messages(conversation_id, limit=200) -> list:
 def save_interface(email, iface_id, name, description, definition, theme=None) -> str:
     iface_id = iface_id or uuid.uuid4().hex
     with _conn() as c, c.cursor() as cur:
-        cur.execute("""
-            INSERT INTO surveyor_interfaces(id, email, name, description, definition, theme)
-            VALUES (%s,%s,%s,%s,%s,%s)
-            ON CONFLICT (id) DO UPDATE SET
-                name=EXCLUDED.name,
-                description=EXCLUDED.description,
-                definition=EXCLUDED.definition,
-                theme=EXCLUDED.theme,
-                updated=(now() AT TIME ZONE 'utc')
-            WHERE surveyor_interfaces.email = EXCLUDED.email
-        """, (iface_id, email, name, description, _J(definition), _J(theme or {})))
+        if not _save_interface(cur, email, iface_id, name, description,
+                               definition, theme or {}):
+            raise ValueError("interface not found")
     return iface_id
 
 

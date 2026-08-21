@@ -809,23 +809,10 @@ class H(BaseHTTPRequestHandler):
         })
 
     def _surv_connector_runtime(self, email, connector_id, runtime_status):
-        """Persist runtime health from each freshly locked canonical workspace."""
-        for workspace_id, _state in surveyor.store.workspaces(email):
-            saved = surveyor.store.mutate_workspace(
-                email, workspace_id,
-                lambda current: surveyor.workspace_state.record_connector_runtime(
-                    current, connector_id, runtime_status))
-            if saved.get('status') not in {'saved', 'unchanged'}:
-                return False
-        return True
-
-    def _surv_refresh_workspaces(self, email, mutate):
-        """Apply one server-derived projection per fresh owner-locked workspace."""
-        for workspace_id, _state in surveyor.store.workspaces(email):
-            saved = surveyor.store.mutate_workspace(email, workspace_id, mutate)
-            if saved.get('status') not in {'saved', 'unchanged'}:
-                return False
-        return True
+        """Persist runtime health and every canonical projection as one transaction."""
+        saved = surveyor.store.save_connector_runtime_projection(
+            email, connector_id, runtime_status)
+        return saved.get('status') == 'committed'
 
     def _surv_github_token(self, body):
         """Validate then encrypt a user-entered GitHub token without returning it."""
@@ -836,21 +823,16 @@ class H(BaseHTTPRequestHandler):
             validation = surveyor.github_connector.validate_token(token)
             ref, ciphertext = surveyor.vault.from_environment().seal(
                 'github', token)
-            surveyor.store.save_secret(ref, email, 'github', ciphertext)
-            states = surveyor.artifacts.merge_connector_states(
-                surveyor.store.get_connector_states(email), {'github': 'confirmed'})
-            surveyor.store.save_connector_states(email, states)
-            if not self._surv_refresh_workspaces(
-                    email, lambda current: surveyor.workspace_state.refresh_connectors(current, states)):
+            saved = surveyor.store.save_connector_projection(
+                email, {'github': 'confirmed'}, secret=(ref, 'github', ciphertext),
+                runtime_status='live')
+            if saved.get('status') != 'committed':
                 self._json({'ok': False, 'error': 'workspace changed; reload and retry'}, 409)
                 return
         except (ValueError, surveyor.vault.VaultUnavailable,
                 surveyor.github_connector.ConnectorUnavailable) as exc:
             code = 422 if isinstance(exc, surveyor.github_connector.AuthorizationRejected) else 503
             self._json({'ok': False, 'error': str(exc)}, code)
-            return
-        if not self._surv_connector_runtime(email, 'github', 'live'):
-            self._json({'ok': False, 'error': 'workspace changed; reload and retry'}, 409)
             return
         surveyor.store.log_event(email, 'github_secret_configured',
                                  {'secret_ref': ref, 'repository_count': len(validation['repositories'])})
@@ -861,13 +843,11 @@ class H(BaseHTTPRequestHandler):
         """Store only explicit connector confirmations; authorization comes later."""
         email, stop = self._surv_guard()
         if stop: return
-        states = surveyor.artifacts.merge_connector_states(
-            surveyor.store.get_connector_states(email), body.get('connector_states'))
-        surveyor.store.save_connector_states(email, states)
-        if not self._surv_refresh_workspaces(
-                email, lambda current: surveyor.workspace_state.refresh_connectors(current, states)):
+        saved = surveyor.store.save_connector_projection(email, body.get('connector_states'))
+        if saved.get('status') != 'committed':
             self._json({'ok': False, 'error': 'workspace changed; reload and retry'}, 409)
             return
+        states = saved['connector_states']
         surveyor.store.log_event(email, 'connector_preferences_updated', {'ids': sorted(states)})
         self._json({'ok': True, 'connector_states': states,
                     'artifacts': surveyor.pipeline.artifact_bundle(email)})
@@ -932,22 +912,12 @@ class H(BaseHTTPRequestHandler):
         existing = str(body.get('id') or '').strip() or None
         if existing and not surveyor.store.get_interface(email, existing):
             self._json({'ok': False, 'error': 'not found'}, 404); return
-        iid = surveyor.store.save_interface(email, existing, name, desc, definition,
-                                            body.get('theme'))
-        workspace_definition = dict(definition)
-        workspace_definition.update({'name': name, 'description': desc})
-        workspace = surveyor.store.get_workspace(email, iid)
-        if workspace:
-            saved = surveyor.store.mutate_workspace(
-                email, iid,
-                lambda current: surveyor.workspace_state.merge_interface(current, workspace_definition))
-        else:
-            workspace = surveyor.workspace_state.from_interface(
-                iid, workspace_definition, surveyor.store.get_connector_states(email))
-            saved = surveyor.store.save_workspace(email, iid, workspace, 0)
-        if saved.get('status') not in {'saved', 'unchanged'}:
+        saved = surveyor.store.save_interface_projection(
+            email, existing, name, desc, definition, body.get('theme'))
+        if saved.get('status') != 'committed':
             self._json({'ok': False, 'error': 'workspace changed; reload and retry'}, 409)
             return
+        iid = saved['id']
         surveyor.store.log_event(email,
                                  'interface_updated' if existing else 'interface_created',
                                  {'id': iid, 'agents': len(definition.get('agents') or []),

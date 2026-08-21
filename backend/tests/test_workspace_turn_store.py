@@ -201,37 +201,6 @@ class TestWorkspaceTurnStore(unittest.TestCase):
                          (1, "Current human update", []))
         self.assertGreaterEqual(self.database.locks.count(("workspace_1", "owner@example.test")), 5)
 
-    def test_server_derived_mutations_recompute_from_the_locked_agent_state(self):
-        key = ("owner@example.test", "workspace_1")
-        agent_next, agent_public = cordia_agent.apply_proposal(self.database.workspaces[key], {
-            "kind": "propose_connector", "speech": "I can prepare that.", "proposal": {
-                "connector_id": "issues", "display_name": "Issues",
-                "setup_kind": "api_key", "purpose": "Review issues.",
-            },
-        })
-        self.assertEqual(store.commit_workspace_turn("owner@example.test", "workspace_1", 0, "agent_1",
-                                                     "Prepare issues.", agent_public, agent_next)["status"],
-                         "committed")
-        interface = store.mutate_workspace(
-            "owner@example.test", "workspace_1",
-            lambda current: workspace_state.merge_interface(current, {
-                "name": "Fresh interface", "description": "Fresh description",
-            }))
-        self.assertEqual(interface["status"], "saved")
-        self.assertEqual((interface["workspace"]["revision"],
-                          len(interface["workspace"]["pending_actions"]),
-                          interface["workspace"]["title"]), (2, 1, "Fresh interface"))
-        connector = store.mutate_workspace(
-            "owner@example.test", "workspace_1",
-            lambda current: workspace_state.refresh_connectors(current, {"github": "confirmed"}))
-        self.assertEqual(connector["status"], "saved")
-        self.assertEqual((connector["workspace"]["revision"],
-                          len(connector["workspace"]["pending_actions"]),
-                          connector["workspace"]["connectors"]),
-                         (3, 1, [{"id": "github", "status": "confirmed",
-                                 "implementation_status": "live",
-                                 "lifecycle": "needs_handoff"}]))
-
     def test_invalid_stored_revision_fails_closed_but_missing_legacy_revision_is_zero(self):
         state = workspace_state.empty("workspace_1")
         self.database.workspaces[("owner@example.test", "workspace_1")] = {"id": "workspace_1"}

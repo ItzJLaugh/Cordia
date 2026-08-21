@@ -104,3 +104,46 @@ embedding runtime test, `test_embedding_runtime.TestEmbeddingRuntime.test_declar
   `test_embedding_runtime.TestEmbeddingRuntime.test_declared_runtime_can_import_the_shadow_scorer` because the optional `sentence_transformers` package is absent.
 - No live provider or connector operation was invoked. Provider evidence remains
   `Not yet verified`.
+
+## Review-fix round 2 of 5
+
+### Corrections
+
+- Absent-row `save_workspace` creation now uses `INSERT ... ON CONFLICT DO
+  NOTHING RETURNING`. A raced creator can no longer overwrite an existing
+  owner’s revision or pending actions; same-owner and cross-owner id collisions
+  return a bounded conflict.
+- Replaced the generic derived-workspace callback with three bounded store
+  transactions: interface plus workspace projection, connector preferences plus
+  optional sealed secret plus all workspace projections, and runtime-only
+  multi-workspace projection. A write failure raises through the transaction so
+  all precursor and prior workspace writes roll back.
+- Connector preference merging now occurs under an owner advisory transaction
+  lock and reads the current preference row before recomputing every locked
+  canonical workspace projection. Interface creation reads the current
+  connector preference state inside its own transaction.
+- The derived routes now return success only after these transactions commit.
+  External GitHub token validation and vault sealing still occur before any
+  database mutation; no provider or connector operation was invoked.
+
+### Independent RED/GREEN
+
+- RED production-store test: 4 tests ran; the absent-row race incorrectly
+  returned `saved`, and the three required bounded transaction APIs were absent.
+  GREEN: 5/5, covering same-owner and cross-owner create races, full rollback
+  after the first workspace update, and locked preference merging.
+- RED route test: 10 tests ran with the new derived transaction failure route
+  returning 200. GREEN: 10/10, with no partial fake-store state and no success
+  response after a transaction failure.
+
+### Final verification
+
+- Focused Task 4/4B and adjacent backend: Cordia Agent 15/15, operator profile
+  13/13, workspace state 13/13, workspace generation 8/8, transaction store
+  5/5, workspace-turn store 5/5, workspace-turn route 10/10, GitHub route 4/4,
+  and intent-miss runtime 1/1 (74/74 total).
+- Full dashboard: `npm.cmd test` passed 88/88.
+- Full backend comparison: 246/247 passed. The sole unchanged failure is
+  `test_embedding_runtime.TestEmbeddingRuntime.test_declared_runtime_can_import_the_shadow_scorer` because the optional `sentence_transformers` package is not installed.
+- `git diff --check` passed. Provider evidence remains `Not yet verified`; no
+  provider or connector call was made.

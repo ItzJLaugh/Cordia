@@ -23,6 +23,8 @@ class MemoryStore:
         self.interfaces = {"workspace_1": {"id": "workspace_1"}}
         self.mutation_status = None
         self.save_status = None
+        self.interface_transaction_status = None
+        self.connector_transaction_status = None
 
     def get_workspace(self, _email, workspace_id):
         if workspace_id != "workspace_1":
@@ -87,6 +89,36 @@ class MemoryStore:
 
     def save_interface(self, _email, existing, _name, _description, _definition, _theme):
         return existing or "workspace_1"
+
+    def save_interface_projection(self, _email, workspace_id, name, description, definition,
+                                  _theme, _connector_states=None):
+        if self.interface_transaction_status:
+            return {"status": self.interface_transaction_status}
+        self.workspace = workspace_state.merge_interface(
+            self.workspace, {**definition, "name": name, "description": description})
+        self.workspace["revision"] += 1
+        return {"status": "committed", "id": workspace_id,
+                "workspace": deepcopy(self.workspace)}
+
+    def save_connector_projection(self, _email, states, secret=None, runtime_status=None):
+        if self.connector_transaction_status:
+            return {"status": self.connector_transaction_status}
+        self.connector_states = deepcopy(states)
+        self.workspace = workspace_state.refresh_connectors(self.workspace, states)
+        if runtime_status:
+            self.workspace = workspace_state.record_connector_runtime(
+                self.workspace, "github", runtime_status)
+        self.workspace["revision"] += 1
+        return {"status": "committed", "connector_states": deepcopy(self.connector_states),
+                "workspace_ids": ["workspace_1"]}
+
+    def save_connector_runtime_projection(self, _email, connector_id, runtime_status):
+        if self.connector_transaction_status:
+            return {"status": self.connector_transaction_status}
+        self.workspace = workspace_state.record_connector_runtime(
+            self.workspace, connector_id, runtime_status)
+        self.workspace["revision"] += 1
+        return {"status": "committed", "workspace_ids": ["workspace_1"]}
 
     def log_event(self, *_args, **_kwargs):
         return None
@@ -247,8 +279,8 @@ class TestWorkspaceTurnRoute(unittest.TestCase):
                                  "lifecycle": "needs_handoff"}]))
 
     def test_server_derived_conflict_never_returns_success(self):
-        self.store.save_status = "conflict"
-        self.store.mutation_status = "conflict"
+        self.store.interface_transaction_status = "conflict"
+        self.store.connector_transaction_status = "conflict"
         interface, interface_status = self.post({
             "id": "workspace_1", "name": "Fresh interface", "description": "Fresh description",
             "definition": {},
@@ -257,6 +289,20 @@ class TestWorkspaceTurnRoute(unittest.TestCase):
                                                  path="/surveyor/connectors")
         self.assertEqual((interface["ok"], interface_status), (False, 409))
         self.assertEqual((connector["ok"], connector_status), (False, 409))
+
+    def test_atomic_derived_transaction_failure_returns_no_success_or_partial_state(self):
+        before = deepcopy((self.store.workspace, self.store.connector_states, self.store.interfaces))
+        self.store.interface_transaction_status = "failed"
+        self.store.connector_transaction_status = "failed"
+        interface, interface_status = self.post({
+            "id": "workspace_1", "name": "Fresh interface", "description": "Fresh description",
+            "definition": {},
+        }, path="/surveyor/interface")
+        connector, connector_status = self.post({"connector_states": {"github": "confirmed"}},
+                                                 path="/surveyor/connectors")
+        self.assertEqual((interface["ok"], interface_status), (False, 409))
+        self.assertEqual((connector["ok"], connector_status), (False, 409))
+        self.assertEqual((self.store.workspace, self.store.connector_states, self.store.interfaces), before)
 
 
 if __name__ == "__main__":

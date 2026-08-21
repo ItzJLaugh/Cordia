@@ -55,18 +55,23 @@ class TestGitHubSkillRoute(unittest.TestCase):
             return {'repositories': [{'name': 'owner/setup-proof'}],
                     'repository_limit': 30}
 
-        def save_secret(ref, email, connector, encrypted):
-            order.append('save_secret')
-            self.assertEqual((ref, email, connector), (secret_ref, owner, 'github'))
+        def save_connector_projection(email, states, *, secret, runtime_status):
+            order.append('save_connector_projection')
+            self.assertEqual(email, owner)
+            ref, connector, encrypted = secret
+            self.assertEqual((ref, connector, runtime_status),
+                             (secret_ref, 'github', 'live'))
             self.assertEqual(encrypted, ciphertext)
             self.assertNotIn(sentinel.encode(), encrypted)
             stored_secret['value'] = (ref, encrypted)
-
-        def save_connector_states(email, states):
-            order.append('save_connector_states')
-            self.assertEqual(email, owner)
             connector_states.clear()
             connector_states.update(states)
+            return {'status': 'committed', 'connector_states': dict(connector_states)}
+
+        def save_connector_runtime_projection(email, connector, status):
+            order.append('save_connector_runtime_projection')
+            self.assertEqual((email, connector, status), (owner, 'github', 'live'))
+            return {'status': 'committed'}
 
         def get_secret(email, connector):
             order.append('get_secret')
@@ -96,14 +101,14 @@ class TestGitHubSkillRoute(unittest.TestCase):
                              side_effect=list_repositories), \
                 patch.object(training_backend.surveyor.vault, 'from_environment',
                              return_value=FakeVault()), \
-                patch.object(training_backend.surveyor.store, 'save_secret',
-                             side_effect=save_secret), \
                 patch.object(training_backend.surveyor.store, 'get_secret',
                              side_effect=get_secret), \
                 patch.object(training_backend.surveyor.store, 'get_connector_states',
                              side_effect=lambda _email: dict(connector_states)), \
-                patch.object(training_backend.surveyor.store, 'save_connector_states',
-                             side_effect=save_connector_states), \
+                patch.object(training_backend.surveyor.store, 'save_connector_projection',
+                             side_effect=save_connector_projection), \
+                patch.object(training_backend.surveyor.store, 'save_connector_runtime_projection',
+                             side_effect=save_connector_runtime_projection), \
                 patch.object(training_backend.surveyor.store, 'workspaces', return_value=[]), \
                 patch.object(training_backend.surveyor.store, 'log_event',
                              side_effect=log_event):
@@ -125,8 +130,9 @@ class TestGitHubSkillRoute(unittest.TestCase):
             'result': {'repository_count': 30},
         })
         self.assertEqual(order, [
-            'validate', 'seal', 'save_secret', 'save_connector_states',
+            'validate', 'seal', 'save_connector_projection',
             'get_secret', 'open', 'secret_audit', 'adapter',
+            'save_connector_runtime_projection',
         ])
         self.assertEqual(events, [
             (owner, 'github_secret_configured', {
@@ -170,6 +176,8 @@ class TestGitHubSkillRoute(unittest.TestCase):
                              return_value=vault), \
                 patch.object(training_backend.surveyor.github_connector, 'list_repositories',
                              return_value={'repositories': repositories, 'repository_limit': 30}), \
+                patch.object(training_backend.surveyor.store, 'save_connector_runtime_projection',
+                             return_value={'status': 'committed'}), \
                 patch.object(training_backend.surveyor.store, 'workspaces', return_value=[]), \
                 patch.object(training_backend.surveyor.store, 'log_event',
                              side_effect=lambda email, kind, payload: events.append(
