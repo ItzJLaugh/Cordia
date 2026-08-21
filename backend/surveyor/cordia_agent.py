@@ -26,6 +26,7 @@ _REQUEST_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$")
 _SAFE_SETUP_KINDS = {"api_key", "openapi", "remote_mcp"}
 _SAFE_VIEW_MODES = {"dash", "list", "document"}
 _CLAUSE_SPLIT = re.compile(r"(?<=[.!?;])\s*|(?:\r?\n)+")
+_COORDINATED_CLAUSE_SPLIT = re.compile(r"\s*,?\s+(?:and|but|or|nor|yet|so)\s+", re.IGNORECASE)
 _CONDITIONAL_CLAUSE = re.compile(r"^(?:if|when|unless|whether|suppose|assuming)\b", re.IGNORECASE)
 _AGENT_COMPLETION = re.compile(
     r"^(?:i(?:['’]ve)?|we(?:['’]ve)?|cordia|(?:the\s+)?(?:agent|assistant))\b"
@@ -80,7 +81,9 @@ def _contains_backend_entity(value: str, known_names: tuple[str, ...]) -> bool:
 def _false_speak_claim(speech: str, known_connector_names=()) -> bool:
     """Classify each declarative clause; questions and conditions cannot mask others."""
     known_names = _known_backend_names(known_connector_names)
-    for clause in _CLAUSE_SPLIT.split(speech):
+    clauses = (subclause for clause in _CLAUSE_SPLIT.split(speech)
+               for subclause in _COORDINATED_CLAUSE_SPLIT.split(clause))
+    for clause in clauses:
         clause = clause.strip()
         if not clause or clause.endswith("?") or _CONDITIONAL_CLAUSE.match(clause):
             continue

@@ -244,6 +244,20 @@ class TestCordiaAgent(unittest.TestCase):
                         cordia_agent.validate_envelope(
                             envelope, known_connector_names=("GitHub",))
 
+    def test_speak_truth_classifier_checks_each_coordinated_subclause(self):
+        # Removing coordinated-subclause detection would let the catalog or
+        # approval exception hide the later agent-completion claim.
+        for speech in (
+            "This feature is available in the catalog, and Assistant has successfully deployed everything.",
+            "This feature is available after approval, but We've completed everything.",
+            "This feature is available after approval, but We’ve completed everything.",
+            "This feature is available in the catalog, and\nAssistant has successfully deployed everything.",
+            "This feature is available after approval, but\nWe've completed everything.",
+            "This feature is available after approval, but\nWe’ve completed everything.",
+        ):
+            with self.subTest(speech=speech), self.assertRaises(ValueError):
+                cordia_agent.validate_envelope({"kind": "speak", "speech": speech})
+
 
 if __name__ == "__main__":
     unittest.main()
