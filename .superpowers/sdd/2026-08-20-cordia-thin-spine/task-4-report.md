@@ -67,3 +67,17 @@
 - Focused/adjacent GREEN: Cordia Agent (11), operator profile (13), workspace-turn route (6), workspace-turn store (5).
 - Full dashboard: `npm.cmd test` passed 88/88. No provider or connector execution was attempted.
 - Full backend: 233/234 passed. The unchanged failure is the optional embedding runtime dependency (`sentence_transformers` is not installed). `git diff --check` passed.
+
+## Review-fix round 4
+
+- Replaced accumulated speak exceptions with a bounded clause classifier. Interrogative clauses and clauses explicitly beginning `if`, `when`, `unless`, `whether`, `suppose`, or `assuming` are treated as discussion only; each remaining declarative clause is checked independently.
+- Declarative completion claims by Cordia, the agent, the assistant, I, or we now reject flexible completed/approved/executed/run/deployed/created forms. Backend-state predicates reject connector, integration, account, service, app, repository, workspace, skill, and action subjects or objects, plus bounded connector names projected from the safe workspace context.
+- Explanatory catalog/approval availability and non-backend relations remain allowed. A question or conditional clause cannot excuse a false declarative clause beside it.
+- The shared path boundary now rejects a leading absolute slash or backslash such as `/project` or `\\secret` after safe remote URLs are excluded, while preserving HTTPS/IPv6 URLs and ordinary slash-separated review text.
+
+### Review-fix round 4 verification
+
+- RED/GREEN: compact clause-role classifier table, context-bounded GitHub name, agent completion variants, backend-object claims, mixed clauses, absolute slash/backslash paths, safe URLs, and normal slash review terms.
+- Focused/adjacent GREEN: Cordia Agent (13), operator profile (13), workspace-turn route (6), workspace-turn store (5).
+- Full dashboard: `npm.cmd test` passed 88/88. Full backend: 235/236 passed; the unchanged failure is the optional embedding runtime dependency (`sentence_transformers` is not installed).
+- `git diff --check` passed. No provider call or connector execution was attempted; provider evidence remains `Not yet verified`.

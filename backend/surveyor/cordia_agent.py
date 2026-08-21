@@ -25,51 +25,76 @@ _ID = re.compile(r"^[a-z][a-z0-9_]{0,79}$")
 _REQUEST_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$")
 _SAFE_SETUP_KINDS = {"api_key", "openapi", "remote_mcp"}
 _SAFE_VIEW_MODES = {"dash", "list", "document"}
-_SPEAK_STATUS_SUBJECT = re.compile(
-    r"\b(?:github|connector|skill|action|integration|setup)\b(?:\s+\w+){0,6}\s+"
-    r"(?:is|was|were|has|have)(?:\s+been)?\s+(?:(?:fully|successfully|now)\s+)?"
-    r"(?P<state>connected|executed|run|ran|completed|approved|available)\b(?P<tail>[^.!?;]*)",
+_CLAUSE_SPLIT = re.compile(r"(?<=[.!?;])\s*")
+_CONDITIONAL_CLAUSE = re.compile(r"^(?:if|when|unless|whether|suppose|assuming)\b", re.IGNORECASE)
+_AGENT_COMPLETION = re.compile(
+    r"^(?:i(?:['’]ve)?|we(?:['’]ve)?|cordia|the agent|the assistant)\b"
+    r"(?:\s+(?:have|has|had|was|were|am|is|are|just|now|already|fully|successfully|been))*\s+"
+    r"(?:connected|completed|approved|executed|ran|run|deployed|created)\b",
     re.IGNORECASE,
 )
-_SPEAK_DIRECT_COMPLETION = re.compile(
-    r"\b(?:connector|skill|action|integration|setup)\s+(?:connected|executed|run|ran|completed|approved)\b",
+_BACKEND_STATE = re.compile(
+    r"^(?P<subject>.+?)\s+(?:is|was|were|has|have|had)(?:\s+been)?\s+"
+    r"(?:(?:fully|successfully|now|already)\s+)*(?P<state>connected|completed|approved|"
+    r"executed|ran|run|deployed|created|available)\b(?P<tail>.*)$",
     re.IGNORECASE,
 )
-_SPEAK_FIRST_PERSON_COMPLETION = re.compile(
-    r"\b(?:i(?:['’]ve)?|we|cordia)(?:\s+(?:have|had))?\s+"
-    r"(?:(?:fully|successfully)\s+)?(?:connected|executed|run|ran|completed|approved)\b",
+_BACKEND_BARE_COMPLETION = re.compile(
+    r"^(?P<subject>.+?)\s+(?:(?:fully|successfully|now|already)\s+)*"
+    r"(?P<state>connected|completed|approved|executed|ran|run|deployed|created)\b(?P<tail>.*)$",
     re.IGNORECASE,
 )
-_SPEAK_CONDITIONAL_AVAILABILITY = re.compile(
-    r"(?:the\s+|your\s+)?(?:github|connector|skill|action|integration|setup)\b"
-    r"(?:\s+\w+){0,6}\s+is available after approval",
+_BACKEND_ENTITY = re.compile(
+    r"\b(?:connector|integration|account|service|app|repository|workspace|skill|action(?!\s+plan\b))\b",
     re.IGNORECASE,
 )
+_EXPLANATORY_BACKEND_STATE = re.compile(r"^(?:in the catalog|after approval)\b", re.IGNORECASE)
 
 
 class InvalidAgentResponse(ValueError):
     """The configured model did not return one safe, exact action envelope."""
 
 
-def _false_speak_claim(speech: str) -> bool:
-    """Reject bounded declarative backend-completion claims, not questions or conditions."""
-    for clause in re.split(r"(?<=[.!?;])\s*", speech):
+def _known_backend_names(names) -> tuple[str, ...]:
+    """Use only bounded, validated connector names rather than guessed proper nouns."""
+    result = []
+    for name in names if isinstance(names, (list, tuple, set)) else ():
+        try:
+            clean = _safe_text(name, 160, "unsafe").casefold()
+        except ValueError:
+            continue
+        if clean not in result:
+            result.append(clean)
+        if len(result) == 30:
+            break
+    return tuple(result)
+
+
+def _contains_backend_entity(value: str, known_names: tuple[str, ...]) -> bool:
+    lowered = value.casefold()
+    return bool(_BACKEND_ENTITY.search(value) or any(
+        re.search(r"(?<!\w)" + re.escape(name) + r"(?!\w)", lowered)
+        for name in known_names))
+
+
+def _false_speak_claim(speech: str, known_connector_names=()) -> bool:
+    """Classify each declarative clause; questions and conditions cannot mask others."""
+    known_names = _known_backend_names(known_connector_names)
+    for clause in _CLAUSE_SPLIT.split(speech):
         clause = clause.strip()
-        if not clause or clause.endswith("?"):
+        if not clause or clause.endswith("?") or _CONDITIONAL_CLAUSE.match(clause):
             continue
         bare_clause = clause.rstrip(".!?; ")
-        if _SPEAK_CONDITIONAL_AVAILABILITY.fullmatch(bare_clause):
-            continue
-        for match in _SPEAK_STATUS_SUBJECT.finditer(clause):
-            tail = match.group("tail").strip().lower()
-            state = match.group("state").lower()
-            if state == "connected" and re.match(r"^(?:to|with)\b", tail):
-                continue
-            if state == "available" and re.match(r"^in the catalog\b", tail):
-                continue
+        if _AGENT_COMPLETION.match(bare_clause):
             return True
-        if (_SPEAK_DIRECT_COMPLETION.search(clause)
-                or _SPEAK_FIRST_PERSON_COMPLETION.search(clause)):
+        state = _BACKEND_STATE.match(bare_clause) or _BACKEND_BARE_COMPLETION.match(bare_clause)
+        if not state:
+            continue
+        tail = state.group("tail").strip()
+        if state.group("state").casefold() == "available" and _EXPLANATORY_BACKEND_STATE.match(tail):
+            continue
+        if (_contains_backend_entity(state.group("subject"), known_names)
+                or _contains_backend_entity(tail, known_names)):
             return True
     return False
 
@@ -104,7 +129,7 @@ def validate_turn_request(value: object) -> dict:
     return {"id": workspace_id, "revision": revision, "message": message, "idempotency_key": key}
 
 
-def validate_envelope(value: object) -> dict:
+def validate_envelope(value: object, known_connector_names=()) -> dict:
     if not isinstance(value, dict) or not isinstance(value.get("kind"), str):
         raise ValueError("Invalid Cordia Agent action.")
     kind = value["kind"]
@@ -113,7 +138,7 @@ def validate_envelope(value: object) -> dict:
     _exact_object(value, _ACTION_FIELDS[kind], "Invalid Cordia Agent action.")
     speech = _safe_text(value["speech"], 6000, "Invalid Cordia Agent action.")
     if kind == "speak":
-        if _false_speak_claim(speech):
+        if _false_speak_claim(speech, known_connector_names):
             raise ValueError("Invalid Cordia Agent action.")
         return {"kind": kind, "speech": speech}
     proposal = value["proposal"]
@@ -218,7 +243,12 @@ def run_turn(context: dict, message: str, call_model) -> dict:
     except (TypeError, json.JSONDecodeError) as exc:
         raise InvalidAgentResponse("Cordia Agent returned an invalid action.") from exc
     try:
-        return validate_envelope(parsed)
+        workspace = context.get("workspace", {}) if isinstance(context, dict) else {}
+        names = []
+        for connector in workspace.get("connectors", []) if isinstance(workspace, dict) else []:
+            if isinstance(connector, dict):
+                names.extend((connector.get("id"), connector.get("display_name")))
+        return validate_envelope(parsed, known_connector_names=names)
     except ValueError as exc:
         raise InvalidAgentResponse("Cordia Agent returned an invalid action.") from exc
 

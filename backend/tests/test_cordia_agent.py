@@ -70,7 +70,7 @@ class TestCordiaAgent(unittest.TestCase):
             "sk-private-token", "ghp_privatetoken", "github_pat_privatetoken",
             "AKIA1234567890ABCD", "token=private", "-----BEGIN PRIVATE KEY-----",
             "C:\\private\\workspace", "..\\private", "/etc/cordia/secret", "\\\\host\\share",
-            "private/secret.txt", "folder\\secret.txt", "/secret.txt",
+            "private/secret.txt", "folder\\secret.txt", "/secret.txt", "/project", "\\secret",
         ):
             with self.subTest(unsafe=unsafe):
                 with self.assertRaises(ValueError):
@@ -148,6 +148,15 @@ class TestCordiaAgent(unittest.TestCase):
         with self.assertRaises(cordia_agent.InvalidAgentResponse):
             cordia_agent.run_turn({}, "Hello", lambda *_args, **_kwargs: "not json")
 
+    def test_run_turn_uses_validated_workspace_connector_names_for_speak_truth(self):
+        context = {"memory": "Compiled memory.", "recent_turns": [], "workspace": {
+            "connectors": [{"id": "github", "display_name": "GitHub"}],
+        }}
+        with self.assertRaises(cordia_agent.InvalidAgentResponse):
+            cordia_agent.run_turn(context, "Status?", lambda *_args, **_kwargs: json.dumps({
+                "kind": "speak", "speech": "GitHub is connected to Cordia.",
+            }))
+
     def test_speak_never_revises_and_proposals_persist_one_pending_action(self):
         state = workspace_state.empty("workspace_1")
         same, public = cordia_agent.apply_proposal(state, {
@@ -189,7 +198,8 @@ class TestCordiaAgent(unittest.TestCase):
             "GitHub is connected. The connector is available after approval.",
         ):
             with self.subTest(speech=speech), self.assertRaises(ValueError):
-                cordia_agent.validate_envelope({"kind": "speak", "speech": speech})
+                cordia_agent.validate_envelope({"kind": "speak", "speech": speech},
+                                               known_connector_names=("GitHub",))
         for allowed in (
             "I can propose a connector setup for your approval.",
             "Is the connector connected?", "The connector is available after approval.",
@@ -200,6 +210,34 @@ class TestCordiaAgent(unittest.TestCase):
                 self.assertEqual(cordia_agent.validate_envelope({
                     "kind": "speak", "speech": allowed,
                 })["speech"], allowed)
+
+    def test_speak_truth_classifier_is_clause_scoped_and_context_bounded(self):
+        cases = (
+            ("Is GitHub connected to Cordia?", True),
+            ("If GitHub is connected to Cordia, I can propose a skill.", True),
+            ("When the connector is connected with GitHub, explain the next step.", True),
+            ("The action plan is connected to your goals.", True),
+            ("This skill is available in the catalog.", True),
+            ("GitHub is connected to Cordia.", False),
+            ("The connector is connected with GitHub.", False),
+            ("We've completed the action.", False),
+            ("Cordia has completed the action.", False),
+            ("I have now completed the action.", False),
+            ("The agent successfully deployed the app.", False),
+            ("The plan has completed the action.", False),
+            ("GitHub is connected to Cordia. Is GitHub connected?", False),
+            ("GitHub is connected to Cordia. If approved, I can propose a skill.", False),
+        )
+        for speech, allowed in cases:
+            with self.subTest(speech=speech):
+                envelope = {"kind": "speak", "speech": speech}
+                if allowed:
+                    self.assertEqual(cordia_agent.validate_envelope(
+                        envelope, known_connector_names=("GitHub",)), envelope)
+                else:
+                    with self.assertRaises(ValueError):
+                        cordia_agent.validate_envelope(
+                            envelope, known_connector_names=("GitHub",))
 
 
 if __name__ == "__main__":

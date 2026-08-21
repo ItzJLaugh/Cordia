@@ -18,6 +18,7 @@ _CREDENTIAL = re.compile(
 _LOCAL_PATH = re.compile(
     r"(?:^|[^A-Za-z0-9_/.])(?:[A-Za-z]:(?:[\\/]|(?=[^\s\\/]))|"
     r"\\\\[^\s]+|(?:file|path)://|\.{1,2}[\\/][^\s]+|"
+    r"(?<![A-Za-z0-9])[\\/](?=\S)|"
     r"/(?:tmp|home|Users|var|etc|opt|srv|run|mnt|workspace|Library)(?:/[^\s]*)?|"
     r"/{1,2}(?:[^\s/]+/)+[^\s/]+|"
     r"(?:private|secret|credentials?|keys?)(?:[\\/][^\s]+)+|"

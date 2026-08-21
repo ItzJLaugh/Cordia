@@ -217,6 +217,8 @@ class TestOperatorProfileProjection(unittest.TestCase):
                 "private/secret.txt",
                 "folder\\secret.txt",
                 "/secret.txt",
+                "/project",
+                "\\secret",
                 "-----BEGIN RSA PRIVATE KEY-----",
             )
         ]
