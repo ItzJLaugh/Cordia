@@ -72,7 +72,7 @@ export function Assistant({
       if (!aliveRef.current) return
       const reply = agentTurnModel(response)
       if (!reply) {
-        fail('Cordia returned an unexpected response. Your draft is safe to send again.')
+        fail('Cordia returned an unexpected response. Your draft is safe to send again.', true)
         return
       }
       const replyId = nextId()

@@ -218,6 +218,22 @@ class TestWorkspaceTransactions(unittest.TestCase):
         self.assertGreaterEqual(len(set_locks), 2)
         self.assertEqual(set(set_locks), {"surveyor-workspace-set:owner@example.test"})
 
+    def test_absent_creator_refreshes_a_stale_connector_projection_after_its_set_lock(self):
+        candidate = workspace_state.empty("created_after_connector_bulk")
+        candidate["title"] = "Keep this local work"
+        candidate["connectors"] = [{"id": "github", "status": "suggested"}]
+        self.assertEqual(store.save_connector_projection(
+            "owner@example.test", {"github": "confirmed"}, runtime_status="live")["status"],
+            "committed")
+        result = store.save_workspace(
+            "owner@example.test", "created_after_connector_bulk", candidate, 0)
+        self.assertEqual(result["status"], "saved")
+        self.assertEqual(result["workspace"]["title"], "Keep this local work")
+        github = next(item for item in result["workspace"]["connectors"]
+                      if item["id"] == "github")
+        self.assertEqual(github["status"], "confirmed")
+        self.assertEqual(github["runtime_status"], "live")
+
     def test_legacy_materialization_reads_connector_truth_after_the_workspace_set_lock(self):
         """A legacy candidate cannot retain the connector snapshot from before a bulk write."""
         self.assertEqual(store.save_connector_projection(

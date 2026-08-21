@@ -220,3 +220,51 @@ embedding runtime test, `test_embedding_runtime.TestEmbeddingRuntime.test_declar
   unavailable test-PostgreSQL notices.
 - `git diff --check` passed before this report append and will be run again
   after it. No provider or connector operation was invoked.
+
+## Review-fix round 5 of 5 (final)
+
+### Corrections
+
+- Completion polarity now distinguishes a true negation from the affirmative
+  construction `not only`. Only `no`, `never`, or `not` not followed by `only`,
+  plus the bounded modal/counterfactual auxiliaries, exempt an agent completion
+  phrase. The check remains per coordinated clause.
+- Coordinated fragments now remove bounded leading discourse tokens (`then`,
+  `however`, `also`, `instead`, and `now`, alongside the coordinators) before
+  agent-subject matching. A true modal first clause cannot hide a later `then
+  I've completed ...` claim.
+- `save_workspace` revision-zero creation now discards a caller-provided
+  connector projection and rebuilds it from connector states read after the
+  owner workspace-set lock. It preserves nonconnector candidate fields and
+  carries current observed runtime truth from the locked owner workspace set.
+  Legacy materialization, new interface projection, initial generation, and
+  calibration creation continue to construct under the same fresh-lock rule.
+- A 200 response with `ok: true` that fails the exact `agentTurnModel` contract
+  is now treated as an ambiguous committed response. The Assistant keeps the
+  draft and idempotency key for retry; only a validated definitive response or
+  material edit clears that retry identity.
+
+### Independent RED/GREEN
+
+- RED backend: 25 focused cases produced the four required polarity/discourse
+  bypasses and one stale revision-zero connector projection. RED dashboard:
+  the rendered malformed-200 case made the retry send a different idempotency
+  key.
+- GREEN focused: 33 backend tests passed (Cordia Agent, transaction store, and
+  generation) and 45 targeted dashboard tests passed. The table includes
+  straight and curly contractions, `not only`, genuine negation,
+  counterfactual/modal language, and a modal-plus-later-indicative coordinated
+  claim. The creation regression proves fresh confirmed/live connector truth
+  while preserving candidate-owned title data. The rendered Assistant test
+  proves one canonical visible proposal/refresh and the exact same retry key
+  after a malformed successful response.
+
+### Final verification and boundary
+
+- Full dashboard: `npm.cmd test` passed 91/91.
+- Full backend comparison: 251/252 passed. The sole unchanged optional failure
+  is `test_embedding_runtime.TestEmbeddingRuntime.test_declared_runtime_can_import_the_shadow_scorer`, because `sentence_transformers` is not installed
+  (`ModuleNotFoundError`). Existing NumPy reload and unavailable test-PostgreSQL
+  notices were also emitted.
+- No provider or connector operation was invoked. This is the requested final
+  Task 4B corrective round.

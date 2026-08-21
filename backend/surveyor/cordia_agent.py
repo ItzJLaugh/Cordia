@@ -27,7 +27,8 @@ _SAFE_SETUP_KINDS = {"api_key", "openapi", "remote_mcp"}
 _SAFE_VIEW_MODES = {"dash", "list", "document"}
 _CLAUSE_SPLIT = re.compile(r"(?<=[.!?;])\s*|(?:\r?\n)+")
 _COORDINATED_CLAUSE_SPLIT = re.compile(r"\s*,?\s+(?:and|but|or|nor|yet|so)\s+", re.IGNORECASE)
-_LEADING_COORDINATOR = re.compile(r"^(?:and|but|or|nor|yet|so)\b\s*", re.IGNORECASE)
+_LEADING_COORDINATOR = re.compile(
+    r"^(?:(?:and|but|or|nor|yet|so|then|however|also|instead|now)\b\s*)+", re.IGNORECASE)
 _CONDITIONAL_CLAUSE = re.compile(r"^(?:if|when|unless|whether|suppose|assuming)\b", re.IGNORECASE)
 _AGENT_COMPLETION = re.compile(
     r"^(?:i(?:['’]ve)?|we(?:['’]ve)?|cordia|(?:the\s+)?(?:agent|assistant))\b"
@@ -35,8 +36,9 @@ _AGENT_COMPLETION = re.compile(
     r"(?:connected|completed|approved|executed|ran|run|deployed|created|configured|finished|enabled|activated|set\s+up)\b",
     re.IGNORECASE,
 )
-_AGENT_NONASSERTIVE = re.compile(
-    r"\b(?:no|not|never|would|could|might|may|should|can|will)\b", re.IGNORECASE)
+_AGENT_NEGATION = re.compile(r"\b(?:no|never|not(?!\s+only\b))\b", re.IGNORECASE)
+_AGENT_MODAL = re.compile(
+    r"\b(?:would|could|might|may|should|can|will)\b", re.IGNORECASE)
 _BACKEND_STATE = re.compile(
     r"^(?P<subject>.+?)\s+(?:is|was|were|has|have|had)(?:\s+been)?\s+"
     r"(?:(?:fully|successfully|now|already)\s+)*(?P<state>connected|completed|approved|"
@@ -95,7 +97,8 @@ def _false_speak_claim(speech: str, known_connector_names=()) -> bool:
         # Only completed, indicative work is a false backend claim.  Keep this
         # clause-local so a counterfactual cannot excuse a later real claim.
         if completion:
-            if not _AGENT_NONASSERTIVE.search(completion.group(0)):
+            if not (_AGENT_NEGATION.search(completion.group(0))
+                    or _AGENT_MODAL.search(completion.group(0))):
                 return True
             # Do not feed a negated or modal agent clause into the generic
             # backend-state matcher, which cannot determine its polarity.

@@ -389,6 +389,17 @@ def save_workspace(email: str, workspace_id: str, state: dict, expected_revision
         if (candidate_revision is None or not _is_workspace_revision(expected_revision)
                 or expected_revision != 0 or candidate_revision != 0):
             return {"status": "conflict", "workspace": None}
+        # Creation has no existing row to merge from.  Rebuild the
+        # connector-derived portion only after the owner-set lock, never from
+        # the caller's pre-transaction snapshot.
+        from . import workspace_state
+        candidate["connectors"] = []
+        candidate = workspace_state.refresh_connectors(
+            candidate, _connector_states_locked(cursor, email))
+        for connector_id, runtime_status in _workspace_runtime_statuses(
+                _owner_workspaces_locked(cursor, email)).items():
+            candidate = workspace_state.record_connector_runtime(
+                candidate, connector_id, runtime_status)
         candidate["revision"] = 0
         candidate["pending_actions"] = _pending_actions(candidate)
         cursor.execute("""
