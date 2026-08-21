@@ -53,3 +53,17 @@
 - Full backend: 232/233 passed. The unchanged failure is the optional embedding runtime dependency (`sentence_transformers` is not installed).
 - Full dashboard: `npm.cmd test` passed 88/88. `git diff --check` passed.
 - The production-store test uses a deterministic transaction double that records the real production `FOR UPDATE` SQL and interleaves production store calls. It validates the compare-and-save semantics but is not a multi-process PostgreSQL contention test.
+
+## Review-fix round 3
+
+- Speak truth validation now evaluates punctuation-delimited clauses independently. A question or conditional availability clause no longer exempts an earlier false completion claim in the same response.
+- Added first-person completion detection for contracted, past-perfect, and successful perfect forms while retaining questions and genuine conditional/future language.
+- Replaced generic slash-pair rejection with structural local-path evidence: dot paths, drive/UNC paths, absolute paths, known sensitive segments, and filename-shaped relative paths are rejected. Ordinary review pairs (`human/AI`, `yes/no`, `client/server`, `HTTP/2`) and validated HTTPS URLs remain allowed.
+- Generic status wording is limited to terminal backend-status predicates: relational `connected to/with` and catalog availability language remain valid.
+
+### Review-fix round 3 verification
+
+- RED/GREEN: clause-mixed truth claims, first-person variants, relative structural paths, safe slash-separated review terms, and relational/catalog status language.
+- Focused/adjacent GREEN: Cordia Agent (11), operator profile (13), workspace-turn route (6), workspace-turn store (5).
+- Full dashboard: `npm.cmd test` passed 88/88. No provider or connector execution was attempted.
+- Full backend: 233/234 passed. The unchanged failure is the optional embedding runtime dependency (`sentence_transformers` is not installed). `git diff --check` passed.

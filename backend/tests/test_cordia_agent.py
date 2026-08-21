@@ -88,6 +88,11 @@ class TestCordiaAgent(unittest.TestCase):
         self.assertEqual(cordia_agent.validate_envelope({
             "kind": "speak", "speech": "See https://example.test/docs for the public guide.",
         })["kind"], "speak")
+        for safe in ("normal human/AI review", "yes/no", "client/server", "HTTP/2"):
+            with self.subTest(safe=safe):
+                self.assertEqual(cordia_agent.validate_envelope({
+                    "kind": "speak", "speech": safe,
+                })["speech"], safe)
 
     def test_prompt_context_has_only_compiled_memory_and_safe_workspace_summaries(self):
         state = workspace_state.empty("workspace_1")
@@ -178,12 +183,18 @@ class TestCordiaAgent(unittest.TestCase):
             "The skill has completed.", "I executed the integration.",
             "GitHub is connected.", "I connected the integration.",
             "We have run the skill.", "Cordia completed the action.",
+            "I've completed the action.", "I had approved the action.",
+            "I have successfully run the skill.",
+            "GitHub is connected. Is the connector connected?",
+            "GitHub is connected. The connector is available after approval.",
         ):
             with self.subTest(speech=speech), self.assertRaises(ValueError):
                 cordia_agent.validate_envelope({"kind": "speak", "speech": speech})
         for allowed in (
             "I can propose a connector setup for your approval.",
             "Is the connector connected?", "The connector is available after approval.",
+            "The action plan is connected to your goals.",
+            "This skill is available in the catalog.",
         ):
             with self.subTest(allowed=allowed):
                 self.assertEqual(cordia_agent.validate_envelope({

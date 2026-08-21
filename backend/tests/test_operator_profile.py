@@ -241,6 +241,15 @@ class TestOperatorProfileProjection(unittest.TestCase):
              "See https://[2001:db8::1]/docs/start."],
         )
 
+    def test_normal_slash_separated_review_language_is_not_treated_as_a_path(self):
+        profile = ready_profile()
+        values = ("normal human/AI review", "yes/no", "client/server", "HTTP/2")
+        profile["evidence"] = [{"summary": value, "confidence": "high"} for value in values]
+
+        result = operator_profile.build(profile, {}, [])
+
+        self.assertEqual([item["summary"] for item in result["evidence"]], list(values))
+
 
 class TestOperatorProfileEndpoint(unittest.TestCase):
     @classmethod

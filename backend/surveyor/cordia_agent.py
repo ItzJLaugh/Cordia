@@ -28,7 +28,7 @@ _SAFE_VIEW_MODES = {"dash", "list", "document"}
 _SPEAK_STATUS_SUBJECT = re.compile(
     r"\b(?:github|connector|skill|action|integration|setup)\b(?:\s+\w+){0,6}\s+"
     r"(?:is|was|were|has|have)(?:\s+been)?\s+(?:(?:fully|successfully|now)\s+)?"
-    r"(?:connected|executed|run|ran|completed|approved|available)\b",
+    r"(?P<state>connected|executed|run|ran|completed|approved|available)\b(?P<tail>[^.!?;]*)",
     re.IGNORECASE,
 )
 _SPEAK_DIRECT_COMPLETION = re.compile(
@@ -36,12 +36,13 @@ _SPEAK_DIRECT_COMPLETION = re.compile(
     re.IGNORECASE,
 )
 _SPEAK_FIRST_PERSON_COMPLETION = re.compile(
-    r"\b(?:i|we|cordia)\s+(?:(?:have|has)\s+)?"
-    r"(?:connected|executed|run|ran|completed|approved)\b",
+    r"\b(?:i(?:['’]ve)?|we|cordia)(?:\s+(?:have|had))?\s+"
+    r"(?:(?:fully|successfully)\s+)?(?:connected|executed|run|ran|completed|approved)\b",
     re.IGNORECASE,
 )
 _SPEAK_CONDITIONAL_AVAILABILITY = re.compile(
-    r"\b(?:github|connector|skill|action|integration|setup)\b.*\bis available after approval\b",
+    r"(?:the\s+|your\s+)?(?:github|connector|skill|action|integration|setup)\b"
+    r"(?:\s+\w+){0,6}\s+is available after approval",
     re.IGNORECASE,
 )
 
@@ -52,11 +53,25 @@ class InvalidAgentResponse(ValueError):
 
 def _false_speak_claim(speech: str) -> bool:
     """Reject bounded declarative backend-completion claims, not questions or conditions."""
-    if speech.rstrip().endswith("?") or _SPEAK_CONDITIONAL_AVAILABILITY.search(speech):
-        return False
-    return bool(_SPEAK_STATUS_SUBJECT.search(speech)
-                or _SPEAK_DIRECT_COMPLETION.search(speech)
-                or _SPEAK_FIRST_PERSON_COMPLETION.search(speech))
+    for clause in re.split(r"(?<=[.!?;])\s*", speech):
+        clause = clause.strip()
+        if not clause or clause.endswith("?"):
+            continue
+        bare_clause = clause.rstrip(".!?; ")
+        if _SPEAK_CONDITIONAL_AVAILABILITY.fullmatch(bare_clause):
+            continue
+        for match in _SPEAK_STATUS_SUBJECT.finditer(clause):
+            tail = match.group("tail").strip().lower()
+            state = match.group("state").lower()
+            if state == "connected" and re.match(r"^(?:to|with)\b", tail):
+                continue
+            if state == "available" and re.match(r"^in the catalog\b", tail):
+                continue
+            return True
+        if (_SPEAK_DIRECT_COMPLETION.search(clause)
+                or _SPEAK_FIRST_PERSON_COMPLETION.search(clause)):
+            return True
+    return False
 
 
 def _exact_object(value, fields, message):
