@@ -4,10 +4,22 @@ from __future__ import annotations
 
 from copy import deepcopy
 from datetime import datetime
+import base64
+import hashlib
+import hmac
+import json
+import os
 import re
+import secrets
+import time
+import urllib.parse
+import urllib.request
 
 
 SCHEMA_VERSION = "cordia-profile-v1"
+_RESULT_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9_-]{0,127}")
+_STATE_NONCE = re.compile(r"[A-Za-z0-9_-]{16,128}")
+_STATE_TTL_SECONDS = 15 * 60
 _TOP_KEYS = {"schema_version", "survey_version", "profile_id", "communication",
              "domains", "personality", "natural_requests", "completed_at"}
 _COMMUNICATION_KEYS = {"explicit_implicit", "detail_big_picture",
@@ -23,6 +35,101 @@ _LOCAL_PATH = re.compile(
     r"\\\\[^\s]+|(?:file|path)://|\.{1,2}[\\/][^\s]+|"
     r"/(?:tmp|home|Users|var|etc|opt|srv|run|mnt|workspace|Library)(?:/[^\s]*)?|"
     r"/{1,2}(?:[^\s/]+/)+[^\s/]+)", re.IGNORECASE)
+
+
+def _normalized_email(email: object) -> str:
+    normalized = email.strip().lower() if isinstance(email, str) else ""
+    if not normalized or len(normalized) > 320:
+        raise ValueError("profile state owner is invalid")
+    return normalized
+
+
+def _state_key() -> bytes:
+    value = os.environ.get("CORDIA_PROFILE_STATE_KEY", "")
+    if not value:
+        raise ValueError("profile survey state is not configured")
+    return value.encode("utf-8")
+
+
+def _base64url(value: bytes) -> str:
+    return base64.urlsafe_b64encode(value).rstrip(b"=").decode("ascii")
+
+
+def _base64url_decode(value: str) -> bytes:
+    if not isinstance(value, str) or not re.fullmatch(r"[A-Za-z0-9_-]+", value):
+        raise ValueError("profile survey state is invalid")
+    try:
+        return base64.urlsafe_b64decode(value + "=" * (-len(value) % 4))
+    except (ValueError, UnicodeEncodeError) as exc:
+        raise ValueError("profile survey state is invalid") from exc
+
+
+def issue_state(email: str, now: int | None = None) -> str:
+    """Return a signed, short-lived state bound to the normalized owner."""
+    issued = int(time.time() if now is None else now)
+    payload = {
+        "email": _normalized_email(email),
+        "nonce": secrets.token_urlsafe(24),
+        "exp": issued + _STATE_TTL_SECONDS,
+    }
+    encoded = _base64url(json.dumps(payload, separators=(",", ":"), sort_keys=True).encode("utf-8"))
+    signature = hmac.new(_state_key(), encoded.encode("ascii"), hashlib.sha256).digest()
+    return f"{encoded}.{_base64url(signature)}"
+
+
+def verify_state(token: str, authenticated_email: str, now: int | None = None) -> dict:
+    """Validate exact state fields, signature, owner binding, and 15-minute expiry."""
+    if not isinstance(token, str) or len(token) > 4096 or token.count(".") != 1:
+        raise ValueError("profile survey state is invalid")
+    encoded, received_signature = token.split(".")
+    expected_signature = _base64url(
+        hmac.new(_state_key(), encoded.encode("ascii"), hashlib.sha256).digest()
+    )
+    if not hmac.compare_digest(received_signature, expected_signature):
+        raise ValueError("profile survey state is invalid")
+    try:
+        payload = json.loads(_base64url_decode(encoded))
+    except (TypeError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise ValueError("profile survey state is invalid") from exc
+    if (not isinstance(payload, dict) or set(payload) != {"email", "nonce", "exp"}
+            or not isinstance(payload["email"], str)
+            or not isinstance(payload["nonce"], str)
+            or not _STATE_NONCE.fullmatch(payload["nonce"])
+            or isinstance(payload["exp"], bool) or not isinstance(payload["exp"], int)):
+        raise ValueError("profile survey state is invalid")
+    current = int(time.time() if now is None else now)
+    if (payload["email"] != _normalized_email(authenticated_email)
+            or payload["exp"] <= current
+            or payload["exp"] > current + _STATE_TTL_SECONDS):
+        raise ValueError("profile survey state is invalid")
+    return deepcopy(payload)
+
+
+def fetch_result(result_id: str, opener=urllib.request.urlopen) -> dict:
+    """Fetch and validate one result from the configured, fixed provider endpoint."""
+    if not isinstance(result_id, str) or not _RESULT_ID.fullmatch(result_id):
+        raise ValueError("profile survey result id is invalid")
+    base = os.environ.get("CORDIA_PROFILE_RESULT_URL", "").strip()
+    parsed = urllib.parse.urlsplit(base)
+    if parsed.scheme not in {"https", "http"} or not parsed.netloc:
+        raise ValueError("profile survey result endpoint is not configured")
+    url = base.rstrip("/") + "/" + urllib.parse.quote(result_id, safe="")
+    headers = {"Accept": "application/json"}
+    token = os.environ.get("CORDIA_PROFILE_API_TOKEN", "")
+    if token:
+        headers["Authorization"] = "Bearer " + token
+    request = urllib.request.Request(url, headers=headers)
+    with opener(request, timeout=10) as response:
+        if response.geturl() != url:
+            raise ValueError("profile survey result redirect is not allowed")
+        body = response.read(64 * 1024 + 1)
+    if len(body) > 64 * 1024:
+        raise ValueError("profile survey result is too large")
+    try:
+        result = json.loads(body.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise ValueError("profile survey result is invalid") from exc
+    return validate_result(result)
 
 
 def _unsafe_metadata(value: str) -> bool:

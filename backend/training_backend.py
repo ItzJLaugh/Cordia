@@ -3,7 +3,7 @@
 LLM proxy for live Archetype C environments. Port 9995.
 Stdlib only. Storage: /var/lib/cordia/corpus/corpus.jsonl (append-only)."""
 
-import json, os, re, time, threading, urllib.request, uuid, sys
+import json, os, re, time, threading, urllib.parse, urllib.request, uuid, sys
 from collections import deque
 from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
 
@@ -49,6 +49,21 @@ except BaseException as _surv_err:            # noqa: BLE001 - must never be fat
 
 PORT = 9995
 _GITHUB_SECRET_REF = re.compile(r'^secret_github_[0-9a-f]{16}$')
+
+
+def _complete_profile_calibration(email, result):
+    """Persist one verified calibration and recover the owner's sole workspace."""
+    calibration = surveyor.profile_calibration.validate_result(result)
+    surveyor.store.save_profile_calibration(email, calibration)
+    candidate = uuid.uuid4().hex
+    prepared = surveyor.workspace_generation.prepare(
+        candidate, surveyor.pipeline.load_profile(email),
+        surveyor.store.get_connector_states(email), calibration)
+    workspace_id, created = surveyor.store.ensure_initial_workspace(email, prepared)
+    current = surveyor.store.get_artifacts(email) or {}
+    current["source/memory.md"] = surveyor.profile_calibration.compile_memory(calibration)
+    surveyor.store.save_artifacts(email, current)
+    return {"ok": True, "workspace_id": workspace_id, "created": created}
 
 
 # Bind address. Defaults to loopback: these services have no authentication on
@@ -391,6 +406,8 @@ class H(BaseHTTPRequestHandler):
             self._manifest()
         elif p == '/surveyor/profile':
             self._surv_profile()
+        elif p == '/surveyor/profile-calibration':
+            self._surv_profile_calibration()
         elif p == '/surveyor/operator-profile':
             self._surv_operator_profile()
         elif p == '/account/profile':
@@ -475,6 +492,64 @@ class H(BaseHTTPRequestHandler):
         if stop: return
         self._json({'ok': True, 'llm': surveyor.llm.status(nous_key),
                     **surveyor.pipeline.public_profile(email)})
+
+    def _surv_profile_calibration(self):
+        """Return a fixed survey start or the owner's existing canonical workspace."""
+        email, stop = self._surv_guard()
+        if stop:
+            return
+        calibration = surveyor.store.get_profile_calibration(email)
+        interfaces = surveyor.store.list_interfaces(email)
+        workspace_id = (interfaces[0].get('id') if isinstance(interfaces, list) and interfaces
+                        and isinstance(interfaces[0], dict) else None)
+        if surveyor.profile_calibration.is_calibrated(calibration) and isinstance(workspace_id, str):
+            self._json({'ok': True, 'calibrated': True, 'workspace_id': workspace_id})
+            return
+        survey_url = os.environ.get('CORDIA_PROFILE_SURVEY_URL', '').strip()
+        parsed = urllib.parse.urlsplit(survey_url)
+        if parsed.scheme not in {'https', 'http'} or not parsed.netloc:
+            self._json({'ok': False, 'error': 'profile survey is not configured'}, 503)
+            return
+        state = surveyor.profile_calibration.issue_state(email)
+        query = urllib.parse.parse_qsl(parsed.query, keep_blank_values=True)
+        query.append(('state', state))
+        survey_url = urllib.parse.urlunsplit((
+            parsed.scheme, parsed.netloc, parsed.path,
+            urllib.parse.urlencode(query), parsed.fragment,
+        ))
+        self._json({'ok': True, 'calibrated': False, 'survey_url': survey_url})
+
+    def _surv_profile_calibration_import(self, body):
+        """Controlled-development import only; production has no browser bypass."""
+        if os.environ.get('CORDIA_PROFILE_DEV_IMPORT') != '1':
+            self._json({'error': 'not found'}, 404)
+            return
+        email, stop = self._surv_guard()
+        if stop:
+            return
+        try:
+            self._json(_complete_profile_calibration(email, body))
+        except ValueError as exc:
+            self._json({'ok': False, 'error': str(exc)}, 400)
+
+    def _surv_profile_calibration_complete(self, body):
+        """Complete exactly one signed provider result for its authenticated owner."""
+        email, stop = self._surv_guard()
+        if stop:
+            return
+        if (not isinstance(body, dict) or set(body) != {'state', 'result_id'}
+                or not isinstance(body.get('state'), str)
+                or not isinstance(body.get('result_id'), str)):
+            self._json({'ok': False, 'error': 'profile completion requires state and result_id'}, 400)
+            return
+        try:
+            surveyor.profile_calibration.verify_state(body['state'], email)
+            result = surveyor.profile_calibration.fetch_result(body['result_id'])
+            self._json(_complete_profile_calibration(email, result))
+        except ValueError as exc:
+            self._json({'ok': False, 'error': str(exc)}, 400)
+        except Exception:
+            self._json({'ok': False, 'error': 'profile survey result could not be retrieved'}, 502)
 
     def _surv_operator_profile(self):
         """Read-only, least-privilege bridge from Surveyor to one workspace action."""
@@ -1307,6 +1382,10 @@ class H(BaseHTTPRequestHandler):
         self._surv_body = body if isinstance(body, dict) else {}
         if p == '/train/respond':
             self._respond(body)
+        elif p == '/surveyor/profile-calibration/import':
+            self._surv_profile_calibration_import(body)
+        elif p == '/surveyor/profile-calibration/complete':
+            self._surv_profile_calibration_complete(body)
         elif p == '/surveyor/message':
             self._surv_message(body)
         elif p == '/surveyor/interface':

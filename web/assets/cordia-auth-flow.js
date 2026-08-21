@@ -28,20 +28,24 @@
     const fallback = 'surveyor.html';
     let destination = fallback;
     try {
-      const response = await options.fetch(
-        options.apiBase + '/surveyor/interfaces',
-        { method: 'GET', credentials: 'same-origin' },
-      );
-      if (response && response.ok && typeof response.json === 'function') {
-        const payload = await response.json();
-        const first = payload && Array.isArray(payload.interfaces)
-          ? payload.interfaces[0]
-          : null;
-        const navigation = root.CordiaWorkspaceNavigation;
-        const workspace = navigation && typeof navigation.buildWorkspaceNavigation === 'function'
-          ? navigation.buildWorkspaceNavigation(first && first.id)
-          : null;
-        if (workspace && typeof workspace.href === 'string') destination = workspace.href;
+      if (typeof options.resolveCordiaEntry === 'function') {
+        destination = await options.resolveCordiaEntry();
+      } else {
+        const response = await options.fetch(
+          options.apiBase + '/surveyor/interfaces',
+          { method: 'GET', credentials: 'same-origin' },
+        );
+        if (response && response.ok && typeof response.json === 'function') {
+          const payload = await response.json();
+          const first = payload && Array.isArray(payload.interfaces)
+            ? payload.interfaces[0]
+            : null;
+          const navigation = root.CordiaWorkspaceNavigation;
+          const workspace = navigation && typeof navigation.buildWorkspaceNavigation === 'function'
+            ? navigation.buildWorkspaceNavigation(first && first.id)
+            : null;
+          if (workspace && typeof workspace.href === 'string') destination = workspace.href;
+        }
       }
     } catch (_) {
       // Interface read failures intentionally use the fixed safe entry.
