@@ -54,15 +54,12 @@ _GITHUB_SECRET_REF = re.compile(r'^secret_github_[0-9a-f]{16}$')
 def _complete_profile_calibration(email, result):
     """Persist one verified calibration and recover the owner's sole workspace."""
     calibration = surveyor.profile_calibration.validate_result(result)
-    surveyor.store.save_profile_calibration(email, calibration)
     candidate = uuid.uuid4().hex
     prepared = surveyor.workspace_generation.prepare(
         candidate, surveyor.pipeline.load_profile(email),
         surveyor.store.get_connector_states(email), calibration)
-    workspace_id, created = surveyor.store.ensure_initial_workspace(email, prepared)
-    current = surveyor.store.get_artifacts(email) or {}
-    current["source/memory.md"] = surveyor.profile_calibration.compile_memory(calibration)
-    surveyor.store.save_artifacts(email, current)
+    workspace_id, created = surveyor.store.complete_profile_calibration(
+        email, calibration, prepared, surveyor.profile_calibration.compile_memory(calibration))
     return {"ok": True, "workspace_id": workspace_id, "created": created}
 
 
@@ -505,18 +502,11 @@ class H(BaseHTTPRequestHandler):
         if surveyor.profile_calibration.is_calibrated(calibration) and isinstance(workspace_id, str):
             self._json({'ok': True, 'calibrated': True, 'workspace_id': workspace_id})
             return
-        survey_url = os.environ.get('CORDIA_PROFILE_SURVEY_URL', '').strip()
-        parsed = urllib.parse.urlsplit(survey_url)
-        if parsed.scheme not in {'https', 'http'} or not parsed.netloc:
+        try:
+            survey_url = surveyor.profile_calibration.survey_start_url(email)
+        except ValueError:
             self._json({'ok': False, 'error': 'profile survey is not configured'}, 503)
             return
-        state = surveyor.profile_calibration.issue_state(email)
-        query = urllib.parse.parse_qsl(parsed.query, keep_blank_values=True)
-        query.append(('state', state))
-        survey_url = urllib.parse.urlunsplit((
-            parsed.scheme, parsed.netloc, parsed.path,
-            urllib.parse.urlencode(query), parsed.fragment,
-        ))
         self._json({'ok': True, 'calibrated': False, 'survey_url': survey_url})
 
     def _surv_profile_calibration_import(self, body):

@@ -17,7 +17,8 @@
       const url = new URL(value);
       if (url.protocol !== 'https:' || url.hostname !== 'cordia-survey1.vercel.app' ||
           url.pathname !== '/survey' || url.username || url.password ||
-          !url.searchParams.get('state')) return null;
+          url.port || url.hash || !url.searchParams.get('state') ||
+          url.searchParams.getAll('state').length !== 1) return null;
       return url.toString();
     } catch (_) {
       return null;

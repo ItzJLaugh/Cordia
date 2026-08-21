@@ -3,6 +3,8 @@ import io
 import json
 import os
 import sys
+import urllib.error
+import urllib.request
 import unittest
 from copy import deepcopy
 from types import SimpleNamespace
@@ -21,28 +23,21 @@ class MemoryStore:
         self.saved_artifacts = {}
         self.write_calls = []
 
-    def save_profile_calibration(self, email, calibration):
-        self.write_calls.append(("calibration", email))
+    def complete_profile_calibration(self, email, calibration, prepared, memory):
+        self.write_calls.append(("completion", email))
         self.saved_calibration = deepcopy(calibration)
+        artifacts = deepcopy(self.saved_artifacts)
+        artifacts["source/memory.md"] = memory
+        self.saved_artifacts = artifacts
+        if self.existing_workspace_id:
+            return self.existing_workspace_id, False
+        return "workspace-1", True
 
     def get_profile_calibration(self, _email):
         return deepcopy(self.saved_calibration)
 
     def get_connector_states(self, _email):
         return {}
-
-    def ensure_initial_workspace(self, email, prepared):
-        self.write_calls.append(("workspace", email))
-        if self.existing_workspace_id:
-            return self.existing_workspace_id, False
-        return "workspace-1", True
-
-    def get_artifacts(self, _email):
-        return deepcopy(self.saved_artifacts)
-
-    def save_artifacts(self, email, artifacts):
-        self.write_calls.append(("artifacts", email))
-        self.saved_artifacts = deepcopy(artifacts)
 
     def list_interfaces(self, _email):
         if self.existing_workspace_id:
@@ -163,6 +158,44 @@ class TestProfileCalibrationRoutes(unittest.TestCase):
         ))
         self.assertEqual(self.store.write_calls, [])
 
+    def test_status_route_constructs_one_safe_survey_state_and_rejects_unsafe_config(self):
+        handler = self.handler("/surveyor/profile-calibration")
+        safe_env = {
+            "CORDIA_PROFILE_STATE_KEY": "state-test-key",
+            "CORDIA_PROFILE_SURVEY_URL": (
+                "https://cordia-survey1.vercel.app/survey?campaign=alpha#ignored"
+            ),
+        }
+        with patch.dict(os.environ, safe_env, clear=False), patch.object(
+            self.backend, "surveyor", self.runtime
+        ):
+            handler.do_GET()
+        response, status = handler.response
+        self.assertEqual(status, 200)
+        self.assertEqual(response["ok"], True)
+        self.assertFalse(response["calibrated"])
+        parsed = urllib.parse.urlsplit(response["survey_url"])
+        self.assertEqual((parsed.scheme, parsed.netloc, parsed.path, parsed.fragment),
+                         ("https", "cordia-survey1.vercel.app", "/survey", ""))
+        query = urllib.parse.parse_qs(parsed.query, strict_parsing=True)
+        self.assertEqual(query["campaign"], ["alpha"])
+        self.assertEqual(len(query["state"]), 1)
+
+        for unsafe in (
+            "http://cordia-survey1.vercel.app/survey",
+            "https://127.0.0.1/survey",
+            "https://user@cordia-survey1.vercel.app/survey",
+            "https://cordia-survey1.vercel.app:8443/survey",
+            "https://cordia-survey1.vercel.app/survey?state=forged",
+        ):
+            handler = self.handler("/surveyor/profile-calibration")
+            with patch.dict(os.environ, {
+                "CORDIA_PROFILE_STATE_KEY": "state-test-key",
+                "CORDIA_PROFILE_SURVEY_URL": unsafe,
+            }, clear=False), patch.object(self.backend, "surveyor", self.runtime):
+                handler.do_GET()
+            self.assertEqual(handler.response[1], 503, unsafe)
+
 
 class TestProfileCalibrationSecurityContract(unittest.TestCase):
     def test_state_is_owner_bound_expiring_and_rejects_added_fields(self):
@@ -176,7 +209,7 @@ class TestProfileCalibrationSecurityContract(unittest.TestCase):
             with self.assertRaises(ValueError):
                 profile_calibration.verify_state(token, "owner@example.test", now=1001)
 
-    def test_fetch_result_uses_only_fixed_url_rejects_redirects_and_validates(self):
+    def test_fetch_result_uses_only_public_fixed_https_url_and_validates(self):
         class Response:
             def __init__(self, url, body):
                 self.url = url
@@ -196,23 +229,66 @@ class TestProfileCalibrationSecurityContract(unittest.TestCase):
 
         calls = []
 
+        def resolver(host, port, type):
+            self.assertEqual((host, port, type), ("provider.test", 443, 1))
+            return [(2, 1, 6, "", ("8.8.8.8", 443))]
+
         def opener(request, timeout):
             calls.append((request.full_url, timeout))
             return Response(request.full_url, json.dumps(VALID).encode())
 
         with patch.dict(os.environ, {"CORDIA_PROFILE_RESULT_URL": "https://provider.test/results"},
                         clear=False):
-            result = profile_calibration.fetch_result("result_123", opener=opener)
+            result = profile_calibration.fetch_result(
+                "result_123", opener=opener, resolver=resolver
+            )
             self.assertEqual(result, VALID)
             self.assertEqual(calls, [("https://provider.test/results/result_123", 10)])
 
-            def redirecting_opener(request, timeout):
-                return Response("https://attacker.test/result", json.dumps(VALID).encode())
+        for unsafe in (
+            "http://provider.test/results",
+            "https://127.0.0.1/results",
+            "https://user@provider.test/results",
+            "https://provider.test:8443/results",
+            "https://provider.test/results#fragment",
+        ):
+            calls.clear()
+            with patch.dict(os.environ, {"CORDIA_PROFILE_RESULT_URL": unsafe}, clear=False):
+                with self.assertRaises(ValueError):
+                    profile_calibration.fetch_result("result_123", opener=opener, resolver=resolver)
+            self.assertEqual(calls, [], unsafe)
 
+        calls.clear()
+        with patch.dict(os.environ, {"CORDIA_PROFILE_RESULT_URL": "https://provider.test/results"},
+                        clear=False):
             with self.assertRaises(ValueError):
-                profile_calibration.fetch_result("result_123", opener=redirecting_opener)
-            with self.assertRaises(ValueError):
-                profile_calibration.fetch_result("https://attacker.test", opener=opener)
+                profile_calibration.fetch_result(
+                    "result_123", opener=opener,
+                    resolver=lambda *_args, **_kwargs: [(2, 1, 6, "", ("10.0.0.8", 443))],
+                )
+        self.assertEqual(calls, [])
+
+    def test_default_fetch_rejects_redirect_before_a_credential_can_reach_the_target(self):
+        requests = []
+
+        class RedirectingOpener:
+            def open(self, request, timeout):
+                requests.append((request.full_url, request.get_header("Authorization"), timeout))
+                raise urllib.error.HTTPError(request.full_url, 302, "redirect", {}, None)
+
+        with patch.dict(os.environ, {
+            "CORDIA_PROFILE_RESULT_URL": "https://provider.test/results",
+            "CORDIA_PROFILE_API_TOKEN": "server-only-token",
+        }, clear=False), patch.object(urllib.request, "build_opener", return_value=RedirectingOpener()):
+            with self.assertRaises(urllib.error.HTTPError):
+                profile_calibration.fetch_result(
+                    "result_123",
+                    resolver=lambda *_args, **_kwargs: [(2, 1, 6, "", ("8.8.8.8", 443))],
+                )
+
+        self.assertEqual(requests, [
+            ("https://provider.test/results/result_123", "Bearer server-only-token", 10),
+        ])
 
 
 if __name__ == "__main__":

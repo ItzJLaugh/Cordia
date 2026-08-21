@@ -274,18 +274,22 @@ def set_simple_mode(email, forced: bool) -> None:
         """, (email, bool(forced)))
 
 
-def save_profile_calibration(email: str, calibration: dict) -> None:
-    """Persist strict calibration beside the owner's existing Surveyor profile."""
-    from . import profile_calibration
-    validated = profile_calibration.validate_result(calibration)
-    with _conn() as connection, connection.cursor() as cursor:
-        cursor.execute("""
+def _save_profile_calibration(cursor, email: str, calibration: dict) -> None:
+    cursor.execute("""
             INSERT INTO surveyor_profiles(email, profile_calibration)
             VALUES (%s,%s)
             ON CONFLICT (email) DO UPDATE SET
                 profile_calibration=EXCLUDED.profile_calibration,
                 updated=(now() AT TIME ZONE 'utc')
-        """, (email, _J(validated)))
+        """, (email, _J(calibration)))
+
+
+def save_profile_calibration(email: str, calibration: dict) -> None:
+    """Persist strict calibration beside the owner's existing Surveyor profile."""
+    from . import profile_calibration
+    validated = profile_calibration.validate_result(calibration)
+    with _conn() as connection, connection.cursor() as cursor:
+        _save_profile_calibration(cursor, email, validated)
 
 
 def get_profile_calibration(email: str) -> dict | None:
@@ -369,52 +373,96 @@ def save_workspace(email: str, workspace_id: str, state: dict) -> None:
         """, (workspace_id, email, _J(state)))
 
 
-def ensure_initial_workspace(email: str, prepared: dict) -> tuple[str, bool]:
-    """Create one owner's first workspace atomically, or return the existing one."""
+def _split_artifacts(bundle: dict) -> tuple[dict, dict]:
     source = {
         key: value
-        for key, value in prepared["artifacts"].items()
+        for key, value in bundle.items()
         if key.startswith("source/")
     }
     runtime = {
         key: value
-        for key, value in prepared["artifacts"].items()
+        for key, value in bundle.items()
         if key.startswith("runtime/")
     }
+    return source, runtime
+
+
+def _existing_initial_workspace(cursor, email: str) -> str | None:
+    cursor.execute(
+        "SELECT id FROM surveyor_interfaces "
+        "WHERE email=%s AND archived=FALSE ORDER BY updated DESC LIMIT 1",
+        (email,),
+    )
+    row = cursor.fetchone()
+    return row[0] if row else None
+
+
+def _save_artifact_bundle(cursor, email: str, source: dict, runtime: dict) -> None:
+    cursor.execute(
+        "INSERT INTO surveyor_artifacts(email,source,runtime) VALUES(%s,%s,%s) "
+        "ON CONFLICT(email) DO UPDATE SET source=EXCLUDED.source, "
+        "runtime=EXCLUDED.runtime, updated=(now() AT TIME ZONE 'utc')",
+        (email, _J(source), _J(runtime)),
+    )
+
+
+def _create_initial_workspace(cursor, email: str, prepared: dict) -> None:
+    source, runtime = _split_artifacts(prepared["artifacts"])
+    cursor.execute(
+        "INSERT INTO surveyor_interfaces"
+        "(id,email,name,description,definition,theme) "
+        "VALUES(%s,%s,%s,%s,%s,%s)",
+        (
+            prepared["id"], email, prepared["name"], prepared["description"],
+            _J(prepared["definition"]), _J({}),
+        ),
+    )
+    cursor.execute(
+        "INSERT INTO surveyor_workspaces(id,email,state) VALUES(%s,%s,%s)",
+        (prepared["id"], email, _J(prepared["workspace"])),
+    )
+    _save_artifact_bundle(cursor, email, source, runtime)
+
+
+def ensure_initial_workspace(email: str, prepared: dict) -> tuple[str, bool]:
+    """Create one owner's first workspace atomically, or return the existing one."""
     with _lock, _conn() as connection, connection.cursor() as cursor:
         cursor.execute("SELECT pg_advisory_xact_lock(hashtext(%s))", (email,))
+        existing = _existing_initial_workspace(cursor, email)
+        if existing:
+            return existing, False
+        _create_initial_workspace(cursor, email, prepared)
+    return prepared["id"], True
+
+
+def complete_profile_calibration(
+    email: str, calibration: dict, prepared: dict, memory: str
+) -> tuple[str, bool]:
+    """Commit calibration, one workspace, and refreshed memory as one owner transaction."""
+    from . import profile_calibration
+    validated = profile_calibration.validate_result(calibration)
+    if not isinstance(memory, str):
+        raise ValueError("profile memory is invalid")
+    with _lock, _conn() as connection, connection.cursor() as cursor:
+        cursor.execute("SELECT pg_advisory_xact_lock(hashtext(%s))", (email,))
+        _save_profile_calibration(cursor, email, validated)
+        existing = _existing_initial_workspace(cursor, email)
+        if not existing:
+            bundle = dict(prepared["artifacts"])
+            bundle["source/memory.md"] = memory
+            prepared = {**prepared, "artifacts": bundle}
+            _create_initial_workspace(cursor, email, prepared)
+            return prepared["id"], True
         cursor.execute(
-            "SELECT id FROM surveyor_interfaces "
-            "WHERE email=%s AND archived=FALSE ORDER BY updated DESC LIMIT 1",
+            "SELECT source, runtime FROM surveyor_artifacts WHERE email=%s FOR UPDATE",
             (email,),
         )
-        existing = cursor.fetchone()
-        if existing:
-            return existing[0], False
-        cursor.execute(
-            "INSERT INTO surveyor_interfaces"
-            "(id,email,name,description,definition,theme) "
-            "VALUES(%s,%s,%s,%s,%s,%s)",
-            (
-                prepared["id"],
-                email,
-                prepared["name"],
-                prepared["description"],
-                _J(prepared["definition"]),
-                _J({}),
-            ),
-        )
-        cursor.execute(
-            "INSERT INTO surveyor_workspaces(id,email,state) VALUES(%s,%s,%s)",
-            (prepared["id"], email, _J(prepared["workspace"])),
-        )
-        cursor.execute(
-            "INSERT INTO surveyor_artifacts(email,source,runtime) VALUES(%s,%s,%s) "
-            "ON CONFLICT(email) DO UPDATE SET source=EXCLUDED.source, "
-            "runtime=EXCLUDED.runtime, updated=(now() AT TIME ZONE 'utc')",
-            (email, _J(source), _J(runtime)),
-        )
-    return prepared["id"], True
+        row = cursor.fetchone()
+        source = dict(row[0] or {}) if row else {}
+        runtime = dict(row[1] or {}) if row else {}
+        source["source/memory.md"] = memory
+        _save_artifact_bundle(cursor, email, source, runtime)
+        return existing, False
 
 
 def get_workspace(email: str, workspace_id: str) -> dict | None:

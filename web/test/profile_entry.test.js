@@ -59,3 +59,18 @@ test('an incomplete callback or unsafe server destination fails closed', async (
   });
   assert.equal(unsafeSurvey, '/');
 });
+
+test('rejects survey URLs with userinfo, fragments, or non-default ports', async () => {
+  for (const survey_url of [
+    'https://user@cordia-survey1.vercel.app/survey?state=opaque',
+    'https://cordia-survey1.vercel.app:8443/survey?state=opaque',
+    'https://cordia-survey1.vercel.app/survey?state=opaque#fragment',
+  ]) {
+    const destination = await resolveCordiaEntry({
+      getJson: async () => ({ ok: true, calibrated: false, survey_url }),
+      postJson: async () => { throw new Error('must not post'); },
+      locationSearch: '',
+    });
+    assert.equal(destination, '/', survey_url);
+  }
+});
