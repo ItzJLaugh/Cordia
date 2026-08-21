@@ -13,7 +13,7 @@ function restoreGlobals(originals) {
   }
 }
 
-test('postRun exposes only the fixed Surveyor run request with a bounded input', async () => {
+test('postRun exposes only the fixed revisioned idempotent Surveyor turn request', async () => {
   const originals = new Map()
   const requests = []
   replaceGlobal('location', { hostname: 'cordia.example.test' }, originals)
@@ -25,20 +25,20 @@ test('postRun exposes only the fixed Surveyor run request with a bounded input',
 
   try {
     const { postRun } = await import('../src/api.js?post-run-contract')
-    assert.deepEqual(await postRun('workspace-1', `  ${'x'.repeat(6100)}  `), { ok: true, output: 'Ready' })
+    assert.deepEqual(await postRun('workspace-1', 4, `  ${'x'.repeat(6100)}  `, 'turn-abc123'), { ok: true, output: 'Ready' })
     assert.equal(requests.length, 1)
     assert.equal(requests[0].url, '/surveyor/run')
     assert.deepEqual(requests[0].options, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       credentials: 'include',
-      body: JSON.stringify({ id: 'workspace-1', input: 'x'.repeat(6000) }),
+      body: JSON.stringify({ id: 'workspace-1', revision: 4, message: 'x'.repeat(6000), idempotency_key: 'turn-abc123' }),
     })
     const storeId = '3b92e3b42cf94d96824322b7e33b07db'
-    await postRun(storeId, 'Review this')
+    await postRun(storeId, 0, 'Review this', 'turn-abc124')
     assert.equal(JSON.parse(requests[1].options.body).id, storeId)
-    await assert.rejects(postRun('C:\\private\\workspace', 'Review this'), /Invalid workspace request/)
-    await assert.rejects(postRun('C:drive-relative', 'Review this'), /Invalid workspace request/)
+    await assert.rejects(postRun('C:\\private\\workspace', 0, 'Review this', 'turn-abc125'), /Invalid workspace request/)
+    await assert.rejects(postRun('C:drive-relative', 0, 'Review this', 'turn-abc125'), /Invalid workspace request/)
     for (const credentialId of [
       'sk-abcdefghijk',
       'ghp_abcdefghijklmnopqrstuvwxyz',
@@ -46,7 +46,7 @@ test('postRun exposes only the fixed Surveyor run request with a bounded input',
       'AKIA1234567890ABCDEF',
       'token.secret-value',
     ]) {
-      await assert.rejects(postRun(credentialId, 'Review this'), /Invalid workspace request/, credentialId)
+      await assert.rejects(postRun(credentialId, 0, 'Review this', 'turn-abc125'), /Invalid workspace request/, credentialId)
     }
     assert.equal(requests.length, 2)
   } finally {
@@ -189,7 +189,7 @@ test('API errors distinguish signed-out, rate-limited, and offline states withou
     globalThis.fetch = async () => ({
       ok: false, status: 429, json: async () => ({ ok: false, error: 'token=private-rate-detail' }),
     })
-    await assert.rejects(postRun('workspace-1', 'Review this'), (error) => {
+    await assert.rejects(postRun('workspace-1', 0, 'Review this', 'turn-abc123'), (error) => {
       assert.equal(apiErrorKind(error), 'rate-limit')
       assert.equal(error.message, 'Request failed')
       return true

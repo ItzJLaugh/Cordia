@@ -636,7 +636,11 @@ class H(BaseHTTPRequestHandler):
             state = surveyor.workspace_state.from_interface(
                 workspace_id, definition, surveyor.store.get_connector_states(email))
             surveyor.store.save_workspace(email, workspace_id, state)
-        self._json({'ok': True, 'workspace': state})
+        try:
+            has_stored_turns = surveyor.store.has_workspace_turns(email, workspace_id)
+        except Exception:
+            has_stored_turns = True
+        self._json({'ok': True, 'workspace': state, 'has_stored_turns': has_stored_turns})
 
     def _surv_alidora_map(self):
         """Return a safe, read-only Alidora map for the signed-in workspace owner."""
@@ -952,39 +956,45 @@ class H(BaseHTTPRequestHandler):
 
     def _surv_run(self, body):
         email, stop = self._surv_guard()
-        if stop: return
-        if not rate_ok(self._client_ip(), email, llm=True):
-            self._json({'ok': False, 'error': 'run limit reached — wait 10 minutes'}, 429)
+        if stop:
             return
-        iface = surveyor.store.get_interface(email, str(body.get('id') or ''))
-        if not iface:
-            self._json({'ok': False, 'error': 'not found'}, 404); return
-        prompt = str(body.get('input', ''))[:6000].strip()
-        if not prompt:
-            self._json({'ok': False, 'error': 'input required'}, 400); return
-        profile = surveyor.pipeline.load_profile(email)
-        workspace = surveyor.store.get_workspace(email, iface['id']) or {}
-        system = surveyor.prompts.runtime_system(
-            iface['definition'], surveyor.adaptation.soft_profile(profile),
-            surveyor.pipeline.artifact_bundle(email), workspace)
-        status = surveyor.llm.status()
         try:
-            out = self._surv_llm()(system, prompt, max_tokens=1200)
-        except surveyor.model_provider.ModelUnavailable:
-            self._json({'ok': False, 'error': 'Cordia Agent is not configured.',
-                        'kind': 'model_unavailable'}, 503); return
-        except surveyor.model_provider.ModelFailure:
-            self._json({'ok': False, 'error': 'Cordia Agent could not complete that request.',
-                        'kind': 'model_failure'}, 502); return
-        run_id = surveyor.store.add_run(iface['id'], email, prompt, out, {'llm': status['mode']})
-        approval_step = next((step for step in (iface['definition'].get('workflow') or {}).get('steps', [])
-                              if surveyor.hitl_policy.requires_approval(step)), None)
-        checkpoint = surveyor.hitl_policy.create_checkpoint(run_id, approval_step, out) if approval_step else None
-        if checkpoint:
-            surveyor.store.save_approval(email, checkpoint)
-        surveyor.store.log_event(email, 'interface_run',
-                                 {'id': iface['id'], 'llm': status['mode']})
-        self._json({'ok': True, 'output': out, 'llm': status, 'approval': checkpoint})
+            request = surveyor.cordia_agent.validate_turn_request(body)
+        except ValueError as exc:
+            self._json({'ok': False, 'error': str(exc)}, 400)
+            return
+        workspace = surveyor.store.get_workspace(email, request['id'])
+        if not workspace:
+            self._json({'ok': False, 'error': 'workspace not found'}, 404)
+            return
+        prior = surveyor.store.get_run_by_idempotency(email, request['id'], request['idempotency_key'])
+        if prior:
+            self._json(prior)
+            return
+        artifacts = surveyor.store.get_artifacts(email) or {}
+        memory = str(artifacts.get('source/memory.md') or '')
+        recent = surveyor.store.recent_workspace_turns(email, request['id'])
+        try:
+            context = surveyor.cordia_agent.build_context(memory, workspace, recent)
+            envelope = surveyor.cordia_agent.run_turn(context, request['message'], surveyor.llm.call)
+            next_workspace, public = surveyor.cordia_agent.apply_proposal(workspace, envelope)
+        except Exception as exc:
+            unavailable = getattr(getattr(surveyor, 'model_provider', None), 'ModelUnavailable', ())
+            if unavailable and isinstance(exc, unavailable):
+                self._json({'ok': False, 'error': 'Cordia Agent is not configured.'}, 503)
+                return
+            self._json({'ok': False, 'error': 'Cordia Agent could not complete that request.'}, 502)
+            return
+        commit = surveyor.store.commit_workspace_turn(
+            email, request['id'], request['revision'], request['idempotency_key'],
+            request['message'], public, next_workspace)
+        if commit['status'] == 'missing':
+            self._json({'ok': False, 'error': 'workspace not found'}, 404)
+            return
+        if commit['status'] == 'conflict':
+            self._json({'ok': False, 'error': 'workspace changed; reload and retry'}, 409)
+            return
+        self._json(commit['result'])
 
     def _surv_personalization(self, body):
         email, stop = self._surv_guard()

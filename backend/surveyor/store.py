@@ -152,6 +152,11 @@ CREATE TABLE IF NOT EXISTS surveyor_workspaces(
 );
 CREATE INDEX IF NOT EXISTS surveyor_workspaces_email_idx ON surveyor_workspaces(email, updated);
 
+ALTER TABLE surveyor_runs ADD COLUMN IF NOT EXISTS idempotency_key TEXT;
+CREATE UNIQUE INDEX IF NOT EXISTS surveyor_runs_owner_workspace_key_idx
+ON surveyor_runs(email, interface_id, idempotency_key)
+WHERE idempotency_key IS NOT NULL;
+
 -- Stage 2 and 3, added after the table already existed in production.
 ALTER TABLE surveyor_profiles ADD COLUMN IF NOT EXISTS scenarios   JSONB NOT NULL DEFAULT '{}'::jsonb;
 ALTER TABLE surveyor_profiles ADD COLUMN IF NOT EXISTS freeform    JSONB NOT NULL DEFAULT '{}'::jsonb;
@@ -471,6 +476,62 @@ def get_workspace(email: str, workspace_id: str) -> dict | None:
                     (workspace_id, email))
         row = cur.fetchone()
     return row[0] if row else None
+
+
+def get_run_by_idempotency(email: str, workspace_id: str, key: str) -> dict | None:
+    with _conn() as connection, connection.cursor() as cursor:
+        cursor.execute("SELECT meta FROM surveyor_runs WHERE email=%s AND interface_id=%s "
+                       "AND idempotency_key=%s", (email, workspace_id, key))
+        row = cursor.fetchone()
+    return deepcopy(row[0]) if row and isinstance(row[0], dict) else None
+
+
+def recent_workspace_turns(email: str, workspace_id: str, limit: int = 12) -> list[dict]:
+    bounded = max(1, min(int(limit), 12))
+    with _conn() as connection, connection.cursor() as cursor:
+        cursor.execute("SELECT input,output FROM surveyor_runs "
+                       "WHERE email=%s AND interface_id=%s ORDER BY id DESC LIMIT %s",
+                       (email, workspace_id, bounded))
+        rows = cursor.fetchall()
+    return [{"user": str(row[0] or "")[:6000], "assistant": str(row[1] or "")[:4000]}
+            for row in reversed(rows)]
+
+
+def has_workspace_turns(email: str, workspace_id: str) -> bool:
+    with _conn() as connection, connection.cursor() as cursor:
+        cursor.execute("SELECT 1 FROM surveyor_runs WHERE email=%s AND interface_id=%s LIMIT 1",
+                       (email, workspace_id))
+        return cursor.fetchone() is not None
+
+
+def commit_workspace_turn(email: str, workspace_id: str, expected_revision: int,
+                          key: str, user_message: str, public_result: dict,
+                          next_state: dict) -> dict:
+    """Lock one owner workspace and atomically save at most one turn and mutation."""
+    with _conn() as connection, connection.cursor() as cursor:
+        cursor.execute("SELECT state FROM surveyor_workspaces "
+                       "WHERE id=%s AND email=%s FOR UPDATE", (workspace_id, email))
+        row = cursor.fetchone()
+        if not row:
+            return {"status": "missing"}
+        cursor.execute("SELECT meta FROM surveyor_runs WHERE email=%s AND interface_id=%s "
+                       "AND idempotency_key=%s", (email, workspace_id, key))
+        prior = cursor.fetchone()
+        if prior:
+            return {"status": "prior", "result": deepcopy(prior[0])}
+        current = (row[0] or {}) if isinstance(row[0], dict) else {}
+        if int(current.get("revision", 0)) != expected_revision:
+            return {"status": "conflict"}
+        cursor.execute("UPDATE surveyor_workspaces SET state=%s, "
+                       "updated=(now() AT TIME ZONE 'utc') WHERE id=%s AND email=%s",
+                       (_J(next_state), workspace_id, email))
+        cursor.execute("INSERT INTO surveyor_runs"
+                       "(interface_id,email,input,output,meta,idempotency_key) "
+                       "VALUES(%s,%s,%s,%s,%s,%s)",
+                       (workspace_id, email, str(user_message)[:6000],
+                        str(public_result.get("speech") or "")[:4000],
+                        _J(public_result), key))
+    return {"status": "committed", "result": deepcopy(public_result)}
 
 
 def workspaces(email: str) -> list[tuple[str, dict]]:

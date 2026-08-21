@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import React, { useEffect, useRef, useState } from 'react'
 
 import { apiErrorKind, getApi, postRun, postSkillExecute } from './api.js'
 import ArtifactCard from './ArtifactCard.jsx'
@@ -7,6 +7,8 @@ import { alidoraMapToFlow } from './graph.js'
 import InspectionDock from './InspectionDock.js'
 import IntentCorrectionControl from './IntentCorrectionControl.js'
 import {
+  agentTurnModel,
+  assistantGreeting,
   assistantReplyModel,
   assistantTurnFailed,
   assistantTurnStarted,
@@ -28,7 +30,8 @@ function loadNotice(state, subject) {
 
 export function Assistant({
   workspaceId, enabled, readOnly, state, setState, nextId, operationRef,
-  externalBusy = false, onCorrectionBusyChange = () => {}, refresh = async () => {},
+  workspaceRevision = 0, hasMemory = false, hasStoredTurns = true, externalBusy = false,
+  onCorrectionBusyChange = () => {}, refresh = async () => {},
 }) {
   const inputRef = useRef(null)
   const scrollRef = useRef(null)
@@ -62,9 +65,10 @@ export function Assistant({
     if (!started.pending) return
     operationRef.current = 'assistant'
     setState(started)
-    postRun(workspaceId, started.pending.text).then((response) => {
+    const idempotencyKey = `turn-${Date.now().toString(36)}-${started.pending.id}`
+    postRun(workspaceId, workspaceRevision, started.pending.text, idempotencyKey).then(async (response) => {
       if (!aliveRef.current) return
-      const reply = assistantReplyModel(response)
+      const reply = agentTurnModel(response)
       if (!reply) {
         fail('Cordia returned an unexpected response. Your draft is safe to send again.')
         return
@@ -73,8 +77,14 @@ export function Assistant({
       operationRef.current = ''
       setState((current) => ({
         transcript: [...current.transcript, { id: replyId, who: 'cordia', text: reply.text }],
-        draft: '', note: reply.note, busy: false, pending: null,
+        draft: '', note: '', busy: false, pending: null, action: reply.action,
       }))
+      if (reply.revision > workspaceRevision) {
+        try { await refresh() } catch (_error) {
+          if (aliveRef.current) setState((current) => ({ ...current,
+            note: 'Workspace refresh failed. Reload before trying another action.' }))
+        }
+      }
     }).catch((error) => {
       if (!aliveRef.current) return
       const kind = apiErrorKind(error)
@@ -103,11 +113,9 @@ export function Assistant({
       </div>
       <div className="chat-scroll" ref={scrollRef} role="log" aria-live="polite" aria-label="Conversation with Cordia">
         {state.transcript.length === 0 && (
-          <p className="chat-hint">
-            {readOnly
-              ? 'Return to Workspace to ask Cordia to act.'
-              : 'Tell Cordia what you want to understand, coordinate, or move forward.'}
-          </p>
+          <p className="chat-hint">{readOnly
+            ? 'Return to Workspace to ask Cordia to act.'
+            : assistantGreeting(state.transcript, hasMemory, hasStoredTurns)}</p>
         )}
         {state.transcript.map((message) => (
           <div key={message.id} className={`message ${message.who}`}>
@@ -116,6 +124,13 @@ export function Assistant({
           </div>
         ))}
         {state.busy && <div className="message cordia pending"><span>Thinking…</span></div>}
+        {state.action && <div className="assistant-action-card" role="status">
+          <strong>{state.action.label}</strong>
+          {state.action.kind === 'propose_connector'
+            && <span> Setup is required before this connector is available.</span>}
+          {state.action.kind === 'run_approved_skill'
+            && <span> Cordia will not run this skill until a separate approval is recorded.</span>}
+        </div>}
       </div>
       <div className="assistant-status" role="status" aria-live="polite">{state.note}</div>
       <form className="composer" onSubmit={(event) => { event.preventDefault(); send() }}>
@@ -149,7 +164,7 @@ export function Assistant({
 
 function WorkspaceCanvas({
   workspaceId, onReadyChange, refreshRevision, onRefreshSettled,
-  onSkillAction, skillBusyId, actionsDisabled,
+  onSkillAction, skillBusyId, actionsDisabled, onWorkspaceRevision, onMemoryTruth, onStoredTurns,
 }) {
   const [state, setState] = useState({ phase: 'loading' })
 
@@ -167,6 +182,10 @@ function WorkspaceCanvas({
       }
       setState({ phase: 'ready', model })
       onReadyChange(true)
+      onWorkspaceRevision(Number.isInteger(workspace.workspace.revision) ? workspace.workspace.revision : 0)
+      onMemoryTruth(Boolean(supplemental.artifacts && supplemental.artifacts.artifacts
+        && typeof supplemental.artifacts.artifacts['source/memory.md'] === 'string'))
+      onStoredTurns(workspace.has_stored_turns === true)
       onRefreshSettled(refreshRevision, true)
     }).catch((error) => {
       if (!active) return
@@ -252,10 +271,13 @@ function AlidoraCanvas({ workspaceId }) {
 
 export default function WorkspaceView({ route }) {
   const [workspaceReady, setWorkspaceReady] = useState(false)
+  const [workspaceRevision, setWorkspaceRevision] = useState(0)
+  const [hasMemory, setHasMemory] = useState(false)
+  const [hasStoredTurns, setHasStoredTurns] = useState(true)
   const [refreshRevision, setRefreshRevision] = useState(0)
   const [correctionBusy, setCorrectionBusy] = useState(false)
   const [assistantState, setAssistantState] = useState({
-    transcript: [], draft: '', note: '', busy: false, pending: null,
+    transcript: [], draft: '', note: '', busy: false, pending: null, action: null,
   })
   const operationRef = useRef('')
   const idRef = useRef(0)
@@ -285,6 +307,9 @@ export default function WorkspaceView({ route }) {
         setState={setAssistantState}
         nextId={() => ++idRef.current}
         operationRef={operationRef}
+        workspaceRevision={workspaceRevision}
+        hasMemory={hasMemory}
+        hasStoredTurns={hasStoredTurns}
         externalBusy={correctionBusy}
         onCorrectionBusyChange={setCorrectionBusy}
         refresh={refreshCoordinatorRef.current.refresh}
@@ -302,6 +327,9 @@ export default function WorkspaceView({ route }) {
               skillBusyId={assistantState.pending && assistantState.pending.kind === 'skill'
                 ? assistantState.pending.skillId : ''}
               actionsDisabled={assistantState.busy || correctionBusy}
+              onWorkspaceRevision={setWorkspaceRevision}
+              onMemoryTruth={setHasMemory}
+              onStoredTurns={setHasStoredTurns}
             />
           )}
       </div>

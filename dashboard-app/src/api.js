@@ -71,19 +71,21 @@ export async function getApi(path) {
 
 // Ordinary assistant submission has one fixed transport contract. It cannot
 // select another method, URL, or header surface.
-export async function postRun(workspaceId, input) {
-  if (!isSafeIdentifier(workspaceId)) {
+export async function postRun(workspaceId, revision, message, idempotencyKey) {
+  if (!isSafeIdentifier(workspaceId) || !Number.isInteger(revision) || revision < 0
+      || !isSafeIdentifier(idempotencyKey)) {
     throw new ApiResponseError('Invalid workspace request', 'error')
   }
   const headers = { 'Content-Type': 'application/json' }
   const devToken = localStorage.getItem('cordia-dev-token')
   if (devToken) headers.Authorization = `Bearer ${devToken}`
-  const boundedText = typeof input === 'string' ? input.trim().slice(0, 6000) : ''
+  const boundedText = typeof message === 'string' ? message.trim().slice(0, 6000) : ''
+  if (!boundedText) throw new ApiResponseError('Invalid workspace request', 'error')
   return validatedRequest('/surveyor/run', {
     method: 'POST',
     headers,
     credentials: 'include',
-    body: JSON.stringify({ id: workspaceId, input: boundedText }),
+    body: JSON.stringify({ id: workspaceId, revision, message: boundedText, idempotency_key: idempotencyKey }),
   })
 }
 
