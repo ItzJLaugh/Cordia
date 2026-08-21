@@ -6,8 +6,9 @@ import sys
 import urllib.error
 import urllib.request
 import unittest
-from copy import deepcopy
+from email.message import Message
 from types import SimpleNamespace
+from copy import deepcopy
 from unittest.mock import patch
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -268,27 +269,60 @@ class TestProfileCalibrationSecurityContract(unittest.TestCase):
                 )
         self.assertEqual(calls, [])
 
-    def test_default_fetch_rejects_redirect_before_a_credential_can_reach_the_target(self):
-        requests = []
+    def test_default_fetch_binds_the_credential_bearing_request_to_first_validated_address(self):
+        opened = []
+        resolutions = []
 
-        class RedirectingOpener:
-            def open(self, request, timeout):
-                requests.append((request.full_url, request.get_header("Authorization"), timeout))
-                raise urllib.error.HTTPError(request.full_url, 302, "redirect", {}, None)
+        class Response:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *_args):
+                return False
+
+            def read(self, _size=-1):
+                return json.dumps(VALID).encode()
+
+        def resolver(*_args):
+            resolutions.append(True)
+            return [(2, 1, 6, "", (("8.8.8.8" if len(resolutions) == 1 else "10.0.0.8"), 443))]
+
+        def bound_open(request, host, address, timeout):
+            opened.append((host, address, request.get_header("Authorization"), timeout))
+            return Response()
 
         with patch.dict(os.environ, {
             "CORDIA_PROFILE_RESULT_URL": "https://provider.test/results",
             "CORDIA_PROFILE_API_TOKEN": "server-only-token",
-        }, clear=False), patch.object(urllib.request, "build_opener", return_value=RedirectingOpener()):
-            with self.assertRaises(urllib.error.HTTPError):
-                profile_calibration.fetch_result(
-                    "result_123",
-                    resolver=lambda *_args, **_kwargs: [(2, 1, 6, "", ("8.8.8.8", 443))],
-                )
+        }, clear=False), patch.object(profile_calibration, "_open_bound_without_redirects",
+                                      side_effect=bound_open):
+            result = profile_calibration.fetch_result("result_123", resolver=resolver)
 
-        self.assertEqual(requests, [
-            ("https://provider.test/results/result_123", "Bearer server-only-token", 10),
+        self.assertEqual(result, VALID)
+        self.assertEqual(len(resolutions), 1)
+        self.assertEqual(opened, [
+            ("provider.test", "8.8.8.8", "Bearer server-only-token", 10),
         ])
+
+    def test_production_redirect_handler_never_opens_the_target_request(self):
+        target_requests = []
+        handler = profile_calibration._RejectRedirect()
+        handler.parent = SimpleNamespace(open=lambda request, timeout: target_requests.append(
+            (request.full_url, request.get_header("Authorization"), timeout)
+        ))
+        request = urllib.request.Request(
+            "https://provider.test/results/result_123",
+            headers={"Authorization": "Bearer server-only-token"},
+        )
+        request.timeout = 10
+        headers = Message()
+        headers["Location"] = "https://attacker.test/result"
+        response = SimpleNamespace(read=lambda: b"", close=lambda: None)
+
+        result = handler.http_error_302(request, response, 302, "Found", headers)
+
+        self.assertIsNone(result)
+        self.assertEqual(target_requests, [])
 
 
 if __name__ == "__main__":

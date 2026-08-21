@@ -60,6 +60,22 @@ test('an incomplete callback or unsafe server destination fails closed', async (
   assert.equal(unsafeSurvey, '/');
 });
 
+test('rejects duplicate or blank callback state and result ids without posting', async () => {
+  for (const locationSearch of [
+    '?state=one&state=two&result_id=result_123',
+    '?state=signed-state&result_id=one&result_id=two',
+    '?state=&result_id=result_123',
+    '?state=signed-state&result_id=',
+  ]) {
+    const destination = await resolveCordiaEntry({
+      getJson: async () => { throw new Error('must not get'); },
+      postJson: async () => { throw new Error('must not post'); },
+      locationSearch,
+    });
+    assert.equal(destination, '/', locationSearch);
+  }
+});
+
 test('rejects survey URLs with userinfo, fragments, or non-default ports', async () => {
   for (const survey_url of [
     'https://user@cordia-survey1.vercel.app/survey?state=opaque',

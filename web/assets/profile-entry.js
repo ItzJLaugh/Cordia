@@ -28,9 +28,12 @@
   async function resolveCordiaEntry({ getJson, postJson, locationSearch }) {
     const query = new URLSearchParams(locationSearch);
     if (query.has('state') || query.has('result_id')) {
-      if (!query.get('state') || !query.get('result_id')) return '/';
+      const states = query.getAll('state');
+      const resultIds = query.getAll('result_id');
+      if (states.length !== 1 || resultIds.length !== 1 ||
+          !states[0].trim() || !resultIds[0].trim()) return '/';
       const completed = await postJson('/surveyor/profile-calibration/complete', {
-        state: query.get('state'), result_id: query.get('result_id'),
+        state: states[0], result_id: resultIds[0],
       });
       return safeWorkspaceHref(completed && completed.workspace_id) || '/';
     }

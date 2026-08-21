@@ -7,11 +7,13 @@ from datetime import datetime
 import base64
 import hashlib
 import hmac
+import http.client
 import json
 import os
 import re
 import secrets
 import socket
+import ssl
 import time
 import ipaddress
 import urllib.parse
@@ -111,7 +113,7 @@ def verify_state(token: str, authenticated_email: str, now: int | None = None) -
     return deepcopy(payload)
 
 
-def _safe_https_endpoint(value: str, resolver) -> str:
+def _safe_https_endpoint(value: str, resolver) -> tuple[str, str, str]:
     parsed = urllib.parse.urlsplit(value)
     try:
         port = parsed.port
@@ -132,7 +134,11 @@ def _safe_https_endpoint(value: str, resolver) -> str:
             raise ValueError("profile survey endpoint could not be resolved") from exc
     if not addresses or any(not address.is_global for address in addresses):
         raise ValueError("profile survey endpoint is not public")
-    return urllib.parse.urlunsplit(("https", parsed.netloc, parsed.path.rstrip("/"), "", ""))
+    return (
+        urllib.parse.urlunsplit(("https", parsed.netloc, parsed.path.rstrip("/"), "", "")),
+        host,
+        str(addresses[0]),
+    )
 
 
 class _RejectRedirect(urllib.request.HTTPRedirectHandler):
@@ -140,8 +146,43 @@ class _RejectRedirect(urllib.request.HTTPRedirectHandler):
         return None
 
 
-def _open_without_redirects(request, timeout):
-    return urllib.request.build_opener(_RejectRedirect()).open(request, timeout=timeout)
+class _BoundHTTPSConnection(http.client.HTTPSConnection):
+    """HTTPS connection pinned to a validated address but verified for its hostname."""
+    def __init__(self, host, bound_address, **kwargs):
+        self._bound_address = bound_address
+        super().__init__(host, **kwargs)
+
+    def connect(self):
+        self.sock = self._create_connection(
+            (self._bound_address, self.port), self.timeout, self.source_address
+        )
+        if self._tunnel_host:
+            self._tunnel()
+        self.sock = self._context.wrap_socket(self.sock, server_hostname=self.host)
+
+
+class _BoundHTTPSHandler(urllib.request.HTTPSHandler):
+    def __init__(self, host: str, address: str):
+        super().__init__(context=ssl.create_default_context())
+        self._bound_host = host
+        self._bound_address = address
+
+    def https_open(self, request):
+        return self.do_open(self._connection, request, context=self._context)
+
+    def _connection(self, _request_host, **kwargs):
+        return _BoundHTTPSConnection(
+            self._bound_host, self._bound_address, **kwargs
+        )
+
+
+def _open_bound_without_redirects(request, host, address, timeout):
+    opener = urllib.request.build_opener(
+        urllib.request.ProxyHandler({}),
+        _BoundHTTPSHandler(host, address),
+        _RejectRedirect(),
+    )
+    return opener.open(request, timeout=timeout)
 
 
 def fetch_result(result_id: str, opener=None, resolver=socket.getaddrinfo) -> dict:
@@ -151,15 +192,18 @@ def fetch_result(result_id: str, opener=None, resolver=socket.getaddrinfo) -> di
     base = os.environ.get("CORDIA_PROFILE_RESULT_URL", "").strip()
     if not base:
         raise ValueError("profile survey result endpoint is not configured")
-    base = _safe_https_endpoint(base, resolver)
+    base, host, address = _safe_https_endpoint(base, resolver)
     url = base.rstrip("/") + "/" + urllib.parse.quote(result_id, safe="")
     headers = {"Accept": "application/json"}
     token = os.environ.get("CORDIA_PROFILE_API_TOKEN", "")
     if token:
         headers["Authorization"] = "Bearer " + token
     request = urllib.request.Request(url, headers=headers)
-    open_request = opener or _open_without_redirects
-    with open_request(request, timeout=10) as response:
+    if opener:
+        response = opener(request, timeout=10)
+    else:
+        response = _open_bound_without_redirects(request, host, address, timeout=10)
+    with response:
         body = response.read(64 * 1024 + 1)
     if len(body) > 64 * 1024:
         raise ValueError("profile survey result is too large")
