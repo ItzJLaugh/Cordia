@@ -493,6 +493,58 @@ def _connector_states_locked(cursor, email: str) -> dict:
     return deepcopy(row[0]) if row and isinstance(row[0], dict) else {}
 
 
+def _workspace_runtime_statuses(workspaces: list[tuple[str, dict]]) -> dict[str, str]:
+    """Carry the owner's already-observed connector health into a new projection."""
+    statuses = {}
+    for _workspace_id, state in workspaces:
+        for connector in state.get("connectors", []) if isinstance(state, dict) else ():
+            connector_id = connector.get("id")
+            runtime_status = connector.get("runtime_status")
+            if isinstance(connector_id, str) and runtime_status in {"live", "needs_attention"}:
+                statuses[connector_id] = runtime_status
+    return statuses
+
+
+def _workspace_from_current_connectors(cursor, email: str, workspace_id: str,
+                                       definition: dict, *, include_runtime: bool = True) -> dict:
+    """Construct a new projection only after the owner-set lock is held."""
+    from . import workspace_state
+    connector_states = _connector_states_locked(cursor, email)
+    workspace = workspace_state.from_interface(workspace_id, definition, connector_states)
+    if include_runtime:
+        for connector_id, runtime_status in _workspace_runtime_statuses(
+                _owner_workspaces_locked(cursor, email)).items():
+            workspace = workspace_state.record_connector_runtime(
+                workspace, connector_id, runtime_status)
+    return workspace
+
+
+def materialize_interface_workspace(email: str, workspace_id: str, definition: dict) -> dict:
+    """Atomically create a missing legacy workspace from fresh owner connector truth."""
+    try:
+        with _conn() as connection, connection.cursor() as cursor:
+            _lock_owner_workspace_set(cursor, email)
+            cursor.execute("SELECT state FROM surveyor_workspaces "
+                           "WHERE id=%s AND email=%s FOR UPDATE", (workspace_id, email))
+            row = cursor.fetchone()
+            if row:
+                return {"status": "committed", "workspace": deepcopy(row[0])}
+            workspace = _workspace_from_current_connectors(
+                cursor, email, workspace_id, dict(definition or {}))
+            cursor.execute("""
+                INSERT INTO surveyor_workspaces(id, email, state) VALUES (%s,%s,%s)
+                ON CONFLICT (id) DO NOTHING
+                RETURNING state
+            """, (workspace_id, email, _J(workspace)))
+            if not cursor.fetchone():
+                raise _AtomicAbort("conflict")
+    except _AtomicAbort as exc:
+        return {"status": exc.status}
+    except Exception:
+        return {"status": "failed"}
+    return {"status": "committed", "workspace": workspace}
+
+
 def save_interface_projection(email: str, iface_id: str | None, name: str,
                               description: str, definition: dict, theme: dict | None) -> dict:
     """Atomically persist one interface and its corresponding workspace view."""
@@ -503,9 +555,6 @@ def save_interface_projection(email: str, iface_id: str | None, name: str,
     try:
         with _conn() as connection, connection.cursor() as cursor:
             _lock_owner_workspace_set(cursor, email)
-            # A newly created workspace projects the current consent state, not
-            # a route snapshot that may have gone stale before this transaction.
-            connector_states = _connector_states_locked(cursor, email)
             if not _save_interface(cursor, email, iface_id, name, description,
                                    definition, theme or {}):
                 raise _AtomicAbort("missing")
@@ -518,8 +567,8 @@ def save_interface_projection(email: str, iface_id: str | None, name: str,
                     cursor, email, iface_id, current,
                     workspace_state.merge_interface(current, workspace_definition))
             else:
-                workspace = workspace_state.from_interface(
-                    iface_id, workspace_definition, connector_states)
+                workspace = _workspace_from_current_connectors(
+                    cursor, email, iface_id, workspace_definition)
                 cursor.execute("""
                     INSERT INTO surveyor_workspaces(id, email, state) VALUES (%s,%s,%s)
                     ON CONFLICT (id) DO NOTHING
@@ -654,13 +703,14 @@ def _create_initial_workspace(cursor, email: str, prepared: dict) -> None:
 
 
 def _prepared_with_current_connectors(cursor, email: str, prepared: dict) -> dict:
-    """Do not create an initial workspace from a route-time preference snapshot."""
-    from . import workspace_state
+    """Construct an initial projection from connector truth read under the set lock."""
     workspace = prepared.get("workspace") if isinstance(prepared, dict) else None
-    if not isinstance(workspace, dict) or not isinstance(workspace.get("provenance"), list):
+    definition = prepared.get("definition") if isinstance(prepared, dict) else None
+    if (not isinstance(workspace, dict) or not isinstance(workspace.get("provenance"), list)
+            or not isinstance(definition, dict)):
         return prepared
-    return {**prepared, "workspace": workspace_state.refresh_connectors(
-        workspace, _connector_states_locked(cursor, email))}
+    return {**prepared, "workspace": _workspace_from_current_connectors(
+        cursor, email, prepared["id"], definition, include_runtime=False)}
 
 
 def ensure_initial_workspace(email: str, prepared: dict) -> tuple[str, bool]:

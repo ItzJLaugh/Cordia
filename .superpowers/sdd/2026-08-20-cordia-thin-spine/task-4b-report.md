@@ -172,3 +172,51 @@ embedding runtime test, `test_embedding_runtime.TestEmbeddingRuntime.test_declar
 - Full backend comparison: 248/249 passed. The sole unchanged optional failure
   is missing `sentence_transformers` for the embedding runtime import test.
 - `git diff --check` passed. No provider or connector execution occurred.
+
+## Review-fix round 4 of 5
+
+### Corrections
+
+- Added the bounded `materialize_interface_workspace` store transaction for
+  legacy interface-to-workspace creation. It acquires the normalized owner
+  workspace-set lock before it reads connector preferences or builds the
+  canonical projection, and returns only the committed/stored workspace.
+- New interface projections use the same lock-fresh construction helper. The
+  helper reads current confirmed connector state under the connector lock and
+  carries already-observed `live`/`needs_attention` runtime truth from the
+  owner workspace set into a newly materialized workspace.
+- Initial workspace and calibration materialization now rebuild their connector
+  projection from the prepared definition after the owner lock is held, rather
+  than refreshing a route-time connector snapshot.
+- Agent-completion classification is now polarity/modality aware per
+  coordinated clause. `no`, `not`, `never`, and the bounded modal/future or
+  counterfactual auxiliaries do not produce a completed-work claim. The check
+  remains clause-local, so a modal clause cannot sanitize a later indicative
+  completion claim.
+
+### Independent RED/GREEN
+
+- RED: the focused production tests ran 23 cases before production edits. The
+  new legacy materialization API was absent, and `I have not configured
+  GitHub.` plus `I would have configured GitHub if setup had been approved.`
+  were incorrectly rejected as false backend truth.
+- GREEN: 44 focused/adjacent tests passed: transaction store 8, workspace
+  generation 8, profile-calibration transaction 2, Cordia Agent 16, and
+  workspace-turn route 10. The regression proves a bulk confirmed/live
+  projection followed by legacy or new-interface materialization yields the
+  current confirmed and runtime truth, and that lock acquisition precedes the
+  connector-preference read.
+- The classifier table retains rejection of `I have now configured GitHub` and
+  `We've completed everything`, while allowing the explicit negation and
+  counterfactual forms. A coordinated modal clause followed by an indicative
+  claim still rejects.
+
+### Final verification and boundary
+
+- Full dashboard: `npm.cmd test` passed 90/90.
+- Full backend comparison: 250/251 passed. The sole unchanged optional failure
+  is `test_embedding_runtime.TestEmbeddingRuntime.test_declared_runtime_can_import_the_shadow_scorer`, because `sentence_transformers` is not installed
+  (`ModuleNotFoundError`). The run also emitted the existing NumPy reload and
+  unavailable test-PostgreSQL notices.
+- `git diff --check` passed before this report append and will be run again
+  after it. No provider or connector operation was invoked.

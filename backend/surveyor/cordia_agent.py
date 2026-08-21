@@ -35,6 +35,8 @@ _AGENT_COMPLETION = re.compile(
     r"(?:connected|completed|approved|executed|ran|run|deployed|created|configured|finished|enabled|activated|set\s+up)\b",
     re.IGNORECASE,
 )
+_AGENT_NONASSERTIVE = re.compile(
+    r"\b(?:no|not|never|would|could|might|may|should|can|will)\b", re.IGNORECASE)
 _BACKEND_STATE = re.compile(
     r"^(?P<subject>.+?)\s+(?:is|was|were|has|have|had)(?:\s+been)?\s+"
     r"(?:(?:fully|successfully|now|already)\s+)*(?P<state>connected|completed|approved|"
@@ -89,8 +91,15 @@ def _false_speak_claim(speech: str, known_connector_names=()) -> bool:
         if not clause or clause.endswith("?") or _CONDITIONAL_CLAUSE.match(clause):
             continue
         bare_clause = clause.rstrip(".!?; ")
-        if _AGENT_COMPLETION.match(bare_clause):
-            return True
+        completion = _AGENT_COMPLETION.match(bare_clause)
+        # Only completed, indicative work is a false backend claim.  Keep this
+        # clause-local so a counterfactual cannot excuse a later real claim.
+        if completion:
+            if not _AGENT_NONASSERTIVE.search(completion.group(0)):
+                return True
+            # Do not feed a negated or modal agent clause into the generic
+            # backend-state matcher, which cannot determine its polarity.
+            continue
         state = _BACKEND_STATE.match(bare_clause) or _BACKEND_BARE_COMPLETION.match(bare_clause)
         if not state:
             continue

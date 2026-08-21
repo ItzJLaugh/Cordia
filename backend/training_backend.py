@@ -633,11 +633,10 @@ class H(BaseHTTPRequestHandler):
                 return
             definition = dict(legacy['definition'] or {})
             definition.update({'name': legacy['name'], 'description': legacy['description']})
-            state = surveyor.workspace_state.from_interface(
-                workspace_id, definition, surveyor.store.get_connector_states(email))
-            saved = surveyor.store.save_workspace(email, workspace_id, state, 0)
-            state = saved.get('workspace')
-            if not state:
+            materialized = surveyor.store.materialize_interface_workspace(
+                email, workspace_id, definition)
+            state = materialized.get('workspace')
+            if materialized.get('status') != 'committed' or not state:
                 self._json({'ok': False, 'error': 'workspace changed; reload and retry'}, 409)
                 return
         try:

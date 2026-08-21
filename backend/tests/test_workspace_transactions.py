@@ -218,6 +218,34 @@ class TestWorkspaceTransactions(unittest.TestCase):
         self.assertGreaterEqual(len(set_locks), 2)
         self.assertEqual(set(set_locks), {"surveyor-workspace-set:owner@example.test"})
 
+    def test_legacy_materialization_reads_connector_truth_after_the_workspace_set_lock(self):
+        """A legacy candidate cannot retain the connector snapshot from before a bulk write."""
+        self.assertEqual(store.save_connector_projection(
+            "owner@example.test", {"github": "confirmed"}, runtime_status="live")["status"],
+            "committed")
+        lock_count = len(self.database.lock_keys)
+        result = store.materialize_interface_workspace(
+            "owner@example.test", "legacy_after_bulk", {"name": "Legacy"})
+        self.assertEqual(result["status"], "committed")
+        github = next(item for item in result["workspace"]["connectors"]
+                      if item["id"] == "github")
+        self.assertEqual(github["status"], "confirmed")
+        self.assertEqual(github["runtime_status"], "live")
+        locks = self.database.lock_keys[lock_count:]
+        self.assertEqual(locks[:2], ["surveyor-workspace-set:owner@example.test",
+                         "surveyor-connector-preferences:owner@example.test"])
+
+    def test_new_interface_materialization_inherits_current_connector_runtime(self):
+        self.assertEqual(store.save_connector_projection(
+            "owner@example.test", {"github": "confirmed"}, runtime_status="live")["status"],
+            "committed")
+        result = store.save_interface_projection(
+            "owner@example.test", "interface_after_bulk", "Fresh", "", {}, {})
+        self.assertEqual(result["status"], "committed")
+        github = next(item for item in result["workspace"]["connectors"]
+                      if item["id"] == "github")
+        self.assertEqual((github["status"], github["runtime_status"]), ("confirmed", "live"))
+
 
 if __name__ == "__main__":
     unittest.main()
