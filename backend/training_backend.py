@@ -185,24 +185,6 @@ def rate_ok(ip, email=None, llm=False, admin=False):
     return True
 
 
-# LLM provider is env-driven so switching backends is a config change, not a
-# code change. Defaults preserve the original Nous behavior exactly; set
-# LLM_BASE_URL / LLM_MODEL / LLM_KEY in /etc/cordia/cordia.env to move to
-# another OpenAI-compatible provider (e.g. NVIDIA integrate.api.nvidia.com).
-def _llm_config():
-    url = os.environ.get('LLM_BASE_URL') or 'https://inference-api.nousresearch.com/v1/chat/completions'
-    model = os.environ.get('LLM_MODEL') or 'moonshotai/kimi-k3'
-    key = os.environ.get('LLM_KEY')
-    if not key:
-        d = json.load(open('/root/.hermes/auth.json'))
-        key = d['providers']['nous']['agent_key']
-    return url, model, key
-
-def nous_key():
-    # Kept as the credential probe for the surveyor status path — returns the
-    # active provider key so callers can tell configured from unconfigured.
-    return _llm_config()[2]
-
 def append(path, obj):
     with lock:
         with open(path, 'a') as f:
@@ -259,27 +241,6 @@ def _rateable_candidates(course_id='aie1'):
     for r in sorted(rows, key=lambda r: r.get('ts', 0)):
         latest[(r.get('learner') or 'anon', r.get('block'))] = r
     return [r for r in latest.values() if (r.get('value') or '').strip()]
-
-def call_llm(system, user, max_tokens=900):
-    url, model, key = _llm_config()
-    body = json.dumps({
-        'model': model,
-        'messages': [{'role': 'system', 'content': system}, {'role': 'user', 'content': user}],
-        'max_tokens': max_tokens, 'temperature': 0.4
-    }).encode()
-    # The User-Agent is load-bearing, not decoration. urllib sends
-    # "Python-urllib/3.x" by default and the upstream WAF blocks it outright
-    # with a 403 (Cloudflare 1010) before the key is ever examined — which
-    # looked exactly like an auth failure. Verified: curl reaches the API fine,
-    # urllib without this header does not, urllib with it does.
-    req = urllib.request.Request(url, data=body, headers={
-        'Content-Type': 'application/json',
-        'User-Agent': 'cordia-training/1.0',
-        'Authorization': 'Bearer ' + key
-    })
-    with urllib.request.urlopen(req, timeout=90) as r:
-        d = json.loads(r.read())
-    return d['choices'][0]['message']['content']
 
 class H(BaseHTTPRequestHandler):
     def _cors(self):
@@ -475,19 +436,13 @@ class H(BaseHTTPRequestHandler):
         return me['email'], None
 
     def _surv_llm(self):
-        """The model callable Surveyor should use right now.
-
-        nous_key is the probe: it raises if the credential is unreadable, which
-        is currently the case in production (the file is root-only and this
-        service runs as `cordia`). When that is fixed the same call starts
-        returning the live caller with no other change."""
-        caller, _live = surveyor.llm.caller(call_llm, probe=nous_key)
-        return caller
+        """The only model callable available to authenticated Surveyor routes."""
+        return surveyor.llm.call
 
     def _surv_profile(self):
         email, stop = self._surv_guard()
         if stop: return
-        self._json({'ok': True, 'llm': surveyor.llm.status(nous_key),
+        self._json({'ok': True, 'llm': surveyor.llm.status(),
                     **surveyor.pipeline.public_profile(email)})
 
     def _surv_profile_calibration(self):
@@ -567,7 +522,7 @@ class H(BaseHTTPRequestHandler):
             return
         out = surveyor.pipeline.turn(email, str(body.get('message', '')), self._surv_llm(),
                                      choice=body.get('choice'))
-        out['llm'] = surveyor.llm.status(nous_key)
+        out['llm'] = surveyor.llm.status()
         self._json(out)
 
     def _surv_recommendation(self):
@@ -1012,11 +967,15 @@ class H(BaseHTTPRequestHandler):
         system = surveyor.prompts.runtime_system(
             iface['definition'], surveyor.adaptation.soft_profile(profile),
             surveyor.pipeline.artifact_bundle(email), workspace)
-        status = surveyor.llm.status(nous_key)
+        status = surveyor.llm.status()
         try:
             out = self._surv_llm()(system, prompt, max_tokens=1200)
-        except Exception as e:
-            self._json({'ok': False, 'error': f'run failed: {e}'}, 502); return
+        except surveyor.model_provider.ModelUnavailable:
+            self._json({'ok': False, 'error': 'Cordia Agent is not configured.',
+                        'kind': 'model_unavailable'}, 503); return
+        except surveyor.model_provider.ModelFailure:
+            self._json({'ok': False, 'error': 'Cordia Agent could not complete that request.',
+                        'kind': 'model_failure'}, 502); return
         run_id = surveyor.store.add_run(iface['id'], email, prompt, out, {'llm': status['mode']})
         approval_step = next((step for step in (iface['definition'].get('workflow') or {}).get('steps', [])
                               if surveyor.hitl_policy.requires_approval(step)), None)
@@ -1058,7 +1017,7 @@ class H(BaseHTTPRequestHandler):
                         'interfaces': surveyor.store.list_interfaces(target, True),
                         'runs': surveyor.store.runs(target),
                         'events': surveyor.store.events(target),
-                        'llm': surveyor.llm.status(nous_key),
+                        'llm': surveyor.llm.status(),
                         'personalization_mode': surveyor.adaptation.mode()})
         except Exception as e:
             self._json({'ok': False, 'error': 'surveyor unavailable: ' + str(e)}, 503)
@@ -1832,10 +1791,14 @@ class H(BaseHTTPRequestHandler):
         if not rate_ok(self._client_ip(), me['email'], llm=True):
             self._json({'ok': False, 'error': 'environment call limit reached — wait 10 minutes'}, 429); return
         try:
-            out = call_llm(envs[env], instruction)
+            out = surveyor.llm.call(envs[env], instruction)
             self._json({'ok': True, 'output': out, 'env': env})
-        except Exception as e:
-            self._json({'error': f'llm call failed: {e}'}, 502)
+        except surveyor.model_provider.ModelUnavailable:
+            self._json({'ok': False, 'error': 'Cordia Agent is not configured.',
+                        'kind': 'model_unavailable'}, 503)
+        except surveyor.model_provider.ModelFailure:
+            self._json({'ok': False, 'error': 'Cordia Agent could not complete that request.',
+                        'kind': 'model_failure'}, 502)
 
 
 def _fire_event(email, kind, meta=None):
@@ -1850,10 +1813,9 @@ import urllib.parse
 class Server(ThreadingHTTPServer):
     """Threaded so one slow request cannot stall the site.
 
-    This was a plain HTTPServer, which serialises every request. call_llm has a
-    90s timeout, so a single live-environment call (and now a single Surveyor
-    turn) blocked login, the exam and the payment webhook for up to a minute and
-    a half. Shared mutable state was audited before this changed: rate_ok holds
+    This was a plain HTTPServer, which serialises every request. The provider
+    has a 30-second timeout, so a single live-environment call can block only
+    one request thread. Shared mutable state was audited before this changed: rate_ok holds
     `lock` around the _rl buckets, append/read_all hold it around the corpus
     jsonl, and psycopg2 connections are opened per call rather than shared. No
     module-level caches or `global` statements exist in this process.

@@ -7,7 +7,7 @@ from unittest.mock import patch
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from surveyor import mock, store, types
+from surveyor import store, types
 
 with patch.object(store, 'init_schema'), \
         patch.dict(sys.modules, {'cordia_auth': module_types.ModuleType('cordia_auth')}):
@@ -38,9 +38,11 @@ class TestIntentMissRuntime(unittest.TestCase):
             state['runs'].append({'prompt': prompt, 'output': output, 'meta': meta})
             return f'run-{len(state["runs"])}'
 
-        def limited_model(system, user, max_tokens=900):
+        def deterministic_model(system, user, max_tokens=900):
             systems.append(system)
-            return mock.call(system, user, max_tokens)
+            if 'Include source links in every future draft.' in system:
+                return 'Latest saved guidance was applied to this deterministic model response.'
+            return 'Initial deterministic model response.'
 
         def post(path, body):
             handler = object.__new__(training_backend.H)
@@ -48,7 +50,7 @@ class TestIntentMissRuntime(unittest.TestCase):
             handler._body = lambda: body
             handler._surv_guard = lambda: (email, None)
             handler._client_ip = lambda: '127.0.0.1'
-            handler._surv_llm = lambda: limited_model
+            handler._surv_llm = lambda: deterministic_model
             handler.response = None
             handler._json = lambda payload, status=200: setattr(
                 handler, 'response', (payload, status))
@@ -65,7 +67,8 @@ class TestIntentMissRuntime(unittest.TestCase):
         workspace = {'id': workspace_id, 'context_sources': []}
         with patch.object(training_backend, 'rate_ok', return_value=True), \
                 patch.object(training_backend.surveyor.llm, 'status',
-                             return_value={'live': False, 'mode': 'mock', 'note': 'Limited mode.'}), \
+                             return_value={'available': False, 'mode': 'unavailable',
+                                           'message': 'Cordia Agent is not configured.'}), \
                 patch.object(store, 'get_profile',
                              side_effect=lambda owner: copy.deepcopy(state['profile'])), \
                 patch.object(store, 'save_profile', side_effect=save_profile), \
@@ -106,10 +109,10 @@ class TestIntentMissRuntime(unittest.TestCase):
                          correction['artifacts']['runtime/fde-tasks.md'])
         self.assertEqual(len(state['profile']['intent_misses']), 1)
         self.assertEqual(len(state['runs']), 2)
-        self.assertNotIn('Latest saved guidance was applied to this placeholder run.',
+        self.assertNotIn('Latest saved guidance was applied to this deterministic model response.',
                          before['output'])
         self.assertNotEqual(before['output'], after['output'])
-        self.assertIn('Latest saved guidance was applied to this placeholder run.', after['output'])
+        self.assertIn('Latest saved guidance was applied to this deterministic model response.', after['output'])
         self.assertNotIn('Include source links in every future draft.', after['output'])
 
 

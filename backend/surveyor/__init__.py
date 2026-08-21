@@ -17,10 +17,10 @@ allow-lists; scoring is a lookup table. If any of it starts to need a model to
 work, the right move is to delete the feature, not to grow one.
 """
 
-from . import (adaptation, alidora, artifacts, capability_gateway, extractor, fde_registry, fde_routing, freeform, github_connector, hitl_policy, identifiers, intent_misses, llm, mock, operator_profile, permissions, pipeline, profile_calibration, skills,
+from . import (adaptation, alidora, artifacts, capability_gateway, extractor, fde_registry, fde_routing, freeform, github_connector, hitl_policy, identifiers, intent_misses, llm, mock, model_provider, operator_profile, permissions, pipeline, profile_calibration, skills,
                prompts, question_strategy, recommendation, runtime_config, scenarios, scorer, store,
                types, vault, workspace_generation, workspace_state)
 
-__all__ = ["adaptation", "alidora", "artifacts", "capability_gateway", "extractor", "fde_registry", "fde_routing", "freeform", "github_connector", "hitl_policy", "identifiers", "intent_misses", "llm", "mock", "operator_profile", "permissions", "profile_calibration", "skills",
+__all__ = ["adaptation", "alidora", "artifacts", "capability_gateway", "extractor", "fde_registry", "fde_routing", "freeform", "github_connector", "hitl_policy", "identifiers", "intent_misses", "llm", "mock", "model_provider", "operator_profile", "permissions", "profile_calibration", "skills",
            "pipeline", "prompts", "question_strategy", "recommendation", "runtime_config", "scenarios",
            "scorer", "store", "types", "vault", "workspace_generation", "workspace_state"]
