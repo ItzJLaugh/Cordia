@@ -221,12 +221,17 @@ class TestCordiaAgent(unittest.TestCase):
             ("GitHub is connected to Cordia.", False),
             ("The connector is connected with GitHub.", False),
             ("We've completed the action.", False),
+            ("We’ve completed everything.", False),
             ("Cordia has completed the action.", False),
             ("I have now completed the action.", False),
             ("The agent successfully deployed the app.", False),
+            ("Assistant has successfully deployed everything.", False),
             ("The plan has completed the action.", False),
             ("GitHub is connected to Cordia. Is GitHub connected?", False),
             ("GitHub is connected to Cordia. If approved, I can propose a skill.", False),
+            ("If GitHub is connected to Cordia\nGitHub is connected to Cordia.", False),
+            ("Is GitHub connected to Cordia?\nGitHub is connected to Cordia.", False),
+            ("This skill is available in the catalog, and GitHub is connected to Cordia.", False),
         )
         for speech, allowed in cases:
             with self.subTest(speech=speech):

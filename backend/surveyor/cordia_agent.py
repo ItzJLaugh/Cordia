@@ -25,11 +25,11 @@ _ID = re.compile(r"^[a-z][a-z0-9_]{0,79}$")
 _REQUEST_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$")
 _SAFE_SETUP_KINDS = {"api_key", "openapi", "remote_mcp"}
 _SAFE_VIEW_MODES = {"dash", "list", "document"}
-_CLAUSE_SPLIT = re.compile(r"(?<=[.!?;])\s*")
+_CLAUSE_SPLIT = re.compile(r"(?<=[.!?;])\s*|(?:\r?\n)+")
 _CONDITIONAL_CLAUSE = re.compile(r"^(?:if|when|unless|whether|suppose|assuming)\b", re.IGNORECASE)
 _AGENT_COMPLETION = re.compile(
-    r"^(?:i(?:['’]ve)?|we(?:['’]ve)?|cordia|the agent|the assistant)\b"
-    r"(?:\s+(?:have|has|had|was|were|am|is|are|just|now|already|fully|successfully|been))*\s+"
+    r"^(?:i(?:['’]ve)?|we(?:['’]ve)?|cordia|(?:the\s+)?(?:agent|assistant))\b"
+    r"(?:\s+\w+){0,6}\s+"
     r"(?:connected|completed|approved|executed|ran|run|deployed|created)\b",
     re.IGNORECASE,
 )
@@ -48,7 +48,7 @@ _BACKEND_ENTITY = re.compile(
     r"\b(?:connector|integration|account|service|app|repository|workspace|skill|action(?!\s+plan\b))\b",
     re.IGNORECASE,
 )
-_EXPLANATORY_BACKEND_STATE = re.compile(r"^(?:in the catalog|after approval)\b", re.IGNORECASE)
+_EXPLANATORY_BACKEND_STATE = re.compile(r"(?:in the catalog|after approval)", re.IGNORECASE)
 
 
 class InvalidAgentResponse(ValueError):
@@ -91,7 +91,7 @@ def _false_speak_claim(speech: str, known_connector_names=()) -> bool:
         if not state:
             continue
         tail = state.group("tail").strip()
-        if state.group("state").casefold() == "available" and _EXPLANATORY_BACKEND_STATE.match(tail):
+        if state.group("state").casefold() == "available" and _EXPLANATORY_BACKEND_STATE.fullmatch(tail):
             continue
         if (_contains_backend_entity(state.group("subject"), known_names)
                 or _contains_backend_entity(tail, known_names)):
@@ -136,9 +136,10 @@ def validate_envelope(value: object, known_connector_names=()) -> dict:
     if kind not in _ACTION_FIELDS:
         raise ValueError("Invalid Cordia Agent action.")
     _exact_object(value, _ACTION_FIELDS[kind], "Invalid Cordia Agent action.")
-    speech = _safe_text(value["speech"], 6000, "Invalid Cordia Agent action.")
+    raw_speech = value["speech"]
+    speech = _safe_text(raw_speech, 6000, "Invalid Cordia Agent action.")
     if kind == "speak":
-        if _false_speak_claim(speech, known_connector_names):
+        if _false_speak_claim(raw_speech, known_connector_names):
             raise ValueError("Invalid Cordia Agent action.")
         return {"kind": kind, "speech": speech}
     proposal = value["proposal"]

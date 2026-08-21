@@ -81,3 +81,16 @@
 - Focused/adjacent GREEN: Cordia Agent (13), operator profile (13), workspace-turn route (6), workspace-turn store (5).
 - Full dashboard: `npm.cmd test` passed 88/88. Full backend: 235/236 passed; the unchanged failure is the optional embedding runtime dependency (`sentence_transformers` is not installed).
 - `git diff --check` passed. No provider call or connector execution was attempted; provider evidence remains `Not yet verified`.
+
+## Review-fix round 5 (final)
+
+- Agent-subject completion detection now uses a structurally bounded agent subject plus up to six intervening tokens and a completion verb. It covers I/we/Cordia/agent/assistant, including straight and curly `I've`/`We've` contractions, without depending on a fixed auxiliary or adverb vocabulary.
+- Truth classification evaluates the original safety-validated speech for clause boundaries, so newlines split clauses even though returned display text is normalized. A conditional or interrogative line cannot exempt a following declarative claim.
+- Catalog/approval availability is an exact full-tail exception. Appending a coordinated false backend-status claim no longer passes through the catalog explanation allowance.
+
+### Review-fix round 5 verification
+
+- RED/GREEN: contracted and bare assistant completion variants, punctuation-free conditional newline bypass, question newline sequence, and a catalog-tail coordinated claim; the round-4 allowed/rejected classifier matrix remains green.
+- Focused/adjacent GREEN: Cordia Agent (13), operator profile (13), workspace-turn route (6), workspace-turn store (5).
+- Full dashboard: `npm.cmd test` passed 88/88. Full backend: 235/236 passed; the unchanged failure is the optional embedding runtime dependency (`sentence_transformers` is not installed).
+- `git diff --check` passed. No provider call or connector execution was attempted; provider evidence remains `Not yet verified`.
