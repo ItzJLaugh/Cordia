@@ -966,6 +966,13 @@ test('assistant turn helpers withdraw failed optimistic messages and restore the
   })
 })
 
+test('assistant retry retains one idempotency key until a material draft edit or definitive response', () => {
+  const started = assistantTurnStarted({ transcript: [], draft: 'Connect GitHub', note: '' }, 7, 'turn-retry-7')
+  assert.equal(started.pending.idempotencyKey, 'turn-retry-7')
+  const failed = assistantTurnFailed(started, 'The server is unreachable right now.', true)
+  assert.deepEqual(failed.retry, { text: 'Connect GitHub', idempotencyKey: 'turn-retry-7' })
+})
+
 test('assistant Enter handling sends only outside IME composition and without Shift', () => {
   assert.equal(isAssistantSendKey({ key: 'Enter', shiftKey: false, nativeEvent: { isComposing: false, keyCode: 13 } }), true)
   assert.equal(isAssistantSendKey({ key: 'Enter', shiftKey: true, nativeEvent: { isComposing: false, keyCode: 13 } }), false)

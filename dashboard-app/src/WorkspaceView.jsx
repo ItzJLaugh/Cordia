@@ -53,19 +53,21 @@ export function Assistant({
     wasBusyRef.current = state.busy
   }, [enabled, state.busy])
 
-  function fail(copy) {
+  function fail(copy, preserveRetry = false) {
     operationRef.current = ''
-    setState((current) => assistantTurnFailed(current, copy))
+    setState((current) => assistantTurnFailed(current, copy, preserveRetry))
   }
 
   function send() {
     if (!enabled || readOnly || state.busy || externalBusy
         || operationRef.current || !state.draft.trim()) return
-    const started = assistantTurnStarted(state, nextId())
+    const retry = state.retry && state.retry.text === state.draft.trim() ? state.retry : null
+    const pendingId = nextId()
+    const idempotencyKey = retry ? retry.idempotencyKey : `turn-${Date.now().toString(36)}-${pendingId}`
+    const started = assistantTurnStarted(state, pendingId, idempotencyKey)
     if (!started.pending) return
     operationRef.current = 'assistant'
     setState(started)
-    const idempotencyKey = `turn-${Date.now().toString(36)}-${started.pending.id}`
     postRun(workspaceId, workspaceRevision, started.pending.text, idempotencyKey).then(async (response) => {
       if (!aliveRef.current) return
       const reply = agentTurnModel(response)
@@ -90,8 +92,8 @@ export function Assistant({
       const kind = apiErrorKind(error)
       if (kind === 'signed-out') fail('Your session ended. Sign in again to send this. Your draft is safe.')
       else if (kind === 'rate-limit') fail('Message limit reached. Wait a few minutes; your draft is safe.')
-      else if (kind === 'offline') fail('The server is unreachable right now. Your draft is safe to send again.')
-      else fail('That message did not get through. Your draft is safe to send again.')
+      else if (kind === 'offline') fail('The server is unreachable right now. Your draft is safe to send again.', true)
+      else fail('That message did not get through. Your draft is safe to send again.', !error.definitive)
     })
   }
 
@@ -139,7 +141,8 @@ export function Assistant({
           id="cordia-message"
           ref={inputRef}
           value={state.draft}
-          onChange={(event) => setState((current) => ({ ...current, draft: event.target.value }))}
+          onChange={(event) => setState((current) => ({ ...current, draft: event.target.value,
+            ...(current.retry && event.target.value !== current.retry.text ? { retry: null } : {}) }))}
           onKeyDown={onKeyDown}
           placeholder={readOnly ? 'Return to Workspace to send' : 'Ask Cordia…'}
           rows={3}

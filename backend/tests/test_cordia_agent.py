@@ -232,6 +232,14 @@ class TestCordiaAgent(unittest.TestCase):
             ("If GitHub is connected to Cordia\nGitHub is connected to Cordia.", False),
             ("Is GitHub connected to Cordia?\nGitHub is connected to Cordia.", False),
             ("This skill is available in the catalog, and GitHub is connected to Cordia.", False),
+            ("The GitHub connector is live.", False),
+            ("I configured GitHub.", False),
+            ("Assistant finished setting up GitHub.", False),
+            ("The GitHub connector is enabled.", False),
+            ("GitHub is active.", False),
+            ("The connector is ready.", False),
+            ("Is the GitHub connector live?", True),
+            ("If GitHub is ready, I can propose a skill.", True),
         )
         for speech, allowed in cases:
             with self.subTest(speech=speech):
@@ -243,6 +251,25 @@ class TestCordiaAgent(unittest.TestCase):
                     with self.assertRaises(ValueError):
                         cordia_agent.validate_envelope(
                             envelope, known_connector_names=("GitHub",))
+
+    def test_all_envelopes_reject_new_declarative_backend_truth(self):
+        for kind, proposal in (
+            ("speak", None),
+            ("propose_connector", CONNECTOR["proposal"]),
+            ("create_artifact", {"artifact_id": "weekly_plan", "title": "Weekly plan",
+                                  "view_mode": "dash", "summary": "Plan."}),
+            ("propose_skill", {"skill_id": "review_issues", "name": "Review issues",
+                               "purpose": "Review.", "connector_id": "issue_tracker",
+                               "operation_id": "list_issues", "artifact_id": "weekly_plan"}),
+            ("run_approved_skill", {"skill_id": "review_issues"}),
+        ):
+            for speech in ("The GitHub connector is live.", "I configured GitHub.",
+                           "Assistant finished setting up GitHub."):
+                envelope = {"kind": kind, "speech": speech}
+                if proposal is not None:
+                    envelope["proposal"] = proposal
+                with self.subTest(kind=kind, speech=speech), self.assertRaises(ValueError):
+                    cordia_agent.validate_envelope(envelope, known_connector_names=("GitHub",))
 
     def test_speak_truth_classifier_checks_each_coordinated_subclause(self):
         # Removing coordinated-subclause detection would let the catalog or

@@ -11,9 +11,10 @@ const INTENT_MISS_CATEGORIES = new Set([
 ])
 
 class ApiResponseError extends Error {
-  constructor(message, kind = 'error') {
+  constructor(message, kind = 'error', definitive = false) {
     super(message)
     this.kind = kind
+    this.definitive = definitive
   }
 }
 
@@ -46,7 +47,8 @@ async function validatedRequest(path, options) {
     const response = await fetch(API + path, options)
     const body = await response.json().catch(() => null)
     if (!response.ok || !body || body.ok !== true) {
-      throw new ApiResponseError(safeServerError(body && body.error), responseKind(response.status))
+      throw new ApiResponseError(safeServerError(body && body.error), responseKind(response.status),
+        response.status >= 400 && response.status < 500)
     }
     return body
   } catch (error) {

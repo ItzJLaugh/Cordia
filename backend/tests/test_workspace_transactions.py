@@ -26,6 +26,7 @@ class AtomicDatabase:
         self.race = None
         self.workspace_updates = 0
         self.fail_after_workspace_updates = None
+        self.lock_keys = []
 
 
 class AtomicCursor:
@@ -46,7 +47,9 @@ class AtomicCursor:
         self.rowcount = 0
         self.result = None
         self.results = []
-        if self.sql.startswith("SELECT state FROM surveyor_workspaces"):
+        if self.sql.startswith("SELECT pg_advisory_xact_lock"):
+            self.database.lock_keys.append(self.params[0])
+        elif self.sql.startswith("SELECT state FROM surveyor_workspaces"):
             workspace_id, email = self.params
             row = self.database.workspaces.get(workspace_id)
             self.result = (deepcopy(row["state"]),) if row and row["email"] == email else None
@@ -205,6 +208,15 @@ class TestWorkspaceTransactions(unittest.TestCase):
         })
         self.assertEqual(self.database.connector_states["owner@example.test"], {
             "linear": "confirmed", "github": "confirmed"})
+
+    def test_bulk_projection_and_absent_creator_share_one_owner_workspace_set_lock(self):
+        store.save_connector_runtime_projection("owner@example.test", "github", "live")
+        candidate = workspace_state.empty("created_after_bulk")
+        self.assertEqual(store.save_workspace(
+            "owner@example.test", "created_after_bulk", candidate, 0)["status"], "saved")
+        set_locks = [key for key in self.database.lock_keys if "workspace-set" in key]
+        self.assertGreaterEqual(len(set_locks), 2)
+        self.assertEqual(set(set_locks), {"surveyor-workspace-set:owner@example.test"})
 
 
 if __name__ == "__main__":

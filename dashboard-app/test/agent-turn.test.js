@@ -103,3 +103,49 @@ test('rendered production Assistant submits one revisioned turn and refreshes on
     }
   }
 })
+
+test('rendered Assistant retries an ambiguous committed proposal with the same idempotency key', async () => {
+  const originals = new Map()
+  for (const [name, value] of Object.entries({ location: { hostname: 'cordia.example.test' },
+    localStorage: { getItem: () => null }, document: { activeElement: null } })) {
+    originals.set(name, Object.getOwnPropertyDescriptor(globalThis, name))
+    Object.defineProperty(globalThis, name, { configurable: true, writable: true, value })
+  }
+  const requests = []; let refreshes = 0
+  Object.defineProperty(globalThis, 'fetch', { configurable: true, writable: true, value: async (_url, options) => {
+    requests.push(JSON.parse(options.body))
+    if (requests.length === 1) throw new Error('lost response after commit')
+    return { ok: true, status: 200, json: async () => ({ ok: true, speech: 'I can set that up.', revision: 5,
+      action: { kind: 'propose_connector', state: 'setup_required', connector_id: 'issue_tracker', setup_kind: 'api_key' } }) }
+  } })
+  const vite = await createServer({ configFile: false, server: { middlewareMode: true } })
+  const module = await vite.ssrLoadModule('/src/WorkspaceView.jsx')
+  const operation = { current: '' }; let renderer; globalThis.IS_REACT_ACT_ENVIRONMENT = true
+  function Harness() {
+    const [state, setState] = useState({ transcript: [], draft: 'Connect my issue tracker', note: '', busy: false, pending: null, action: null })
+    const id = useRef(0)
+    return React.createElement(module.Assistant, { workspaceId: 'workspace-1', workspaceRevision: 4,
+      enabled: true, readOnly: false, state, setState, nextId: () => ++id.current, operationRef: operation,
+      refresh: async () => { refreshes += 1 } })
+  }
+  const priorConsoleError = console.error; console.error = () => {}
+  try {
+    await act(async () => { renderer = TestRenderer.create(React.createElement(Harness)) })
+    const form = () => renderer.root.findByProps({ className: 'composer' })
+    await act(async () => { form().props.onSubmit({ preventDefault() {} }) })
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    await act(async () => { form().props.onSubmit({ preventDefault() {} }) })
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    assert.equal(requests.length, 2)
+    assert.equal(requests[0].idempotency_key, requests[1].idempotency_key)
+    assert.equal(refreshes, 1)
+    assert.equal(renderer.root.findAllByProps({ className: 'assistant-action-card' }).length, 1)
+  } finally {
+    if (renderer) await act(async () => { renderer.unmount() })
+    console.error = priorConsoleError; await vite.close()
+    for (const [name, descriptor] of originals) {
+      if (descriptor) Object.defineProperty(globalThis, name, descriptor)
+      else delete globalThis[name]
+    }
+  }
+})

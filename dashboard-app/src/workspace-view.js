@@ -641,16 +641,17 @@ export function assistantGreeting(transcript, hasMemory, hasStoredTurns = true) 
     : 'What would you like to accomplish?'
 }
 
-export function assistantTurnStarted(state, id) {
+export function assistantTurnStarted(state, id, idempotencyKey = '') {
   const text = boundedAssistantText(state && state.draft)
   if (!text) return state
   return {
     transcript: [...(Array.isArray(state.transcript) ? state.transcript : []), { id, who: 'you', text }],
-    draft: '', note: '', busy: true, pending: { id, text },
+    draft: '', note: '', busy: true, pending: { id, text,
+      ...(idempotencyKey ? { idempotencyKey } : {}) },
   }
 }
 
-export function assistantTurnFailed(state, note) {
+export function assistantTurnFailed(state, note, preserveRetry = false) {
   if (!state || !state.pending) return state
   return {
     transcript: state.transcript.filter((message) => message.id !== state.pending.id),
@@ -658,6 +659,8 @@ export function assistantTurnFailed(state, note) {
     note: safeText(note, 240) || 'That message did not get through. Your draft is safe to send again.',
     busy: false,
     pending: null,
+    ...(preserveRetry && state.pending.idempotencyKey
+      ? { retry: { text: state.pending.text, idempotencyKey: state.pending.idempotencyKey } } : {}),
   }
 }
 

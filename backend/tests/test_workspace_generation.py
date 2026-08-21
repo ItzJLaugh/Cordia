@@ -116,13 +116,15 @@ class TestAtomicInitialWorkspaceStore(unittest.TestCase):
 
         self.assertEqual(result, ("workspace-1", True))
         self.assertEqual(connection.outcome, "commit")
-        self.assertEqual(len(cursor.calls), 5)
+        self.assertEqual(len(cursor.calls), 7)
         self.assertIn("pg_advisory_xact_lock", cursor.calls[0][0])
         self.assertIn("WHERE email=%s AND archived=FALSE", cursor.calls[1][0])
         self.assertEqual(cursor.calls[1][1], ("owner@example.test",))
-        self.assertIn("INSERT INTO surveyor_interfaces", cursor.calls[2][0])
-        self.assertIn("INSERT INTO surveyor_workspaces", cursor.calls[3][0])
-        self.assertIn("INSERT INTO surveyor_artifacts", cursor.calls[4][0])
+        self.assertIn("pg_advisory_xact_lock", cursor.calls[2][0])
+        self.assertIn("SELECT connector_states", cursor.calls[3][0])
+        self.assertIn("INSERT INTO surveyor_interfaces", cursor.calls[4][0])
+        self.assertIn("INSERT INTO surveyor_workspaces", cursor.calls[5][0])
+        self.assertIn("INSERT INTO surveyor_artifacts", cursor.calls[6][0])
 
     def test_returns_existing_owner_workspace_without_writes(self):
         cursor = FakeCursor(existing="existing-workspace")

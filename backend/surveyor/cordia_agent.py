@@ -32,18 +32,18 @@ _CONDITIONAL_CLAUSE = re.compile(r"^(?:if|when|unless|whether|suppose|assuming)\
 _AGENT_COMPLETION = re.compile(
     r"^(?:i(?:['’]ve)?|we(?:['’]ve)?|cordia|(?:the\s+)?(?:agent|assistant))\b"
     r"(?:\s+\w+){0,6}\s+"
-    r"(?:connected|completed|approved|executed|ran|run|deployed|created)\b",
+    r"(?:connected|completed|approved|executed|ran|run|deployed|created|configured|finished|enabled|activated|set\s+up)\b",
     re.IGNORECASE,
 )
 _BACKEND_STATE = re.compile(
     r"^(?P<subject>.+?)\s+(?:is|was|were|has|have|had)(?:\s+been)?\s+"
     r"(?:(?:fully|successfully|now|already)\s+)*(?P<state>connected|completed|approved|"
-    r"executed|ran|run|deployed|created|available)\b(?P<tail>.*)$",
+    r"executed|ran|run|deployed|created|configured|finished|enabled|active|ready|live|available)\b(?P<tail>.*)$",
     re.IGNORECASE,
 )
 _BACKEND_BARE_COMPLETION = re.compile(
     r"^(?P<subject>.+?)\s+(?:(?:fully|successfully|now|already)\s+)*"
-    r"(?P<state>connected|completed|approved|executed|ran|run|deployed|created)\b(?P<tail>.*)$",
+    r"(?P<state>connected|completed|approved|executed|ran|run|deployed|created|configured|finished|enabled|active|ready|live)\b(?P<tail>.*)$",
     re.IGNORECASE,
 )
 _BACKEND_ENTITY = re.compile(

@@ -365,6 +365,7 @@ def get_secret(email: str, connector: str) -> tuple[str, bytes] | None:
 def save_workspace(email: str, workspace_id: str, state: dict, expected_revision: int) -> dict:
     """Compare-and-save canonical state under the owner workspace row lock."""
     with _conn() as connection, connection.cursor() as cursor:
+        _lock_owner_workspace_set(cursor, email)
         cursor.execute("SELECT state FROM surveyor_workspaces WHERE id=%s AND email=%s FOR UPDATE",
                        (workspace_id, email))
         row = cursor.fetchone()
@@ -465,10 +466,21 @@ def _store_derived_workspace(cursor, email: str, workspace_id: str,
 
 
 def _owner_workspaces_locked(cursor, email: str) -> list[tuple[str, dict]]:
+    _lock_owner_workspace_set(cursor, email)
     cursor.execute("SELECT id, state FROM surveyor_workspaces WHERE email=%s "
                    "ORDER BY id FOR UPDATE", (email,))
     return [(workspace_id, deepcopy(state) if isinstance(state, dict) else {})
             for workspace_id, state in cursor.fetchall()]
+
+
+def _normalized_owner(email: str) -> str:
+    return str(email or "").strip().casefold()
+
+
+def _lock_owner_workspace_set(cursor, email: str) -> None:
+    """One owner-scoped lock ordering every workspace discovery and creation."""
+    cursor.execute("SELECT pg_advisory_xact_lock(hashtext(%s))",
+                   ("surveyor-workspace-set:" + _normalized_owner(email),))
 
 
 def _connector_states_locked(cursor, email: str) -> dict:
@@ -490,6 +502,7 @@ def save_interface_projection(email: str, iface_id: str | None, name: str,
     workspace_definition.update({"name": name, "description": description})
     try:
         with _conn() as connection, connection.cursor() as cursor:
+            _lock_owner_workspace_set(cursor, email)
             # A newly created workspace projects the current consent state, not
             # a route snapshot that may have gone stale before this transaction.
             connector_states = _connector_states_locked(cursor, email)
@@ -528,6 +541,7 @@ def save_connector_projection(email: str, states: dict, *,
     from . import artifacts, workspace_state
     try:
         with _conn() as connection, connection.cursor() as cursor:
+            _lock_owner_workspace_set(cursor, email)
             states = artifacts.merge_connector_states(
                 _connector_states_locked(cursor, email), states)
             _save_connector_states(cursor, email, states)
@@ -556,6 +570,7 @@ def save_connector_runtime_projection(email: str, connector_id: str,
     from . import workspace_state
     try:
         with _conn() as connection, connection.cursor() as cursor:
+            _lock_owner_workspace_set(cursor, email)
             workspace_ids = []
             for workspace_id, current in _owner_workspaces_locked(cursor, email):
                 candidate = workspace_state.record_connector_runtime(
@@ -638,13 +653,24 @@ def _create_initial_workspace(cursor, email: str, prepared: dict) -> None:
     _save_artifact_bundle(cursor, email, source, runtime)
 
 
+def _prepared_with_current_connectors(cursor, email: str, prepared: dict) -> dict:
+    """Do not create an initial workspace from a route-time preference snapshot."""
+    from . import workspace_state
+    workspace = prepared.get("workspace") if isinstance(prepared, dict) else None
+    if not isinstance(workspace, dict) or not isinstance(workspace.get("provenance"), list):
+        return prepared
+    return {**prepared, "workspace": workspace_state.refresh_connectors(
+        workspace, _connector_states_locked(cursor, email))}
+
+
 def ensure_initial_workspace(email: str, prepared: dict) -> tuple[str, bool]:
     """Create one owner's first workspace atomically, or return the existing one."""
     with _lock, _conn() as connection, connection.cursor() as cursor:
-        cursor.execute("SELECT pg_advisory_xact_lock(hashtext(%s))", (email,))
+        _lock_owner_workspace_set(cursor, email)
         existing = _existing_initial_workspace(cursor, email)
         if existing:
             return existing, False
+        prepared = _prepared_with_current_connectors(cursor, email, prepared)
         _create_initial_workspace(cursor, email, prepared)
     return prepared["id"], True
 
@@ -658,10 +684,11 @@ def complete_profile_calibration(
     if not isinstance(memory, str):
         raise ValueError("profile memory is invalid")
     with _lock, _conn() as connection, connection.cursor() as cursor:
-        cursor.execute("SELECT pg_advisory_xact_lock(hashtext(%s))", (email,))
+        _lock_owner_workspace_set(cursor, email)
         _save_profile_calibration(cursor, email, validated)
         existing = _existing_initial_workspace(cursor, email)
         if not existing:
+            prepared = _prepared_with_current_connectors(cursor, email, prepared)
             bundle = dict(prepared["artifacts"])
             bundle["source/memory.md"] = memory
             prepared = {**prepared, "artifacts": bundle}

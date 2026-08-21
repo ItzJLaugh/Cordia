@@ -147,3 +147,28 @@ embedding runtime test, `test_embedding_runtime.TestEmbeddingRuntime.test_declar
   `test_embedding_runtime.TestEmbeddingRuntime.test_declared_runtime_can_import_the_shadow_scorer` because the optional `sentence_transformers` package is not installed.
 - `git diff --check` passed. Provider evidence remains `Not yet verified`; no
   provider or connector call was made.
+
+## Review-fix round 3 of 5
+
+- Added one normalized owner workspace-set advisory lock used before every
+  workspace creation/materialization and before bulk connector/runtime row
+  discovery. Initial generation and calibration creation now re-read connector
+  preferences under that lock rather than trusting the route-time snapshot.
+- Assistant retries retain the same idempotency key after ambiguous transport or
+  5xx-style failures, clear it after definitive 4xx responses or a material
+  edit, and reuse it on retry. A rendered lost-response regression proves one
+  proposal/revision refresh with the same key.
+- Expanded declarative truth rejection across all five envelopes for connector
+  live/enabled/active/ready and agent configured/finished claims, while keeping
+  questions and conditional clauses allowed.
+
+### Verification
+
+- Strict RED: 16 Agent tests exposed 21 new status/completion bypasses; the
+  shared-lock regression found no workspace-set locks; retry state had no key.
+  GREEN: Agent 16/16, transaction store 6/6, generation 8/8, route 10/10,
+  GitHub route 4/4, and rendered dashboard retry/controller tests passed.
+- Full dashboard: 90/90 passed.
+- Full backend comparison: 248/249 passed. The sole unchanged optional failure
+  is missing `sentence_transformers` for the embedding runtime import test.
+- `git diff --check` passed. No provider or connector execution occurred.
