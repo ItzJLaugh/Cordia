@@ -25,20 +25,38 @@ _ID = re.compile(r"^[a-z][a-z0-9_]{0,79}$")
 _REQUEST_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$")
 _SAFE_SETUP_KINDS = {"api_key", "openapi", "remote_mcp"}
 _SAFE_VIEW_MODES = {"dash", "list", "document"}
-_SPEAK_FALSE_CLAIM = re.compile(
-    r"(?:\b(?:connector|skill|action|integration|setup)\b(?:\s+\w+){0,6}\s+"
+_SPEAK_STATUS_SUBJECT = re.compile(
+    r"\b(?:github|connector|skill|action|integration|setup)\b(?:\s+\w+){0,6}\s+"
     r"(?:is|was|were|has|have)(?:\s+been)?\s+(?:(?:fully|successfully|now)\s+)?"
-    r"(?:connected|executed|run|completed|approved|available)\b|"
-    r"\b(?:connector|skill|action|integration|setup)\s+(?:was\s+)?"
-    r"(?:connected|executed|run|ran|completed|approved)\b|"
-    r"\b(?:i|we|cordia)\s+(?:have\s+)?(?:executed|ran|completed|approved)\b"
-    r".{0,80}\b(?:connector|skill|action|integration|setup)\b)",
+    r"(?:connected|executed|run|ran|completed|approved|available)\b",
+    re.IGNORECASE,
+)
+_SPEAK_DIRECT_COMPLETION = re.compile(
+    r"\b(?:connector|skill|action|integration|setup)\s+(?:connected|executed|run|ran|completed|approved)\b",
+    re.IGNORECASE,
+)
+_SPEAK_FIRST_PERSON_COMPLETION = re.compile(
+    r"\b(?:i|we|cordia)\s+(?:(?:have|has)\s+)?"
+    r"(?:connected|executed|run|ran|completed|approved)\b",
+    re.IGNORECASE,
+)
+_SPEAK_CONDITIONAL_AVAILABILITY = re.compile(
+    r"\b(?:github|connector|skill|action|integration|setup)\b.*\bis available after approval\b",
     re.IGNORECASE,
 )
 
 
 class InvalidAgentResponse(ValueError):
     """The configured model did not return one safe, exact action envelope."""
+
+
+def _false_speak_claim(speech: str) -> bool:
+    """Reject bounded declarative backend-completion claims, not questions or conditions."""
+    if speech.rstrip().endswith("?") or _SPEAK_CONDITIONAL_AVAILABILITY.search(speech):
+        return False
+    return bool(_SPEAK_STATUS_SUBJECT.search(speech)
+                or _SPEAK_DIRECT_COMPLETION.search(speech)
+                or _SPEAK_FIRST_PERSON_COMPLETION.search(speech))
 
 
 def _exact_object(value, fields, message):
@@ -80,7 +98,7 @@ def validate_envelope(value: object) -> dict:
     _exact_object(value, _ACTION_FIELDS[kind], "Invalid Cordia Agent action.")
     speech = _safe_text(value["speech"], 6000, "Invalid Cordia Agent action.")
     if kind == "speak":
-        if _SPEAK_FALSE_CLAIM.search(speech):
+        if _false_speak_claim(speech):
             raise ValueError("Invalid Cordia Agent action.")
         return {"kind": kind, "speech": speech}
     proposal = value["proposal"]

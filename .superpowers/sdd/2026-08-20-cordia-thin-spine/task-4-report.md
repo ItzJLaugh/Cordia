@@ -37,3 +37,19 @@
 - Full backend: 230/231 passed. The sole failure remains the pre-existing optional embedding runtime dependency: `sentence_transformers` is not installed.
 - Full dashboard: `npm.cmd test` passed 88/88.
 - `git diff --check` passed. No real-provider call or connector execution was attempted; provider evidence remains `Not yet verified`.
+
+## Review-fix round 2
+
+- Canonical saves now require the caller's expected revision and compare the complete candidate revision under the owner-workspace `FOR UPDATE` row lock. A stale human, connector, runtime, or interface snapshot returns a conflict without overwriting canonical state; a changed save increments once, while unchanged state does not.
+- The human mutation route returns the actual saved canonical workspace, including its persisted revision, and returns the actual current workspace on conflict instead of echoing a pre-save candidate.
+- The shared privacy boundary now also rejects relative slash/backslash paths and single-component POSIX paths in turn input, speech, and all permitted proposal text, while retaining validated HTTPS URLs.
+- Speak truth semantics now reject reviewed declarative status/completion wording, including GitHub and first-person past/perfect claims, while allowing questions and the explicit conditional statement that a connector is available after approval.
+- The empty-workspace greeting now requires non-whitespace compiled memory.
+
+### Review-fix round 2 verification
+
+- RED/GREEN covered stale save signatures/interleavings, relative-path privacy cases, false declarative speak claims versus allowed questions/conditions, and whitespace-only memory greeting.
+- Focused/adjacent GREEN: Cordia Agent (11), production-store workspace turns (5), workspace-turn route (6), operator profile (12), and agent-turn dashboard test (4).
+- Full backend: 232/233 passed. The unchanged failure is the optional embedding runtime dependency (`sentence_transformers` is not installed).
+- Full dashboard: `npm.cmd test` passed 88/88. `git diff --check` passed.
+- The production-store test uses a deterministic transaction double that records the real production `FOR UPDATE` SQL and interleaves production store calls. It validates the compare-and-save semantics but is not a multi-process PostgreSQL contention test.

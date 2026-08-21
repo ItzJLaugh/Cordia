@@ -635,7 +635,8 @@ class H(BaseHTTPRequestHandler):
             definition.update({'name': legacy['name'], 'description': legacy['description']})
             state = surveyor.workspace_state.from_interface(
                 workspace_id, definition, surveyor.store.get_connector_states(email))
-            surveyor.store.save_workspace(email, workspace_id, state)
+            saved = surveyor.store.save_workspace(email, workspace_id, state, 0)
+            state = saved.get('workspace') or state
         try:
             has_stored_turns = surveyor.store.has_workspace_turns(email, workspace_id)
         except Exception:
@@ -672,11 +673,15 @@ class H(BaseHTTPRequestHandler):
         except ValueError as exc:
             self._json({'ok': False, 'error': str(exc)}, 400)
             return
-        surveyor.store.save_workspace(email, workspace_id, changed)
+        saved = surveyor.store.save_workspace(email, workspace_id, changed, state.get('revision', 0))
+        if saved.get('status') == 'conflict':
+            self._json({'ok': False, 'error': 'workspace changed; reload and retry',
+                        'workspace': saved.get('workspace')}, 409)
+            return
         surveyor.store.log_event(email, 'workspace_mutated',
                                  {'id': workspace_id,
                                   'kind': body.get('mutation', {}).get('kind')})
-        self._json({'ok': True, 'workspace': changed})
+        self._json({'ok': True, 'workspace': saved['workspace']})
 
     def _surv_generate_workspace(self, body):
         """Create or recover the signed-in owner's initial canonical workspace."""
@@ -803,7 +808,7 @@ class H(BaseHTTPRequestHandler):
                 surveyor.store.save_workspace(
                     email, workspace_id,
                     surveyor.workspace_state.record_connector_runtime(
-                        state, connector_id, runtime_status))
+                        state, connector_id, runtime_status), state.get('revision', 0))
             except Exception:
                 pass
 
@@ -822,7 +827,8 @@ class H(BaseHTTPRequestHandler):
             surveyor.store.save_connector_states(email, states)
             for workspace_id, state in surveyor.store.workspaces(email):
                 surveyor.store.save_workspace(email, workspace_id,
-                                              surveyor.workspace_state.refresh_connectors(state, states))
+                                              surveyor.workspace_state.refresh_connectors(state, states),
+                                              state.get('revision', 0))
         except (ValueError, surveyor.vault.VaultUnavailable,
                 surveyor.github_connector.ConnectorUnavailable) as exc:
             code = 422 if isinstance(exc, surveyor.github_connector.AuthorizationRejected) else 503
@@ -843,7 +849,8 @@ class H(BaseHTTPRequestHandler):
         surveyor.store.save_connector_states(email, states)
         for workspace_id, state in surveyor.store.workspaces(email):
             surveyor.store.save_workspace(email, workspace_id,
-                                          surveyor.workspace_state.refresh_connectors(state, states))
+                                          surveyor.workspace_state.refresh_connectors(state, states),
+                                          state.get('revision', 0))
         surveyor.store.log_event(email, 'connector_preferences_updated', {'ids': sorted(states)})
         self._json({'ok': True, 'connector_states': states,
                     'artifacts': surveyor.pipeline.artifact_bundle(email)})
@@ -916,11 +923,12 @@ class H(BaseHTTPRequestHandler):
         if workspace:
             surveyor.store.save_workspace(
                 email, iid,
-                surveyor.workspace_state.merge_interface(workspace, workspace_definition))
+                surveyor.workspace_state.merge_interface(workspace, workspace_definition),
+                workspace.get('revision', 0))
         else:
             workspace = surveyor.workspace_state.from_interface(
                 iid, workspace_definition, surveyor.store.get_connector_states(email))
-            surveyor.store.save_workspace(email, iid, workspace)
+            surveyor.store.save_workspace(email, iid, workspace, 0)
         surveyor.store.log_event(email,
                                  'interface_updated' if existing else 'interface_created',
                                  {'id': iid, 'agents': len(definition.get('agents') or []),

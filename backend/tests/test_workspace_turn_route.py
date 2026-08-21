@@ -44,6 +44,17 @@ class MemoryStore:
         self.runs[(workspace_id, key)] = deepcopy(public_result)
         return {"status": "committed", "result": deepcopy(public_result)}
 
+    def save_workspace(self, _email, workspace_id, state, expected_revision):
+        if workspace_id != "workspace_1" or self.workspace["revision"] != expected_revision:
+            return {"status": "conflict", "workspace": deepcopy(self.workspace)}
+        saved = deepcopy(state)
+        saved["revision"] = expected_revision + 1
+        self.workspace = saved
+        return {"status": "saved", "workspace": deepcopy(saved)}
+
+    def log_event(self, *_args, **_kwargs):
+        return None
+
 
 class TestWorkspaceTurnRoute(unittest.TestCase):
     @classmethod
@@ -76,9 +87,9 @@ class TestWorkspaceTurnRoute(unittest.TestCase):
         self.model_calls.append(max_tokens)
         return '{"kind":"speak","speech":"I can help with that."}'
 
-    def handler(self, body, email="owner@example.test"):
+    def handler(self, body, email="owner@example.test", path="/surveyor/run"):
         handler = object.__new__(self.backend.H)
-        handler.path = "/surveyor/run"
+        handler.path = path
         handler._body = lambda: deepcopy(body)
         handler._surv_guard = lambda: (email, None)
         handler._json = lambda payload, status=200: setattr(
@@ -86,8 +97,8 @@ class TestWorkspaceTurnRoute(unittest.TestCase):
         handler.response = None
         return handler
 
-    def post(self, body, email="owner@example.test"):
-        handler = self.handler(body, email)
+    def post(self, body, email="owner@example.test", path="/surveyor/run"):
+        handler = self.handler(body, email, path)
         with patch.object(self.backend, "surveyor", self.runtime):
             handler.do_POST()
         return handler.response
@@ -148,6 +159,16 @@ class TestWorkspaceTurnRoute(unittest.TestCase):
                                                 "error": "Cordia Agent could not complete that request."}, 502))
         self.assertEqual(self.store.write_calls, [])
         self.assertEqual(self.store.workspace["revision"], 0)
+
+    def test_human_mutation_returns_the_actual_saved_canonical_workspace(self):
+        response, status = self.post({
+            "id": "workspace_1", "mutation": {
+                "kind": "add_window", "window": {"id": "notes", "title": "Notes"},
+            },
+        }, path="/surveyor/workspace/mutate")
+        self.assertEqual(status, 200)
+        self.assertEqual(response["workspace"], self.store.workspace)
+        self.assertEqual(response["workspace"]["revision"], 1)
 
 
 if __name__ == "__main__":

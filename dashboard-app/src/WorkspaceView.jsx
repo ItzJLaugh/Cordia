@@ -183,8 +183,9 @@ function WorkspaceCanvas({
       setState({ phase: 'ready', model })
       onReadyChange(true)
       onWorkspaceRevision(Number.isInteger(workspace.workspace.revision) ? workspace.workspace.revision : 0)
-      onMemoryTruth(Boolean(supplemental.artifacts && supplemental.artifacts.artifacts
-        && typeof supplemental.artifacts.artifacts['source/memory.md'] === 'string'))
+      const memory = supplemental.artifacts && supplemental.artifacts.artifacts
+        && supplemental.artifacts.artifacts['source/memory.md']
+      onMemoryTruth(typeof memory === 'string' && memory.trim().length > 0)
       onStoredTurns(workspace.has_stored_turns === true)
       onRefreshSettled(refreshRevision, true)
     }).catch((error) => {

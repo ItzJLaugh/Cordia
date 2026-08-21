@@ -371,24 +371,33 @@ def get_secret(email: str, connector: str) -> tuple[str, bytes] | None:
     return (row[0], bytes(row[1])) if row else None
 
 
-def save_workspace(email: str, workspace_id: str, state: dict) -> None:
-    """Persist canonical state under a lock and advance its revision for each change."""
+def save_workspace(email: str, workspace_id: str, state: dict, expected_revision: int) -> dict:
+    """Compare-and-save canonical state under the owner workspace row lock."""
     with _conn() as connection, connection.cursor() as cursor:
         cursor.execute("SELECT state FROM surveyor_workspaces WHERE id=%s AND email=%s FOR UPDATE",
                        (workspace_id, email))
         row = cursor.fetchone()
         candidate = deepcopy(state if isinstance(state, dict) else {})
+        candidate_revision = _stored_workspace_revision(candidate)
         if row:
             current = deepcopy(row[0]) if isinstance(row[0], dict) else {}
+            current_revision = _stored_workspace_revision(current)
+            if (candidate_revision is None or not _is_workspace_revision(expected_revision)
+                    or current_revision is None or expected_revision != current_revision
+                    or candidate_revision != expected_revision):
+                return {"status": "conflict", "workspace": current}
             if candidate == current:
-                return
-            candidate["revision"] = _workspace_revision(current) + 1
+                return {"status": "unchanged", "workspace": current}
+            candidate["revision"] = current_revision + 1
             candidate["pending_actions"] = _pending_actions(candidate)
             cursor.execute("UPDATE surveyor_workspaces SET state=%s, "
                            "updated=(now() AT TIME ZONE 'utc') WHERE id=%s AND email=%s",
                            (_J(candidate), workspace_id, email))
-            return
-        candidate["revision"] = _workspace_revision(candidate)
+            return {"status": "saved", "workspace": candidate}
+        if (candidate_revision is None or not _is_workspace_revision(expected_revision)
+                or expected_revision != 0 or candidate_revision != 0):
+            return {"status": "conflict", "workspace": None}
+        candidate["revision"] = 0
         candidate["pending_actions"] = _pending_actions(candidate)
         cursor.execute("""
             INSERT INTO surveyor_workspaces(id, email, state) VALUES (%s,%s,%s)
@@ -396,11 +405,20 @@ def save_workspace(email: str, workspace_id: str, state: dict) -> None:
                 updated=(now() AT TIME ZONE 'utc')
             WHERE surveyor_workspaces.email=EXCLUDED.email
         """, (workspace_id, email, _J(candidate)))
+    return {"status": "saved", "workspace": candidate}
 
 
-def _workspace_revision(state: dict) -> int:
-    revision = state.get("revision", 0) if isinstance(state, dict) else 0
-    return revision if isinstance(revision, int) and not isinstance(revision, bool) and revision >= 0 else 0
+def _is_workspace_revision(value: object) -> bool:
+    return isinstance(value, int) and not isinstance(value, bool) and value >= 0
+
+
+def _stored_workspace_revision(state: dict) -> int | None:
+    if not isinstance(state, dict):
+        return None
+    if "revision" not in state:
+        return 0
+    revision = state["revision"]
+    return revision if _is_workspace_revision(revision) else None
 
 
 def _pending_actions(state: dict) -> list:

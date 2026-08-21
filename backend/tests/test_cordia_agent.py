@@ -70,6 +70,7 @@ class TestCordiaAgent(unittest.TestCase):
             "sk-private-token", "ghp_privatetoken", "github_pat_privatetoken",
             "AKIA1234567890ABCD", "token=private", "-----BEGIN PRIVATE KEY-----",
             "C:\\private\\workspace", "..\\private", "/etc/cordia/secret", "\\\\host\\share",
+            "private/secret.txt", "folder\\secret.txt", "/secret.txt",
         ):
             with self.subTest(unsafe=unsafe):
                 with self.assertRaises(ValueError):
@@ -79,6 +80,11 @@ class TestCordiaAgent(unittest.TestCase):
                     })
                 with self.assertRaises(ValueError):
                     cordia_agent.validate_envelope({"kind": "speak", "speech": unsafe})
+                with self.assertRaises(ValueError):
+                    cordia_agent.validate_envelope({
+                        "kind": "propose_connector", "speech": "I can prepare this.",
+                        "proposal": {**CONNECTOR["proposal"], "purpose": unsafe},
+                    })
         self.assertEqual(cordia_agent.validate_envelope({
             "kind": "speak", "speech": "See https://example.test/docs for the public guide.",
         })["kind"], "speak")
@@ -170,12 +176,19 @@ class TestCordiaAgent(unittest.TestCase):
             "Your connector is connected.", "The skill completed.",
             "The action was approved.", "The connector is fully connected.",
             "The skill has completed.", "I executed the integration.",
+            "GitHub is connected.", "I connected the integration.",
+            "We have run the skill.", "Cordia completed the action.",
         ):
             with self.subTest(speech=speech), self.assertRaises(ValueError):
                 cordia_agent.validate_envelope({"kind": "speak", "speech": speech})
-        self.assertEqual(cordia_agent.validate_envelope({
-            "kind": "speak", "speech": "I can propose a connector setup for your approval.",
-        })["speech"], "I can propose a connector setup for your approval.")
+        for allowed in (
+            "I can propose a connector setup for your approval.",
+            "Is the connector connected?", "The connector is available after approval.",
+        ):
+            with self.subTest(allowed=allowed):
+                self.assertEqual(cordia_agent.validate_envelope({
+                    "kind": "speak", "speech": allowed,
+                })["speech"], allowed)
 
 
 if __name__ == "__main__":

@@ -635,7 +635,8 @@ export function agentTurnModel(response) {
 
 export function assistantGreeting(transcript, hasMemory, hasStoredTurns = true) {
   if (Array.isArray(transcript) && transcript.length) return ''
-  return hasMemory && hasStoredTurns === false
+  const compiledMemory = hasMemory === true || (typeof hasMemory === 'string' && hasMemory.trim().length > 0)
+  return compiledMemory && hasStoredTurns === false
     ? 'I have your saved profile calibration and workspace memory. What would you like to accomplish?'
     : 'What would you like to accomplish?'
 }

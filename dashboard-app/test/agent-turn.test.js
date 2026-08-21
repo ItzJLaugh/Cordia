@@ -33,6 +33,7 @@ test('the truthful empty-workspace greeting depends only on compiled memory trut
   assert.equal(assistantGreeting([], true, false),
     'I have your saved profile calibration and workspace memory. What would you like to accomplish?')
   assert.equal(assistantGreeting([], false, false), 'What would you like to accomplish?')
+  assert.equal(assistantGreeting([], '   ', false), 'What would you like to accomplish?')
   assert.equal(assistantGreeting([], true, true), 'What would you like to accomplish?')
   assert.equal(assistantGreeting([{ who: 'cordia', text: 'Model text' }], true, false), '')
 })

@@ -19,7 +19,9 @@ _LOCAL_PATH = re.compile(
     r"(?:^|[^A-Za-z0-9_/.])(?:[A-Za-z]:(?:[\\/]|(?=[^\s\\/]))|"
     r"\\\\[^\s]+|(?:file|path)://|\.{1,2}[\\/][^\s]+|"
     r"/(?:tmp|home|Users|var|etc|opt|srv|run|mnt|workspace|Library)(?:/[^\s]*)?|"
-    r"/{1,2}(?:[^\s/]+/)+[^\s/]+)", re.IGNORECASE)
+    r"/{1,2}(?:[^\s/]+/)+[^\s/]+|"
+    r"[A-Za-z0-9_.-]+[\\/][A-Za-z0-9_.-]+(?:[\\/][^\s]*)?|"
+    r"/[A-Za-z0-9_.-]+)", re.IGNORECASE)
 _REMOTE_URL = re.compile(r"\b[A-Za-z][A-Za-z0-9+.-]*://[^\s<>\"']+")
 _BAD_PERCENT = re.compile(r"%(?![0-9A-Fa-f]{2})")
 _STRENGTH = {
