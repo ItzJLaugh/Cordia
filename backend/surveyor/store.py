@@ -720,8 +720,12 @@ def _prepared_with_current_connectors(cursor, email: str, prepared: dict) -> dic
     if (not isinstance(workspace, dict) or not isinstance(workspace.get("provenance"), list)
             or not isinstance(definition, dict)):
         return prepared
-    return {**prepared, "workspace": _workspace_from_current_connectors(
-        cursor, email, prepared["id"], definition, include_runtime=True)}
+    projected = _workspace_from_current_connectors(
+        cursor, email, prepared["id"], definition, include_runtime=True)
+    return {**prepared, "workspace": {
+        **projected,
+        "pending_actions": _pending_actions(workspace),
+    }}
 
 
 def ensure_initial_workspace(email: str, prepared: dict) -> tuple[str, bool]:

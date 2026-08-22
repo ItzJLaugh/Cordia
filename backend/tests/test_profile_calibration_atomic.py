@@ -142,6 +142,7 @@ class TestAtomicProfileCalibrationCompletion(unittest.TestCase):
             candidate["definition"]["description"] = candidate["description"]
             candidate["workspace"] = workspace_state.from_interface(
                 candidate["id"], candidate["definition"], {"github": "confirmed"})
+            candidate["workspace"]["pending_actions"] = [{"id": "keep-calibration-action"}]
             candidate["workspace"] = workspace_state.record_connector_runtime(
                 candidate["workspace"], "github", stale_status)
             connection = AtomicConnection(cursor)
@@ -161,7 +162,7 @@ class TestAtomicProfileCalibrationCompletion(unittest.TestCase):
             self.assertEqual(github["runtime_status"], current_status)
             self.assertEqual(created["title"], "My Workspace")
             self.assertEqual(created["description"], candidate["description"])
-            self.assertEqual(created["pending_actions"], [])
+            self.assertEqual(created["pending_actions"], [{"id": "keep-calibration-action"}])
             artifacts = next(call[1] for call in cursor.calls
                              if "INSERT INTO surveyor_artifacts" in call[0])
             self.assertEqual(artifacts[1]["source/operator.md"], "new operator")

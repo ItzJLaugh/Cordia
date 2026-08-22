@@ -154,6 +154,9 @@ class TestAtomicInitialWorkspaceStore(unittest.TestCase):
             )
             prepared = self.prepared()
             prepared["artifacts"]["source/memory.md"] = "keep initial memory"
+            prepared["workspace"] = workspace_state.from_interface(
+                prepared["id"], prepared["definition"], {"github": "confirmed"})
+            prepared["workspace"]["pending_actions"] = [{"id": "keep-initial-action"}]
             prepared["workspace"] = workspace_state.record_connector_runtime(
                 prepared["workspace"], "github", stale_status)
 
@@ -167,7 +170,7 @@ class TestAtomicInitialWorkspaceStore(unittest.TestCase):
             self.assertEqual(github["runtime_status"], current_status)
             self.assertEqual(created["title"], "My Workspace")
             self.assertEqual(created["description"], "A Cordia workspace shaped from your Surveyor profile.")
-            self.assertEqual(created["pending_actions"], [])
+            self.assertEqual(created["pending_actions"], [{"id": "keep-initial-action"}])
             artifacts = next(call[1] for call in cursor.calls
                              if "INSERT INTO surveyor_artifacts" in call[0])
             self.assertIn("source/operator.md", artifacts[1])
