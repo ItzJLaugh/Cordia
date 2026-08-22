@@ -200,22 +200,13 @@ def run_turn(context: dict, message: str, call_model) -> dict:
     except (TypeError, json.JSONDecodeError) as exc:
         raise InvalidAgentResponse("Cordia Agent returned an invalid action.") from exc
     try:
-        workspace = context.get("workspace", {}) if isinstance(context, dict) else {}
-        names = []
-        for connector in workspace.get("connectors", []) if isinstance(workspace, dict) else []:
-            if isinstance(connector, dict):
-                names.extend((connector.get("id"), connector.get("display_name")))
-        return validate_envelope(parsed, known_connector_names=names)
+        return validate_envelope(parsed)
     except ValueError as exc:
         raise InvalidAgentResponse("Cordia Agent returned an invalid action.") from exc
 
 
 def apply_proposal(workspace: dict, envelope: dict) -> tuple[dict, dict]:
-    candidate = envelope
-    if (isinstance(envelope, dict) and envelope.get("kind") != "speak"
-            and set(envelope) == {"kind", "speech", "proposal"}):
-        candidate = {"kind": envelope["kind"], "proposal": envelope["proposal"]}
-    accepted = validate_envelope(candidate)
+    accepted = validate_envelope(envelope)
     state = deepcopy(workspace if isinstance(workspace, dict) else {})
     revision = state.get("revision", 0)
     if isinstance(revision, bool) or not isinstance(revision, int) or revision < 0:

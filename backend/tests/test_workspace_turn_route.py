@@ -219,10 +219,23 @@ class TestWorkspaceTurnRoute(unittest.TestCase):
         self.assertEqual(response["action"], {"kind": "propose_connector", "state": "setup_required",
                                               "connector_id": "issues", "setup_kind": "api_key"})
         self.assertEqual(response["speech"], "I prepared a setup card for Issues.")
-        self.assertNotIn("Provider sentinel prose.", json.dumps(response))
-        self.assertNotIn("Provider sentinel prose.", json.dumps(list(self.store.runs.values())))
         self.assertEqual(self.store.workspace["revision"], 1)
         self.assertEqual(len(self.store.workspace["pending_actions"]), 1)
+
+    def test_forbidden_provider_action_speech_fails_closed_without_api_or_store_leakage(self):
+        def forbidden_proposal(_system, _message, max_tokens):
+            self.model_calls.append(max_tokens)
+            return ('{"kind":"propose_connector","speech":"Provider sentinel prose.","proposal":'
+                    '{"connector_id":"issues","display_name":"Issues","setup_kind":"api_key",'
+                    '"purpose":"Review issues."}}')
+        self.runtime.llm.call = forbidden_proposal
+        response, status = self.post(self.valid())
+        self.assertEqual((response, status), ({"ok": False,
+                                                "error": "Cordia Agent could not complete that request."}, 502))
+        self.assertNotIn("Provider sentinel prose.", json.dumps(response))
+        self.assertNotIn("Provider sentinel prose.", json.dumps(list(self.store.runs.values())))
+        self.assertEqual(self.store.write_calls, [])
+        self.assertEqual(self.store.workspace, workspace_state.empty("workspace_1"))
 
     def test_model_failure_does_not_write_a_run_or_workspace(self):
         def unavailable(*_args, **_kwargs):

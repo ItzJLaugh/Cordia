@@ -153,6 +153,14 @@ class TestCordiaAgent(unittest.TestCase):
                 self.assertEqual(public, {"ok": True, "speech": speech, "action": action, "revision": 1})
                 self.assertEqual(next_state["pending_actions"], [{"kind": envelope["kind"], **envelope["proposal"]}])
 
+    def test_apply_proposal_rejects_action_speech_before_mutation(self):
+        for envelope in (CONNECTOR, ARTIFACT, SKILL, RUN_SKILL):
+            with self.subTest(kind=envelope["kind"]):
+                state = workspace_state.empty("workspace_1")
+                with self.assertRaises(ValueError):
+                    cordia_agent.apply_proposal(state, {**envelope, "speech": "Provider sentinel prose."})
+                self.assertEqual(state, workspace_state.empty("workspace_1"))
+
     def test_run_approved_skill_never_executes_without_server_approval(self):
         state = workspace_state.empty("workspace_1")
         next_state, public = cordia_agent.apply_proposal(state, RUN_SKILL)

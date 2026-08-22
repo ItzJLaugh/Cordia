@@ -164,7 +164,7 @@ class TestWorkspaceTurnStore(unittest.TestCase):
         connector_snapshot = deepcopy(self.database.workspaces[key])
         agent_snapshot = deepcopy(self.database.workspaces[key])
         agent_next, agent_public = cordia_agent.apply_proposal(agent_snapshot, {
-            "kind": "propose_connector", "speech": "I can prepare that.", "proposal": {
+            "kind": "propose_connector", "proposal": {
                 "connector_id": "issues", "display_name": "Issues",
                 "setup_kind": "api_key", "purpose": "Review issues.",
             },
@@ -188,7 +188,7 @@ class TestWorkspaceTurnStore(unittest.TestCase):
         saved = store.save_workspace("owner@example.test", "workspace_1", human, 0)
         self.assertEqual(saved["status"], "saved")
         stale_next, stale_public = cordia_agent.apply_proposal(workspace_state.empty("workspace_1"), {
-            "kind": "propose_connector", "speech": "I can prepare that.", "proposal": {
+            "kind": "propose_connector", "proposal": {
                 "connector_id": "issues", "display_name": "Issues",
                 "setup_kind": "api_key", "purpose": "Review issues.",
             },
