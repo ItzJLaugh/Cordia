@@ -721,7 +721,7 @@ def _prepared_with_current_connectors(cursor, email: str, prepared: dict) -> dic
             or not isinstance(definition, dict)):
         return prepared
     return {**prepared, "workspace": _workspace_from_current_connectors(
-        cursor, email, prepared["id"], definition, include_runtime=False)}
+        cursor, email, prepared["id"], definition, include_runtime=True)}
 
 
 def ensure_initial_workspace(email: str, prepared: dict) -> tuple[str, bool]:
