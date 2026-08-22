@@ -10,6 +10,7 @@ import {
   agentTurnModel,
   assistantGreeting,
   assistantReplyModel,
+  assistantRevisionConflict,
   assistantTurnFailed,
   assistantTurnStarted,
   createSkillInteractionController,
@@ -87,9 +88,19 @@ export function Assistant({
             note: 'Workspace refresh failed. Reload before trying another action.' }))
         }
       }
-    }).catch((error) => {
+    }).catch(async (error) => {
       if (!aliveRef.current) return
       const kind = apiErrorKind(error)
+      if (kind === 'revision-conflict') {
+        operationRef.current = ''
+        setState((current) => assistantRevisionConflict(
+          current, 'Workspace changed. Review the refreshed workspace and retry.'))
+        try { await refresh() } catch (_refreshError) {
+          if (aliveRef.current) setState((current) => ({ ...current,
+            note: 'Workspace refresh failed. Reload before retrying.' }))
+        }
+        return
+      }
       if (kind === 'signed-out') fail('Your session ended. Sign in again to send this. Your draft is safe.')
       else if (kind === 'rate-limit') fail('Message limit reached. Wait a few minutes; your draft is safe.')
       else if (kind === 'offline') fail('The server is unreachable right now. Your draft is safe to send again.', true)
@@ -142,7 +153,7 @@ export function Assistant({
           ref={inputRef}
           value={state.draft}
           onChange={(event) => setState((current) => ({ ...current, draft: event.target.value,
-            ...(current.retry && event.target.value !== current.retry.text ? { retry: null } : {}) }))}
+            ...(current.retry && event.target.value.trim() !== current.retry.text ? { retry: null } : {}) }))}
           onKeyDown={onKeyDown}
           placeholder={readOnly ? 'Return to Workspace to send' : 'Ask Cordia…'}
           rows={3}

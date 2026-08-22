@@ -34,9 +34,11 @@ export function apiErrorKind(error) {
   return error instanceof ApiResponseError ? error.kind : 'offline'
 }
 
-function responseKind(status) {
+function responseKind(status, body) {
   if (status === 401 || status === 403) return 'signed-out'
-  if (status === 409) return 'gate'
+  if (status === 409 && body && typeof body === 'object' && !Array.isArray(body)
+      && Object.keys(body).sort().join('|') === 'error|ok'
+      && body.ok === false && body.error === 'revision_conflict') return 'revision-conflict'
   if (status === 429) return 'rate-limit'
   if (status === 503) return 'offline'
   return 'error'
@@ -47,8 +49,9 @@ async function validatedRequest(path, options) {
     const response = await fetch(API + path, options)
     const body = await response.json().catch(() => null)
     if (!response.ok || !body || body.ok !== true) {
-      throw new ApiResponseError(safeServerError(body && body.error), responseKind(response.status),
-        response.status >= 400 && response.status < 500)
+      const kind = responseKind(response.status, body)
+      throw new ApiResponseError(safeServerError(body && body.error), kind,
+        response.status >= 400 && response.status < 500 && kind !== 'revision-conflict')
     }
     return body
   } catch (error) {

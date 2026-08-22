@@ -4,7 +4,7 @@ import React, { useRef, useState } from 'react'
 import TestRenderer, { act } from 'react-test-renderer'
 import { createServer } from 'vite'
 
-import { agentTurnModel, assistantGreeting } from '../src/workspace-view.js'
+import { agentTurnModel, assistantGreeting, assistantRevisionConflict } from '../src/workspace-view.js'
 
 test('a proposed connector accepts the fixed server copy without claiming connected', () => {
   const next = agentTurnModel({ ok: true, speech: 'I prepared a setup card for Issue tracker.', revision: 5,
@@ -37,6 +37,177 @@ test('the truthful empty-workspace greeting depends only on compiled memory trut
   assert.equal(assistantGreeting([], '   ', false), 'What would you like to accomplish?')
   assert.equal(assistantGreeting([], true, true), 'What would you like to accomplish?')
   assert.equal(assistantGreeting([{ who: 'cordia', text: 'Model text' }], true, false), '')
+})
+
+test('revision conflict restores the draft and retains the turn identity', () => {
+  const failed = assistantRevisionConflict({
+    transcript: [{ id: 'pending-1', who: 'you', text: 'Connect Drive' }],
+    draft: '', note: '', busy: true,
+    pending: { id: 'pending-1', text: 'Connect Drive', idempotencyKey: 'turn-fixed' },
+  }, 'Workspace changed. Review it and retry.')
+  assert.deepEqual(failed, {
+    transcript: [], draft: 'Connect Drive', note: 'Workspace changed. Review it and retry.', busy: false,
+    pending: null, retry: { text: 'Connect Drive', idempotencyKey: 'turn-fixed' },
+  })
+})
+
+test('rendered Assistant refreshes one revision conflict and retries only on the next user click', async () => {
+  const originals = new Map()
+  for (const [name, value] of Object.entries({ location: { hostname: 'cordia.example.test' },
+    localStorage: { getItem: () => null }, document: { activeElement: null } })) {
+    originals.set(name, Object.getOwnPropertyDescriptor(globalThis, name))
+    Object.defineProperty(globalThis, name, { configurable: true, writable: true, value })
+  }
+  const originalNow = Date.now
+  Date.now = () => Number.parseInt('fixed', 36)
+  const requests = []; let refreshes = 0
+  Object.defineProperty(globalThis, 'fetch', { configurable: true, writable: true, value: async (_url, options) => {
+    requests.push(JSON.parse(options.body))
+    if (requests.length === 1) return { ok: false, status: 409,
+      json: async () => ({ ok: false, error: 'revision_conflict' }) }
+    return { ok: true, status: 200, json: async () => ({ ok: true,
+      speech: 'I prepared a setup card for Drive.', revision: 5,
+      action: { kind: 'propose_connector', state: 'setup_required', connector_id: 'drive', setup_kind: 'api_key' } }) }
+  } })
+  const vite = await createServer({ configFile: false, server: { middlewareMode: true } })
+  const module = await vite.ssrLoadModule('/src/WorkspaceView.jsx')
+  const operation = { current: '' }; let renderer; globalThis.IS_REACT_ACT_ENVIRONMENT = true
+  function Harness() {
+    const [state, setState] = useState({ transcript: [], draft: 'Connect Drive', note: '', busy: false, pending: null, action: null })
+    const [revision, setRevision] = useState(4)
+    const id = useRef(0)
+    return React.createElement(module.Assistant, { workspaceId: 'workspace-1', workspaceRevision: revision,
+      enabled: true, readOnly: false, state, setState, nextId: () => ++id.current, operationRef: operation,
+      refresh: async () => { refreshes += 1; setRevision(5) } })
+  }
+  const priorConsoleError = console.error; console.error = () => {}
+  try {
+    await act(async () => { renderer = TestRenderer.create(React.createElement(Harness)) })
+    const form = () => renderer.root.findByProps({ className: 'composer' })
+    await act(async () => { form().props.onSubmit({ preventDefault() {} }) })
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    assert.equal(refreshes, 1)
+    assert.equal(requests.length, 1)
+    assert.equal(operation.current, '')
+    assert.equal(JSON.stringify(renderer.toJSON()).includes('Workspace changed. Review the refreshed workspace and retry.'), true)
+    await act(async () => { form().props.onSubmit({ preventDefault() {} }) })
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    assert.equal(requests.length, 2)
+    assert.deepEqual(requests.map(({ revision, idempotency_key }) => ({ revision, idempotency_key })), [
+      { revision: 4, idempotency_key: 'turn-fixed-1' },
+      { revision: 5, idempotency_key: 'turn-fixed-1' },
+    ])
+  } finally {
+    if (renderer) await act(async () => { renderer.unmount() })
+    console.error = priorConsoleError; Date.now = originalNow; await vite.close()
+    for (const [name, descriptor] of originals) {
+      if (descriptor) Object.defineProperty(globalThis, name, descriptor)
+      else delete globalThis[name]
+    }
+  }
+})
+
+test('rendered Assistant keeps the conflict retry identity when its refresh fails', async () => {
+  const originals = new Map()
+  for (const [name, value] of Object.entries({ location: { hostname: 'cordia.example.test' },
+    localStorage: { getItem: () => null }, document: { activeElement: null } })) {
+    originals.set(name, Object.getOwnPropertyDescriptor(globalThis, name))
+    Object.defineProperty(globalThis, name, { configurable: true, writable: true, value })
+  }
+  const originalNow = Date.now
+  Date.now = () => Number.parseInt('fixed', 36)
+  const requests = []; let refreshes = 0
+  Object.defineProperty(globalThis, 'fetch', { configurable: true, writable: true, value: async (_url, options) => {
+    requests.push(JSON.parse(options.body))
+    if (requests.length === 1) return { ok: false, status: 409,
+      json: async () => ({ ok: false, error: 'revision_conflict' }) }
+    return { ok: true, status: 200, json: async () => ({ ok: true, speech: 'Drive is ready.', revision: 4, action: null }) }
+  } })
+  const vite = await createServer({ configFile: false, server: { middlewareMode: true } })
+  const module = await vite.ssrLoadModule('/src/WorkspaceView.jsx')
+  const operation = { current: '' }; let renderer; globalThis.IS_REACT_ACT_ENVIRONMENT = true
+  function Harness() {
+    const [state, setState] = useState({ transcript: [], draft: 'Connect Drive', note: '', busy: false, pending: null, action: null })
+    const id = useRef(0)
+    return React.createElement(module.Assistant, { workspaceId: 'workspace-1', workspaceRevision: 4,
+      enabled: true, readOnly: false, state, setState, nextId: () => ++id.current, operationRef: operation,
+      refresh: async () => { refreshes += 1; throw new Error('refresh unavailable') } })
+  }
+  const priorConsoleError = console.error; console.error = () => {}
+  try {
+    await act(async () => { renderer = TestRenderer.create(React.createElement(Harness)) })
+    const form = () => renderer.root.findByProps({ className: 'composer' })
+    await act(async () => { form().props.onSubmit({ preventDefault() {} }) })
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    assert.equal(refreshes, 1)
+    assert.equal(requests.length, 1)
+    assert.equal(JSON.stringify(renderer.toJSON()).includes('Workspace refresh failed. Reload before retrying.'), true)
+    await act(async () => { form().props.onSubmit({ preventDefault() {} }) })
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    assert.deepEqual(requests.map(({ idempotency_key }) => idempotency_key), ['turn-fixed-1', 'turn-fixed-1'])
+  } finally {
+    if (renderer) await act(async () => { renderer.unmount() })
+    console.error = priorConsoleError; Date.now = originalNow; await vite.close()
+    for (const [name, descriptor] of originals) {
+      if (descriptor) Object.defineProperty(globalThis, name, descriptor)
+      else delete globalThis[name]
+    }
+  }
+})
+
+test('rendered Assistant reuses retry identity for unchanged trimmed text and replaces it after an edit', async () => {
+  const originals = new Map()
+  for (const [name, value] of Object.entries({ location: { hostname: 'cordia.example.test' },
+    localStorage: { getItem: () => null }, document: { activeElement: null } })) {
+    originals.set(name, Object.getOwnPropertyDescriptor(globalThis, name))
+    Object.defineProperty(globalThis, name, { configurable: true, writable: true, value })
+  }
+  const originalNow = Date.now
+  Date.now = () => Number.parseInt('fixed', 36)
+  const requests = []
+  Object.defineProperty(globalThis, 'fetch', { configurable: true, writable: true, value: async (_url, options) => {
+    requests.push(JSON.parse(options.body))
+    if (requests.length === 2) return { ok: false, status: 500,
+      json: async () => ({ ok: false, error: 'provider failed' }) }
+    throw new Error('connection lost')
+  } })
+  const vite = await createServer({ configFile: false, server: { middlewareMode: true } })
+  const module = await vite.ssrLoadModule('/src/WorkspaceView.jsx')
+  const operation = { current: '' }; let renderer; globalThis.IS_REACT_ACT_ENVIRONMENT = true
+  function Harness() {
+    const [state, setState] = useState({ transcript: [], draft: 'Connect Drive', note: '', busy: false, pending: null, action: null })
+    const id = useRef(0)
+    return React.createElement(module.Assistant, { workspaceId: 'workspace-1', workspaceRevision: 4,
+      enabled: true, readOnly: false, state, setState, nextId: () => ++id.current, operationRef: operation })
+  }
+  const priorConsoleError = console.error; console.error = () => {}
+  try {
+    await act(async () => { renderer = TestRenderer.create(React.createElement(Harness)) })
+    const form = () => renderer.root.findByProps({ className: 'composer' })
+    const input = () => renderer.root.findByProps({ id: 'cordia-message' })
+    await act(async () => { form().props.onSubmit({ preventDefault() {} }) })
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    await act(async () => { input().props.onChange({ target: { value: '  Connect Drive  ' } }) })
+    await act(async () => { form().props.onSubmit({ preventDefault() {} }) })
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    await act(async () => { input().props.onChange({ target: { value: 'Connect Drive' } }) })
+    await act(async () => { form().props.onSubmit({ preventDefault() {} }) })
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    await act(async () => { input().props.onChange({ target: { value: 'Connect GitHub' } }) })
+    await act(async () => { form().props.onSubmit({ preventDefault() {} }) })
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    assert.equal(requests.length, 4)
+    assert.equal(requests[0].idempotency_key, requests[1].idempotency_key)
+    assert.equal(requests[1].idempotency_key, requests[2].idempotency_key)
+    assert.notEqual(requests[2].idempotency_key, requests[3].idempotency_key)
+  } finally {
+    if (renderer) await act(async () => { renderer.unmount() })
+    console.error = priorConsoleError; Date.now = originalNow; await vite.close()
+    for (const [name, descriptor] of originals) {
+      if (descriptor) Object.defineProperty(globalThis, name, descriptor)
+      else delete globalThis[name]
+    }
+  }
 })
 
 test('rendered production Assistant submits one revisioned turn and refreshes once after a proposal', async () => {

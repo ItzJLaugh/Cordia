@@ -664,6 +664,10 @@ export function assistantTurnFailed(state, note, preserveRetry = false) {
   }
 }
 
+export function assistantRevisionConflict(state, note) {
+  return assistantTurnFailed(state, note, true)
+}
+
 const SKILL_ACTION_KEYS = ['enabled', 'id', 'kind', 'reason', 'request']
 
 function runnableSkillAction(action) {

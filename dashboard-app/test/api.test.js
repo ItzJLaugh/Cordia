@@ -205,3 +205,32 @@ test('API errors distinguish signed-out, rate-limited, and offline states withou
     restoreGlobals(originals)
   }
 })
+
+test('only the exact bounded revision conflict response is retryable', async () => {
+  const originals = new Map()
+  replaceGlobal('location', { hostname: 'cordia.example.test' }, originals)
+  replaceGlobal('localStorage', { getItem: () => null }, originals)
+
+  try {
+    const { apiErrorKind, postRun } = await import('../src/api.js?revision-conflict-contract')
+    replaceGlobal('fetch', async () => ({
+      ok: false, status: 409, json: async () => ({ ok: false, error: 'revision_conflict' }),
+    }), originals)
+    await assert.rejects(postRun('workspace-1', 4, 'Connect Drive', 'turn-fixed'), (error) => {
+      assert.equal(apiErrorKind(error), 'revision-conflict')
+      assert.equal(error.definitive, false)
+      return true
+    })
+
+    globalThis.fetch = async () => ({
+      ok: false, status: 409, json: async () => ({ ok: false, error: 'revision_conflict', detail: 'untrusted' }),
+    })
+    await assert.rejects(postRun('workspace-1', 4, 'Connect Drive', 'turn-fixed'), (error) => {
+      assert.equal(apiErrorKind(error), 'error')
+      assert.equal(error.definitive, true)
+      return true
+    })
+  } finally {
+    restoreGlobals(originals)
+  }
+})
