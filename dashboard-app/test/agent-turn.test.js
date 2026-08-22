@@ -6,12 +6,12 @@ import { createServer } from 'vite'
 
 import { agentTurnModel, assistantGreeting } from '../src/workspace-view.js'
 
-test('a proposed connector renders a setup action without claiming connected', () => {
-  const next = agentTurnModel({ ok: true, speech: 'I can set that up.', revision: 5,
+test('a proposed connector accepts the fixed server copy without claiming connected', () => {
+  const next = agentTurnModel({ ok: true, speech: 'I prepared a setup card for Issue tracker.', revision: 5,
     action: { kind: 'propose_connector', state: 'setup_required',
       connector_id: 'issue_tracker', setup_kind: 'api_key' } })
   assert.deepEqual(next, {
-    text: 'I can set that up.', revision: 5,
+    text: 'I prepared a setup card for Issue tracker.', revision: 5,
     action: { kind: 'propose_connector', state: 'setup_required',
       connector_id: 'issue_tracker', setup_kind: 'api_key', label: 'Set up issue tracker' },
   })
@@ -24,6 +24,7 @@ test('agent turn model admits only the safe canonical response shape', () => {
   })
   for (const bad of [
     { ok: true, speech: 'Hello.', action: null, revision: 0, secret_ref: 'nope' },
+    { ok: true, speech: 'Hello.', action: null, revision: 0, providerSpeech: 'Provider sentinel prose.' },
     { ok: true, speech: 'C:\\private', action: null, revision: 0 },
     { ok: true, speech: 'Hello.', action: { kind: 'shell', state: 'run' }, revision: 0 },
   ]) assert.equal(agentTurnModel(bad), null)
@@ -51,7 +52,7 @@ test('rendered production Assistant submits one revisioned turn and refreshes on
   replace('fetch', async (_url, options) => {
     requests.push(options)
     return { ok: true, status: 200, json: async () => ({
-      ok: true, speech: 'I can set that up.', revision: 5,
+      ok: true, speech: 'I prepared a setup card for issue tracker.', revision: 5,
       action: { kind: 'propose_connector', state: 'setup_required',
         connector_id: 'issue_tracker', setup_kind: 'api_key' },
     }) }
@@ -115,7 +116,7 @@ test('rendered Assistant retries an ambiguous committed proposal with the same i
   Object.defineProperty(globalThis, 'fetch', { configurable: true, writable: true, value: async (_url, options) => {
     requests.push(JSON.parse(options.body))
     if (requests.length === 1) throw new Error('lost response after commit')
-    return { ok: true, status: 200, json: async () => ({ ok: true, speech: 'I can set that up.', revision: 5,
+    return { ok: true, status: 200, json: async () => ({ ok: true, speech: 'I prepared a setup card for issue tracker.', revision: 5,
       action: { kind: 'propose_connector', state: 'setup_required', connector_id: 'issue_tracker', setup_kind: 'api_key' } }) }
   } })
   const vite = await createServer({ configFile: false, server: { middlewareMode: true } })
@@ -162,7 +163,7 @@ test('rendered Assistant retries a malformed successful response with the same i
     requests.push(JSON.parse(options.body))
     const body = requests.length === 1
       ? { ok: true, speech: 'Committed but malformed.', revision: 5, action: {} }
-      : { ok: true, speech: 'I can set that up.', revision: 5,
+      : { ok: true, speech: 'I prepared a setup card for issue tracker.', revision: 5,
           action: { kind: 'propose_connector', state: 'setup_required', connector_id: 'issue_tracker', setup_kind: 'api_key' } }
     return { ok: true, status: 200, json: async () => body }
   } })

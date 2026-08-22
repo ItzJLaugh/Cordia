@@ -4,16 +4,17 @@ from __future__ import annotations
 from copy import deepcopy
 import json
 import re
+import unicodedata
 
 from . import operator_profile
 
 
 _ACTION_FIELDS = {
     "speak": {"kind", "speech"},
-    "propose_connector": {"kind", "speech", "proposal"},
-    "create_artifact": {"kind", "speech", "proposal"},
-    "propose_skill": {"kind", "speech", "proposal"},
-    "run_approved_skill": {"kind", "speech", "proposal"},
+    "propose_connector": {"kind", "proposal"},
+    "create_artifact": {"kind", "proposal"},
+    "propose_skill": {"kind", "proposal"},
+    "run_approved_skill": {"kind", "proposal"},
 }
 _PROPOSAL_FIELDS = {
     "propose_connector": {"connector_id", "display_name", "setup_kind", "purpose"},
@@ -25,94 +26,18 @@ _ID = re.compile(r"^[a-z][a-z0-9_]{0,79}$")
 _REQUEST_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$")
 _SAFE_SETUP_KINDS = {"api_key", "openapi", "remote_mcp"}
 _SAFE_VIEW_MODES = {"dash", "list", "document"}
-_CLAUSE_SPLIT = re.compile(r"(?<=[.!?;])\s*|(?:\r?\n)+")
-_COORDINATED_CLAUSE_SPLIT = re.compile(r"\s*,?\s+(?:and|but|or|nor|yet|so)\s+", re.IGNORECASE)
-_LEADING_COORDINATOR = re.compile(
-    r"^(?:(?:and|but|or|nor|yet|so|then|however|also|instead|now)\b\s*)+", re.IGNORECASE)
-_CONDITIONAL_CLAUSE = re.compile(r"^(?:if|when|unless|whether|suppose|assuming)\b", re.IGNORECASE)
-_AGENT_COMPLETION = re.compile(
-    r"^(?:i(?:['’]ve)?|we(?:['’]ve)?|cordia|(?:the\s+)?(?:agent|assistant))\b"
-    r"(?:\s+\w+){0,6}\s+"
-    r"(?:connected|completed|approved|executed|ran|run|deployed|created|configured|finished|enabled|activated|set\s+up)\b",
+_OPERATIONAL_TOKEN = re.compile(
+    r"\b(?:connect\w*|configur\w*|setup|setups|run|runs|running|ran|execut\w*|"
+    r"deploy\w*|creat\w*|approv\w*|complet\w*|live|enabled|active|ready|available)\b",
     re.IGNORECASE,
 )
-_AGENT_NEGATION = re.compile(r"\b(?:no|never|not(?!\s+only\b))\b", re.IGNORECASE)
-_AGENT_MODAL = re.compile(
-    r"\b(?:would|could|might|may|should|can|will)\b", re.IGNORECASE)
-_BACKEND_STATE = re.compile(
-    r"^(?P<subject>.+?)\s+(?:is|was|were|has|have|had)(?:\s+been)?\s+"
-    r"(?:(?:fully|successfully|now|already)\s+)*(?P<state>connected|completed|approved|"
-    r"executed|ran|run|deployed|created|configured|finished|enabled|active|ready|live|available)\b(?P<tail>.*)$",
-    re.IGNORECASE,
+_OPERATIONAL_CLARIFICATION = (
+    "I can discuss that, but workspace status and changes must use a Cordia action."
 )
-_BACKEND_BARE_COMPLETION = re.compile(
-    r"^(?P<subject>.+?)\s+(?:(?:fully|successfully|now|already)\s+)*"
-    r"(?P<state>connected|completed|approved|executed|ran|run|deployed|created|configured|finished|enabled|active|ready|live)\b(?P<tail>.*)$",
-    re.IGNORECASE,
-)
-_BACKEND_ENTITY = re.compile(
-    r"\b(?:connector|integration|account|service|app|repository|workspace|skill|action(?!\s+plan\b))\b",
-    re.IGNORECASE,
-)
-_EXPLANATORY_BACKEND_STATE = re.compile(r"(?:in the catalog|after approval)", re.IGNORECASE)
 
 
 class InvalidAgentResponse(ValueError):
     """The configured model did not return one safe, exact action envelope."""
-
-
-def _known_backend_names(names) -> tuple[str, ...]:
-    """Use only bounded, validated connector names rather than guessed proper nouns."""
-    result = []
-    for name in names if isinstance(names, (list, tuple, set)) else ():
-        try:
-            clean = _safe_text(name, 160, "unsafe").casefold()
-        except ValueError:
-            continue
-        if clean not in result:
-            result.append(clean)
-        if len(result) == 30:
-            break
-    return tuple(result)
-
-
-def _contains_backend_entity(value: str, known_names: tuple[str, ...]) -> bool:
-    lowered = value.casefold()
-    return bool(_BACKEND_ENTITY.search(value) or any(
-        re.search(r"(?<!\w)" + re.escape(name) + r"(?!\w)", lowered)
-        for name in known_names))
-
-
-def _false_speak_claim(speech: str, known_connector_names=()) -> bool:
-    """Classify each declarative clause; questions and conditions cannot mask others."""
-    known_names = _known_backend_names(known_connector_names)
-    clauses = (subclause for clause in _CLAUSE_SPLIT.split(speech)
-               for subclause in _COORDINATED_CLAUSE_SPLIT.split(clause))
-    for clause in clauses:
-        clause = _LEADING_COORDINATOR.sub("", clause.strip())
-        if not clause or clause.endswith("?") or _CONDITIONAL_CLAUSE.match(clause):
-            continue
-        bare_clause = clause.rstrip(".!?; ")
-        completion = _AGENT_COMPLETION.match(bare_clause)
-        # Only completed, indicative work is a false backend claim.  Keep this
-        # clause-local so a counterfactual cannot excuse a later real claim.
-        if completion:
-            if not (_AGENT_NEGATION.search(completion.group(0))
-                    or _AGENT_MODAL.search(completion.group(0))):
-                return True
-            # Do not feed a negated or modal agent clause into the generic
-            # backend-state matcher, which cannot determine its polarity.
-            continue
-        state = _BACKEND_STATE.match(bare_clause) or _BACKEND_BARE_COMPLETION.match(bare_clause)
-        if not state:
-            continue
-        tail = state.group("tail").strip()
-        if state.group("state").casefold() == "available" and _EXPLANATORY_BACKEND_STATE.fullmatch(tail):
-            continue
-        if (_contains_backend_entity(state.group("subject"), known_names)
-                or _contains_backend_entity(tail, known_names)):
-            return True
-    return False
 
 
 def _exact_object(value, fields, message):
@@ -152,15 +77,14 @@ def validate_envelope(value: object, known_connector_names=()) -> dict:
     if kind not in _ACTION_FIELDS:
         raise ValueError("Invalid Cordia Agent action.")
     _exact_object(value, _ACTION_FIELDS[kind], "Invalid Cordia Agent action.")
-    raw_speech = value["speech"]
-    speech = _safe_text(raw_speech, 6000, "Invalid Cordia Agent action.")
-    if _false_speak_claim(raw_speech, known_connector_names):
-        raise ValueError("Invalid Cordia Agent action.")
     if kind == "speak":
+        speech = _safe_text(value["speech"], 6000, "Invalid Cordia Agent action.")
+        if _OPERATIONAL_TOKEN.search(unicodedata.normalize("NFKC", speech)):
+            speech = _OPERATIONAL_CLARIFICATION
         return {"kind": kind, "speech": speech}
     proposal = value["proposal"]
     _exact_object(proposal, _PROPOSAL_FIELDS[kind], "Invalid Cordia Agent action.")
-    out = {"kind": kind, "speech": speech, "proposal": {}}
+    out = {"kind": kind, "proposal": {}}
     if kind == "propose_connector":
         out["proposal"] = {
             "connector_id": _identifier(proposal["connector_id"], "Invalid Cordia Agent action."),
@@ -191,6 +115,22 @@ def validate_envelope(value: object, known_connector_names=()) -> dict:
     else:
         out["proposal"] = {"skill_id": _identifier(proposal["skill_id"], "Invalid Cordia Agent action.")}
     return out
+
+
+def public_action_copy(envelope: dict, action: dict | None) -> str:
+    """Return fixed public copy from a validated action envelope."""
+    del action
+    accepted = validate_envelope(envelope)
+    kind = accepted["kind"]
+    if kind == "propose_connector":
+        return f"I prepared a setup card for {accepted['proposal']['display_name']}."
+    if kind == "create_artifact":
+        return "I prepared a proposed workspace artifact."
+    if kind == "propose_skill":
+        return "I prepared a proposed skill for review."
+    if kind == "run_approved_skill":
+        return "This skill requires approval before it can run."
+    raise ValueError("Invalid Cordia Agent action.")
 
 
 def _summary(value, keys):
@@ -271,20 +211,25 @@ def run_turn(context: dict, message: str, call_model) -> dict:
 
 
 def apply_proposal(workspace: dict, envelope: dict) -> tuple[dict, dict]:
-    accepted = validate_envelope(envelope)
+    candidate = envelope
+    if (isinstance(envelope, dict) and envelope.get("kind") != "speak"
+            and set(envelope) == {"kind", "speech", "proposal"}):
+        candidate = {"kind": envelope["kind"], "proposal": envelope["proposal"]}
+    accepted = validate_envelope(candidate)
     state = deepcopy(workspace if isinstance(workspace, dict) else {})
     revision = state.get("revision", 0)
     if isinstance(revision, bool) or not isinstance(revision, int) or revision < 0:
         revision = 0
     pending = state.get("pending_actions", [])
     state["pending_actions"] = deepcopy(pending) if isinstance(pending, list) else []
-    kind, speech = accepted["kind"], accepted["speech"]
+    kind = accepted["kind"]
     if kind == "speak":
-        return state, {"ok": True, "speech": speech, "action": None, "revision": revision}
+        return state, {"ok": True, "speech": accepted["speech"], "action": None, "revision": revision}
     if kind == "run_approved_skill":
-        return state, {"ok": True, "speech": speech, "revision": revision,
-                       "action": {"kind": kind, "state": "approval_required",
-                                  "skill_id": accepted["proposal"]["skill_id"]}}
+        action = {"kind": kind, "state": "approval_required",
+                  "skill_id": accepted["proposal"]["skill_id"]}
+        return state, {"ok": True, "speech": public_action_copy(accepted, action), "revision": revision,
+                       "action": action}
     action = {"kind": kind, **accepted["proposal"]}
     state["pending_actions"].append(action)
     state["revision"] = revision + 1
@@ -295,4 +240,5 @@ def apply_proposal(workspace: dict, envelope: dict) -> tuple[dict, dict]:
         public_action = {"kind": kind, "state": "proposal_required", "artifact_id": action["artifact_id"]}
     else:
         public_action = {"kind": kind, "state": "proposal_required", "skill_id": action["skill_id"]}
-    return state, {"ok": True, "speech": speech, "action": public_action, "revision": state["revision"]}
+    return state, {"ok": True, "speech": public_action_copy(accepted, action),
+                   "action": public_action, "revision": state["revision"]}

@@ -1,4 +1,5 @@
 import importlib
+import json
 import os
 import sys
 import unittest
@@ -208,7 +209,7 @@ class TestWorkspaceTurnRoute(unittest.TestCase):
     def test_proposal_commits_one_pending_action_and_one_revision(self):
         def proposal(_system, _message, max_tokens):
             self.model_calls.append(max_tokens)
-            return ('{"kind":"propose_connector","speech":"Set it up.","proposal":'
+            return ('{"kind":"propose_connector","proposal":'
                     '{"connector_id":"issues","display_name":"Issues","setup_kind":"api_key",'
                     '"purpose":"Review issues."}}')
         self.runtime.llm.call = proposal
@@ -217,6 +218,9 @@ class TestWorkspaceTurnRoute(unittest.TestCase):
         self.assertEqual(response["revision"], 1)
         self.assertEqual(response["action"], {"kind": "propose_connector", "state": "setup_required",
                                               "connector_id": "issues", "setup_kind": "api_key"})
+        self.assertEqual(response["speech"], "I prepared a setup card for Issues.")
+        self.assertNotIn("Provider sentinel prose.", json.dumps(response))
+        self.assertNotIn("Provider sentinel prose.", json.dumps(list(self.store.runs.values())))
         self.assertEqual(self.store.workspace["revision"], 1)
         self.assertEqual(len(self.store.workspace["pending_actions"]), 1)
 
@@ -243,7 +247,7 @@ class TestWorkspaceTurnRoute(unittest.TestCase):
     def test_interface_projection_recomputes_after_an_intervening_agent_revision(self):
         stale = workspace_state.empty("workspace_1")
         self.store.workspace, _ = cordia_agent.apply_proposal(stale, {
-            "kind": "propose_connector", "speech": "I can prepare that.", "proposal": {
+            "kind": "propose_connector", "proposal": {
                 "connector_id": "issues", "display_name": "Issues",
                 "setup_kind": "api_key", "purpose": "Review issues.",
             },
@@ -261,7 +265,7 @@ class TestWorkspaceTurnRoute(unittest.TestCase):
     def test_connector_refresh_recomputes_after_an_intervening_agent_revision(self):
         stale = workspace_state.empty("workspace_1")
         self.store.workspace, _ = cordia_agent.apply_proposal(stale, {
-            "kind": "propose_connector", "speech": "I can prepare that.", "proposal": {
+            "kind": "propose_connector", "proposal": {
                 "connector_id": "issues", "display_name": "Issues",
                 "setup_kind": "api_key", "purpose": "Review issues.",
             },
