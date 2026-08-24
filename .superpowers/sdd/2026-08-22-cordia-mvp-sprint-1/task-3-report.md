@@ -29,10 +29,13 @@ It ran 10 tests with 1 failure and 4 errors:
 - The deterministic transaction double records workspace and usage row locks
   and restores its snapshot when an injected run insert failure raises.
 
-The tests cover turns 1 through 10 incrementing exactly once, turn 11 mutating
-neither workspace nor runs, duplicate replay after exhaustion, missing and
-conflict paths, failed-commit rollback, two workspaces sharing one owner
-allowance, an independent second owner, and bounded read-only usage projection.
+The initial tests cover turns 1 through 10 incrementing exactly once, turn 11
+mutating neither workspace nor runs, duplicate replay after exhaustion, missing
+and conflict paths, run-insert statement-failure rollback, two workspaces
+sharing one owner allowance, an independent second owner, and bounded read-only
+usage projection. Commit-phase failure coverage was added in review round 1
+below; the initial report had incorrectly described the run-insert failure as a
+failed-commit test.
 
 ## Minimal store change
 
@@ -109,9 +112,11 @@ Focused GREEN results:
   used 9, only one transaction can observe and consume the remaining turn; the
   other observes 10 and returns `limit` before workspace/run mutation.
 - The workspace update, successful run insert, and usage increment share one
-  transaction. A failed insert or commit rolls all three back. Missing,
-  validation, configuration, provider, conflict, replay, transactional limit,
-  and failed-commit paths therefore do not consume usage.
+  transaction. The initial deterministic test proved rollback for a failed run
+  insert, not for a commit-phase failure. Missing, validation, configuration,
+  provider, conflict, replay, transactional limit, and statement-failure paths
+  therefore do not consume usage. Review round 1 adds distinct commit-phase
+  rollback evidence.
 - Another email locks and increments a different usage row, so its allowance is
   independent.
 
@@ -150,3 +155,54 @@ deployment was called or verified.
 ## Commit
 
 Task-only commit message: `feat: enforce ten free Cordia Agent turns`.
+
+## Review round 1/5: commit-phase rollback evidence
+
+### Important finding
+
+`backend/tests/test_workspace_turn_store.py:286` did not test the brief's
+required failed-commit path. It injected a failure during `INSERT INTO
+surveyor_runs`; the connection double could not fail during transaction commit.
+The earlier "failed-commit rollback" wording was unsupported and has been
+corrected above to "run-insert statement-failure rollback."
+
+### RED evidence
+
+A separate commit-phase test was added without changing the connection double.
+It sets a one-shot `fail_commit` mode on `TurnConnection`, executes the real
+`commit_workspace_turn`, expects `RuntimeError: simulated transaction commit
+failure`, and asserts workspace, runs, and usage all match the pre-transaction
+snapshot.
+
+```text
+py backend/tests/test_workspace_turn_store.py
+Ran 11 tests in 0.016s
+FAILED (failures=1)
+AssertionError: RuntimeError not raised
+```
+
+This was the expected missing-double-behavior failure: the existing
+`TurnConnection.__exit__` returned normally during the commit phase.
+
+### Minimal test-double change
+
+- Added `TurnConnection.fail_commit`, defaulting false.
+- On a successful statement phase with `fail_commit` set, `__exit__` clears the
+  one-shot flag, restores the full database snapshot, and raises the simulated
+  commit failure.
+- Renamed the original combined case to
+  `test_statement_failure_and_uncommitted_paths_never_consume_usage`; it remains
+  the separate run-insert statement-failure test.
+- Added no production changes.
+
+### GREEN evidence
+
+| Command | Result |
+| --- | --- |
+| `py backend/tests/test_workspace_turn_store.py` | 11 passed |
+| `py backend/tests/test_workspace_turn_route.py` | 17 passed; existing optional dependency/local DSN warnings only |
+| dashboard `npm.cmd test` | not rerun because this round changes only the Python transaction double and report; no dashboard behavior or file changed |
+
+Commit-phase failure is now distinct from statement failure and proves the
+deterministic double's real-database atomicity model: workspace, successful run,
+and owner usage are all restored before the commit exception escapes.

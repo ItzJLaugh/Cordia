@@ -81,7 +81,9 @@ class TurnCursor:
 
 
 class TurnConnection:
-    def __init__(self, database): self.database = database
+    def __init__(self, database):
+        self.database = database
+        self.fail_commit = False
     def __enter__(self):
         self.snapshot = deepcopy(self.database.__dict__)
         return self
@@ -89,6 +91,11 @@ class TurnConnection:
         if exc_type:
             self.database.__dict__.clear()
             self.database.__dict__.update(self.snapshot)
+        elif self.fail_commit:
+            self.fail_commit = False
+            self.database.__dict__.clear()
+            self.database.__dict__.update(self.snapshot)
+            raise RuntimeError("simulated transaction commit failure")
         return False
     def cursor(self): return TurnCursor(self.database)
 
@@ -271,7 +278,7 @@ class TestWorkspaceTurnStore(unittest.TestCase):
         self.assertEqual(store.workspace_turn_usage("owner@example.test"),
                          {"used": 10, "limit": 10})
 
-    def test_failed_or_uncommitted_paths_never_consume_usage(self):
+    def test_statement_failure_and_uncommitted_paths_never_consume_usage(self):
         state = workspace_state.empty("workspace_1")
         self.assertEqual(store.commit_workspace_turn(
             "owner@example.test", "missing", 0, "missing_1",
@@ -291,6 +298,19 @@ class TestWorkspaceTurnStore(unittest.TestCase):
         self.assertEqual((self.database.workspaces, self.database.runs), before)
         self.assertEqual(store.workspace_turn_usage("owner@example.test"),
                          {"used": 0, "limit": 10})
+
+    def test_commit_phase_failure_rolls_back_workspace_run_and_usage(self):
+        next_state = workspace_state.empty("workspace_1")
+        next_state["title"] = "Must roll back"
+        before = deepcopy((self.database.workspaces, self.database.runs, self.database.usage))
+        self.connection.fail_commit = True
+
+        with self.assertRaisesRegex(RuntimeError, "simulated transaction commit failure"):
+            store.commit_workspace_turn(
+                "owner@example.test", "workspace_1", 0, "commit_failure_1",
+                "Safe request.", self.public(), next_state)
+
+        self.assertEqual((self.database.workspaces, self.database.runs, self.database.usage), before)
 
     def test_owner_allowance_is_shared_across_workspaces_and_independent_between_owners(self):
         for number in range(1, 11):
