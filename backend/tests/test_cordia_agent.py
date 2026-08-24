@@ -143,6 +143,10 @@ class TestCordiaAgent(unittest.TestCase):
             ["api_key", "openapi", "remote_mcp"],
         )
         self.assertEqual(schemas["propose_connector"]["unsupported_setup_action"], "speak")
+        self.assertEqual(schemas["propose_connector"]["unsupported_setup_response"], {
+            "kind": "speak",
+            "speech": "This request requires OAuth, which this Cordia beta does not support yet.",
+        })
 
     def test_context_has_only_compiled_memory_and_safe_workspace_summaries(self):
         state = workspace_state.empty("workspace_1")
