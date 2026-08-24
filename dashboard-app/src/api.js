@@ -39,6 +39,11 @@ function responseKind(status, body) {
   if (status === 409 && body && typeof body === 'object' && !Array.isArray(body)
       && Object.keys(body).sort().join('|') === 'error|ok'
       && body.ok === false && body.error === 'revision_conflict') return 'revision-conflict'
+  if (status === 402 && body && typeof body === 'object' && !Array.isArray(body)
+      && Object.keys(body).sort().join('|') === 'code|error|limit|ok|used'
+      && body.ok === false
+      && body.error === 'Free agent actions used. Upgrade to continue.'
+      && body.code === 'usage_limit' && body.used === 10 && body.limit === 10) return 'usage-limit'
   if (status === 429) return 'rate-limit'
   if (status === 503) return 'offline'
   return 'error'

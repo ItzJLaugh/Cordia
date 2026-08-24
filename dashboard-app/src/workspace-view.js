@@ -668,6 +668,10 @@ export function assistantRevisionConflict(state, note) {
   return assistantTurnFailed(state, note, true)
 }
 
+export function assistantUsageLimit(state) {
+  return assistantTurnFailed(state, 'Free agent actions used. Upgrade to continue.')
+}
+
 const SKILL_ACTION_KEYS = ['enabled', 'id', 'kind', 'reason', 'request']
 
 function runnableSkillAction(action) {

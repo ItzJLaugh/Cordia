@@ -11,6 +11,7 @@ import {
   assistantGreeting,
   assistantReplyModel,
   assistantRevisionConflict,
+  assistantUsageLimit,
   assistantTurnFailed,
   assistantTurnStarted,
   createSkillInteractionController,
@@ -103,7 +104,11 @@ export function Assistant({
           current, 'Workspace changed. Review the refreshed workspace and retry.'))
         return
       }
-      if (kind === 'signed-out') fail('Your session ended. Sign in again to send this. Your draft is safe.')
+      if (kind === 'usage-limit') {
+        operationRef.current = ''
+        setState((current) => assistantUsageLimit(current))
+      }
+      else if (kind === 'signed-out') fail('Your session ended. Sign in again to send this. Your draft is safe.')
       else if (kind === 'rate-limit') fail('Message limit reached. Wait a few minutes; your draft is safe.')
       else if (kind === 'offline') fail('The server is unreachable right now. Your draft is safe to send again.', true)
       else fail('That message did not get through. Your draft is safe to send again.', !error.definitive)

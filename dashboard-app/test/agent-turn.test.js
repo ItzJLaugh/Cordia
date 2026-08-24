@@ -51,6 +51,79 @@ test('revision conflict restores the draft and retains the turn identity', () =>
   })
 })
 
+test('usage limit failure preserves the draft and displays only the fixed upgrade copy', async () => {
+  const { assistantUsageLimit } = await import('../src/workspace-view.js?usage-limit-state')
+  assert.equal(typeof assistantUsageLimit, 'function')
+  const limited = assistantUsageLimit({
+    transcript: [{ id: 'pending-1', who: 'you', text: 'Connect Drive' }],
+    draft: '', note: '', busy: true,
+    pending: { id: 'pending-1', text: 'Connect Drive', idempotencyKey: 'turn-fixed' },
+  })
+  assert.deepEqual(limited, {
+    transcript: [],
+    draft: 'Connect Drive',
+    note: 'Free agent actions used. Upgrade to continue.',
+    busy: false,
+    pending: null,
+  })
+})
+
+test('rendered Assistant preserves the workspace and draft when free actions are exhausted', async () => {
+  const originals = new Map()
+  for (const [name, value] of Object.entries({ location: { hostname: 'cordia.example.test' },
+    localStorage: { getItem: () => null }, document: { activeElement: null } })) {
+    originals.set(name, Object.getOwnPropertyDescriptor(globalThis, name))
+    Object.defineProperty(globalThis, name, { configurable: true, writable: true, value })
+  }
+  const requests = []; let refreshes = 0
+  Object.defineProperty(globalThis, 'fetch', { configurable: true, writable: true, value: async (_url, options) => {
+    requests.push(JSON.parse(options.body))
+    return { ok: false, status: 402, json: async () => ({
+      ok: false,
+      error: 'Free agent actions used. Upgrade to continue.',
+      code: 'usage_limit',
+      used: 10,
+      limit: 10,
+    }) }
+  } })
+  const vite = await createServer({ configFile: false, server: { middlewareMode: true } })
+  const module = await vite.ssrLoadModule('/src/WorkspaceView.jsx')
+  const operation = { current: '' }; let renderer; globalThis.IS_REACT_ACT_ENVIRONMENT = true
+  function Harness() {
+    const [state, setState] = useState({
+      transcript: [], draft: 'Connect Drive', note: '', busy: false, pending: null, action: null,
+    })
+    const id = useRef(0)
+    return React.createElement(module.Assistant, {
+      workspaceId: 'workspace-1', workspaceRevision: 4,
+      enabled: true, readOnly: false, state, setState, nextId: () => ++id.current,
+      operationRef: operation, refresh: async () => { refreshes += 1 },
+    })
+  }
+  const priorConsoleError = console.error; console.error = () => {}
+  try {
+    await act(async () => { renderer = TestRenderer.create(React.createElement(Harness)) })
+    await act(async () => {
+      renderer.root.findByProps({ className: 'composer' }).props.onSubmit({ preventDefault() {} })
+    })
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    assert.equal(requests.length, 1)
+    assert.equal(refreshes, 0)
+    assert.equal(operation.current, '')
+    assert.equal(renderer.root.findByProps({ id: 'cordia-message' }).props.value, 'Connect Drive')
+    assert.equal(renderer.root.findAllByProps({ className: 'message you' }).length, 0)
+    assert.equal(JSON.stringify(renderer.toJSON()).includes(
+      'Free agent actions used. Upgrade to continue.'), true)
+  } finally {
+    if (renderer) await act(async () => { renderer.unmount() })
+    console.error = priorConsoleError; await vite.close()
+    for (const [name, descriptor] of originals) {
+      if (descriptor) Object.defineProperty(globalThis, name, descriptor)
+      else delete globalThis[name]
+    }
+  }
+})
+
 test('rendered Assistant stays locked until a deferred conflict refresh applies the new revision', async () => {
   const originals = new Map()
   for (const [name, value] of Object.entries({ location: { hostname: 'cordia.example.test' },

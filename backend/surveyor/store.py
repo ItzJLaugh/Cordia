@@ -153,6 +153,12 @@ CREATE TABLE IF NOT EXISTS surveyor_workspaces(
 );
 CREATE INDEX IF NOT EXISTS surveyor_workspaces_email_idx ON surveyor_workspaces(email, updated);
 
+CREATE TABLE IF NOT EXISTS surveyor_usage(
+    email TEXT PRIMARY KEY,
+    successful_turns INTEGER NOT NULL DEFAULT 0 CHECK(successful_turns >= 0),
+    updated TIMESTAMPTZ NOT NULL DEFAULT (now() AT TIME ZONE 'utc')
+);
+
 ALTER TABLE surveyor_runs ADD COLUMN IF NOT EXISTS idempotency_key TEXT;
 ALTER TABLE surveyor_runs ADD COLUMN IF NOT EXISTS turn_kind TEXT;
 DROP INDEX IF EXISTS surveyor_runs_owner_workspace_key_idx;
@@ -808,6 +814,15 @@ def has_workspace_turns(email: str, workspace_id: str) -> bool:
         return cursor.fetchone() is not None
 
 
+def workspace_turn_usage(email: str) -> dict:
+    """Return the bounded successful-turn allowance for one owner."""
+    with _conn() as connection, connection.cursor() as cursor:
+        cursor.execute("SELECT successful_turns FROM surveyor_usage WHERE email=%s", (email,))
+        row = cursor.fetchone()
+    used = row[0] if row and isinstance(row[0], int) and not isinstance(row[0], bool) else 0
+    return {"used": max(0, min(used, 10)), "limit": 10}
+
+
 def commit_workspace_turn(email: str, workspace_id: str, expected_revision: int,
                           key: str, user_message: str, public_result: dict,
                           next_state: dict) -> dict:
@@ -832,6 +847,14 @@ def commit_workspace_turn(email: str, workspace_id: str, expected_revision: int,
             return {"status": "conflict"}
         if stored_revision != expected_revision:
             return {"status": "conflict"}
+        cursor.execute("INSERT INTO surveyor_usage(email) VALUES (%s) "
+                       "ON CONFLICT (email) DO NOTHING", (email,))
+        cursor.execute("SELECT successful_turns FROM surveyor_usage "
+                       "WHERE email=%s FOR UPDATE", (email,))
+        usage = cursor.fetchone()
+        used = usage[0] if usage and isinstance(usage[0], int) else 10
+        if used >= 10:
+            return {"status": "limit", "usage": {"used": 10, "limit": 10}}
         cursor.execute("UPDATE surveyor_workspaces SET state=%s, "
                        "updated=(now() AT TIME ZONE 'utc') WHERE id=%s AND email=%s",
                        (_J(next_state), workspace_id, email))
@@ -841,6 +864,8 @@ def commit_workspace_turn(email: str, workspace_id: str, expected_revision: int,
                        (workspace_id, email, str(user_message)[:6000],
                         str(public_result.get("speech") or "")[:4000],
                         _J(public_result), key, _WORKSPACE_TURN_KIND))
+        cursor.execute("UPDATE surveyor_usage SET successful_turns=successful_turns+1, "
+                       "updated=(now() AT TIME ZONE 'utc') WHERE email=%s", (email,))
     return {"status": "committed", "result": deepcopy(public_result)}
 
 

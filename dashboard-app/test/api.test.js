@@ -234,3 +234,45 @@ test('only the exact bounded revision conflict response is retryable', async () 
     restoreGlobals(originals)
   }
 })
+
+test('only the exact usage-limit response is classified and exposed', async () => {
+  const originals = new Map()
+  replaceGlobal('location', { hostname: 'cordia.example.test' }, originals)
+  replaceGlobal('localStorage', { getItem: () => null }, originals)
+  const fixed = {
+    ok: false,
+    error: 'Free agent actions used. Upgrade to continue.',
+    code: 'usage_limit',
+    used: 10,
+    limit: 10,
+  }
+
+  try {
+    const { apiErrorKind, postRun } = await import('../src/api.js?usage-limit-contract')
+    replaceGlobal('fetch', async () => ({
+      ok: false, status: 402, json: async () => fixed,
+    }), originals)
+    await assert.rejects(postRun('workspace-1', 4, 'Connect Drive', 'turn-fixed'), (error) => {
+      assert.equal(apiErrorKind(error), 'usage-limit')
+      assert.equal(error.message, fixed.error)
+      assert.equal(error.definitive, true)
+      return true
+    })
+
+    for (const body of [
+      { ...fixed, detail: 'untrusted' },
+      { ...fixed, used: 9 },
+      { ...fixed, limit: '10' },
+      { ok: false, error: 'payment required' },
+    ]) {
+      globalThis.fetch = async () => ({ ok: false, status: 402, json: async () => body })
+      await assert.rejects(postRun('workspace-1', 4, 'Connect Drive', 'turn-fixed'), (error) => {
+        assert.equal(apiErrorKind(error), 'error')
+        assert.equal(error.definitive, true)
+        return true
+      })
+    }
+  } finally {
+    restoreGlobals(originals)
+  }
+})

@@ -967,6 +967,12 @@ class H(BaseHTTPRequestHandler):
         if prior:
             self._json(prior)
             return
+        usage = surveyor.store.workspace_turn_usage(email)
+        if usage["used"] >= usage["limit"]:
+            self._json({"ok": False,
+                        "error": "Free agent actions used. Upgrade to continue.",
+                        "code": "usage_limit", **usage}, 402)
+            return
         artifacts = surveyor.store.get_artifacts(email) or {}
         memory = str(artifacts.get('source/memory.md') or '')
         recent = surveyor.store.recent_workspace_turns(email, request['id'])
@@ -989,6 +995,11 @@ class H(BaseHTTPRequestHandler):
             return
         if commit['status'] == 'conflict':
             self._json({'ok': False, 'error': 'revision_conflict'}, 409)
+            return
+        if commit['status'] == 'limit':
+            self._json({"ok": False,
+                        "error": "Free agent actions used. Upgrade to continue.",
+                        "code": "usage_limit", **commit["usage"]}, 402)
             return
         self._json(commit['result'])
 

@@ -26,6 +26,8 @@ class MemoryStore:
         self.save_status = None
         self.interface_transaction_status = None
         self.connector_transaction_status = None
+        self.usage = 0
+        self.commit_limit = False
 
     def get_workspace(self, _email, workspace_id):
         if workspace_id != "workspace_1":
@@ -41,18 +43,25 @@ class MemoryStore:
     def recent_workspace_turns(self, _email, _workspace_id):
         return []
 
+    def workspace_turn_usage(self, _email):
+        return {"used": self.usage, "limit": 10}
+
     def commit_workspace_turn(self, _email, workspace_id, expected_revision, key,
                               user_message, public_result, next_state):
         self.write_calls.append((workspace_id, expected_revision, key, user_message))
         prior = self.runs.get((workspace_id, key))
         if prior:
             return {"status": "prior", "result": deepcopy(prior)}
+        if self.commit_limit:
+            self.usage = 10
+            return {"status": "limit", "usage": {"used": 10, "limit": 10}}
         if workspace_id != "workspace_1":
             return {"status": "missing"}
         if self.workspace["revision"] != expected_revision:
             return {"status": "conflict"}
         self.workspace = deepcopy(next_state)
         self.runs[(workspace_id, key)] = deepcopy(public_result)
+        self.usage += 1
         return {"status": "committed", "result": deepcopy(public_result)}
 
     def save_workspace(self, _email, workspace_id, state, expected_revision):
@@ -186,16 +195,55 @@ class TestWorkspaceTurnRoute(unittest.TestCase):
         self.assertEqual(response["ok"], False)
         self.assertEqual(self.model_calls, [])
         self.assertEqual(self.store.write_calls, [])
+        self.assertEqual(self.store.usage, 0)
 
     def test_missing_workspace_and_prior_idempotency_never_call_model(self):
         response, status = self.post(self.valid(id="missing"))
         self.assertEqual((response, status), ({"ok": False, "error": "workspace not found"}, 404))
+        self.assertEqual(self.store.usage, 0)
         self.store.runs[("workspace_1", "turn_abc123")] = {
             "ok": True, "speech": "Prior speech.", "action": None, "revision": 0}
         response, status = self.post(self.valid())
         self.assertEqual((response, status), (self.store.runs[("workspace_1", "turn_abc123")], 200))
         self.assertEqual(self.model_calls, [])
         self.assertEqual(self.store.write_calls, [])
+
+    def test_exhausted_owner_is_rejected_before_model_but_prior_replay_still_wins(self):
+        self.store.usage = 10
+        limited, status = self.post(self.valid())
+        self.assertEqual((limited, status), ({
+            "ok": False,
+            "error": "Free agent actions used. Upgrade to continue.",
+            "code": "usage_limit",
+            "used": 10,
+            "limit": 10,
+        }, 402))
+        self.assertEqual(self.model_calls, [])
+        self.assertEqual(self.store.write_calls, [])
+
+        prior = {"ok": True, "speech": "Prior speech.", "action": None, "revision": 0}
+        self.store.runs[("workspace_1", "turn_abc123")] = prior
+        replay, replay_status = self.post(self.valid())
+        self.assertEqual((replay, replay_status), (prior, 200))
+        self.assertEqual(self.model_calls, [])
+        self.assertEqual(self.store.write_calls, [])
+
+    def test_transactional_limit_race_returns_the_identical_response_without_mutation(self):
+        self.store.usage = 9
+        self.store.commit_limit = True
+        before = deepcopy((self.store.workspace, self.store.runs))
+
+        response, status = self.post(self.valid())
+
+        self.assertEqual((response, status), ({
+            "ok": False,
+            "error": "Free agent actions used. Upgrade to continue.",
+            "code": "usage_limit",
+            "used": 10,
+            "limit": 10,
+        }, 402))
+        self.assertEqual(self.model_calls, [700])
+        self.assertEqual((self.store.workspace, self.store.runs), before)
 
     def test_speak_uses_production_route_and_keeps_the_exact_revision(self):
         response, status = self.post(self.valid())
@@ -205,12 +253,14 @@ class TestWorkspaceTurnRoute(unittest.TestCase):
         self.assertEqual(self.model_calls, [700])
         self.assertEqual(self.store.workspace["revision"], 0)
         self.assertEqual(len(self.store.write_calls), 1)
+        self.assertEqual(self.store.usage, 1)
 
     def test_turn_revision_conflict_uses_the_exact_dashboard_contract(self):
         self.store.workspace["revision"] = 1
         response, status = self.post(self.valid())
         self.assertEqual((response, status),
                          ({"ok": False, "error": "revision_conflict"}, 409))
+        self.assertEqual(self.store.usage, 0)
 
     def test_proposal_commits_one_pending_action_and_one_revision(self):
         def proposal(_system, _message, max_tokens):
@@ -303,6 +353,25 @@ class TestWorkspaceTurnRoute(unittest.TestCase):
                                                 "error": "Cordia Agent could not complete that request."}, 502))
         self.assertEqual(self.store.write_calls, [])
         self.assertEqual(self.store.workspace["revision"], 0)
+        self.assertEqual(self.store.usage, 0)
+
+    def test_missing_model_configuration_does_not_consume_usage(self):
+        class MissingConfiguration(RuntimeError):
+            pass
+
+        def unavailable(*_args, **_kwargs):
+            raise MissingConfiguration("simulated missing configuration")
+
+        self.runtime.model_provider = SimpleNamespace(ModelUnavailable=MissingConfiguration)
+        self.runtime.llm.call = unavailable
+
+        response, status = self.post(self.valid())
+
+        self.assertEqual((response, status),
+                         ({"ok": False, "error": "Cordia Agent is not configured."}, 503))
+        self.assertEqual(self.store.write_calls, [])
+        self.assertEqual(self.store.workspace["revision"], 0)
+        self.assertEqual(self.store.usage, 0)
 
     def test_human_mutation_returns_the_actual_saved_canonical_workspace(self):
         response, status = self.post({
