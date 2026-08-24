@@ -253,6 +253,15 @@ inference and offline operation are not MVP requirements.
 Removal happens only after the canonical journey and migration evidence prove
 the older path is unused.
 
+| Contract | Existing owner | Sprint 1 action |
+| --- | --- | --- |
+| Workspace | `workspace_state.py` and `store.py` | reuse |
+| Model provider | `model_provider.py` | configure and verify |
+| Agent action | `cordia_agent.py` | reuse after Task 4C |
+| Connector | `connector_runtime.py` | defer execution to Sprint 2 |
+| Artifact | `workspace_state.py` renderer projection | defer real result to Sprint 3 |
+| Skill | `skills.py` and capability gateway | defer generated execution to Sprint 3 |
+
 ## 8. Explicit non-goals
 
 These do not block the beta:
