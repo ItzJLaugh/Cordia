@@ -134,6 +134,16 @@ class TestCordiaAgent(unittest.TestCase):
             with self.subTest(kind=kind):
                 self.assertEqual(schemas[kind]["fields"], ["kind", "proposal"])
 
+    def test_prompt_exposes_supported_connector_setup_kinds(self):
+        prompt = cordia_agent.build_system_prompt({"memory": "", "workspace": {}, "recent_turns": []})
+        schemas = json.loads(prompt.split("Allowed actions and exact fields: ", 1)[1].split("\n", 1)[0])
+
+        self.assertEqual(
+            schemas["propose_connector"]["allowed_setup_kinds"],
+            ["api_key", "openapi", "remote_mcp"],
+        )
+        self.assertEqual(schemas["propose_connector"]["unsupported_setup_action"], "speak")
+
     def test_context_has_only_compiled_memory_and_safe_workspace_summaries(self):
         state = workspace_state.empty("workspace_1")
         state.update({
@@ -163,6 +173,22 @@ class TestCordiaAgent(unittest.TestCase):
         with self.assertRaises(cordia_agent.InvalidAgentResponse):
             cordia_agent.run_turn({}, "Hello", lambda *_args, **_kwargs: json.dumps({
                 **CONNECTOR, "speech": "Provider sentinel prose."}))
+
+    def test_run_turn_reports_unsupported_oauth_without_proposing_fake_setup(self):
+        oauth = deepcopy(CONNECTOR)
+        oauth["proposal"].update({
+            "connector_id": "google_drive",
+            "display_name": "Google Drive",
+            "setup_kind": "oauth",
+        })
+
+        result = cordia_agent.run_turn(
+            {}, "Connect Google Drive", lambda *_args, **_kwargs: json.dumps(oauth))
+
+        self.assertEqual(result, {
+            "kind": "speak",
+            "speech": "This request requires OAuth, which this Cordia beta does not support yet.",
+        })
 
     def test_apply_proposal_persists_only_action_and_deterministic_copy(self):
         state = workspace_state.empty("workspace_1")

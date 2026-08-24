@@ -35,6 +35,7 @@ _OPERATIONAL_TOKEN = re.compile(
 _OPERATIONAL_CLARIFICATION = (
     "I can discuss that, but workspace status and changes must use a Cordia action."
 )
+_OAUTH_UNAVAILABLE = "This request requires OAuth, which this Cordia beta does not support yet."
 
 
 class InvalidAgentResponse(ValueError):
@@ -200,6 +201,10 @@ def build_system_prompt(context: dict) -> str:
     schemas = {kind: {"fields": sorted(fields),
                       "proposal_fields": sorted(_PROPOSAL_FIELDS.get(kind, set()))}
                for kind, fields in _ACTION_FIELDS.items()}
+    schemas["propose_connector"].update({
+        "allowed_setup_kinds": sorted(_SAFE_SETUP_KINDS),
+        "unsupported_setup_action": "speak",
+    })
     return ("You are Cordia Agent. Return exactly one JSON action and never claim backend work occurred. "
             "Allowed actions and exact fields: " + json.dumps(schemas, sort_keys=True) + "\n"
             "Compiled memory and safe workspace summaries:\n" + json.dumps(safe, ensure_ascii=False, sort_keys=True))
@@ -212,6 +217,12 @@ def run_turn(context: dict, message: str, call_model) -> dict:
         parsed = json.loads(raw)
     except (TypeError, json.JSONDecodeError) as exc:
         raise InvalidAgentResponse("Cordia Agent returned an invalid action.") from exc
+    if (isinstance(parsed, dict) and set(parsed) == {"kind", "proposal"}
+            and parsed.get("kind") == "propose_connector"
+            and isinstance(parsed.get("proposal"), dict)
+            and set(parsed["proposal"]) == _PROPOSAL_FIELDS["propose_connector"]
+            and parsed["proposal"].get("setup_kind") == "oauth"):
+        return {"kind": "speak", "speech": _OAUTH_UNAVAILABLE}
     try:
         return validate_envelope(parsed)
     except ValueError as exc:
