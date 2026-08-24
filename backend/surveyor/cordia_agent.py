@@ -204,6 +204,7 @@ def build_system_prompt(context: dict) -> str:
     schemas["propose_connector"].update({
         "allowed_setup_kinds": sorted(_SAFE_SETUP_KINDS),
         "unsupported_setup_action": "speak",
+        "unsupported_setup_response": {"kind": "speak", "speech": _OAUTH_UNAVAILABLE},
     })
     return ("You are Cordia Agent. Return exactly one JSON action and never claim backend work occurred. "
             "Allowed actions and exact fields: " + json.dumps(schemas, sort_keys=True) + "\n"
