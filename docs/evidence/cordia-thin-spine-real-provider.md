@@ -1,5 +1,4 @@
 # Cordia Agent real-provider gate
 
-Status: Not yet verified
-
-No approved real-provider configuration was available in this worktree. No model request was made, and no synthetic provider result is recorded as real-provider evidence.
+Status: Not yet verified with a real provider.
+Reason: No approved production credential was available during Task 4C verification.
