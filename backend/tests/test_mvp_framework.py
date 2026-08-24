@@ -46,9 +46,21 @@ class TestMvpFramework(unittest.TestCase):
         self.assertEqual(captured["user"], "Connect our status API")
         self.assertEqual(captured["max_tokens"], 700)
         self.assertEqual(public["speech"], "I prepared a connector setup card.")
+        self.assertEqual(public["action"], {
+            "kind": "propose_connector",
+            "state": "setup_required",
+            "connector_id": "status_api",
+            "setup_kind": "api_key",
+        })
         self.assertEqual(public["revision"], 1)
         self.assertEqual(updated["revision"], 1)
-        self.assertEqual(updated["pending_actions"][0]["kind"], "propose_connector")
+        self.assertEqual(updated["pending_actions"][0], {
+            "kind": "propose_connector",
+            "connector_id": "status_api",
+            "display_name": "Status API",
+            "setup_kind": "api_key",
+            "purpose": "Read service status.",
+        })
 
 
 if __name__ == "__main__":
