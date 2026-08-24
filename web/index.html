@@ -132,6 +132,7 @@ Email-verified. Passwords hashed server-side.
 </div>
 
 <script src="assets/workspace-navigation.js"></script>
+<script src="assets/profile-entry.js"></script>
 <script src="assets/cordia-auth-flow.js"></script>
 <script>
 /* ================= auth logic — unchanged ================= */
@@ -143,6 +144,24 @@ function resumeAuthenticatedWorkspace(){
   return CordiaAuthFlow.resumeAuthenticatedWorkspace({
     apiBase: API,
     fetch,
+    resolveCordiaEntry: () => CordiaProfileEntry.resolveCordiaEntry({
+      getJson: async path => {
+        const response = await fetch(API + path, {
+          method: 'GET', credentials: 'same-origin',
+        });
+        if(!response.ok) throw new Error('profile entry unavailable');
+        return response.json();
+      },
+      postJson: async (path, body) => {
+        const response = await fetch(API + path, {
+          method: 'POST', headers: {'Content-Type':'application/json'},
+          credentials: 'same-origin', body: JSON.stringify(body),
+        });
+        if(!response.ok) throw new Error('profile completion unavailable');
+        return response.json();
+      },
+      locationSearch: location.search,
+    }),
     navigate: destination => location.replace(destination),
   });
 }

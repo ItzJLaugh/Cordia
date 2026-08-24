@@ -27,6 +27,24 @@ async function resume(response) {
   return { calls, destination, destinations };
 }
 
+test('uses the profile-calibration resolver after an authenticated cookie restore or login', async () => {
+  const calls = [];
+  const destinations = [];
+  const destination = await resumeAuthenticatedWorkspace({
+    apiBase: 'https://cordia.example.test:9995',
+    fetch: async (...args) => {
+      calls.push(args);
+      throw new Error('legacy interface lookup must not run');
+    },
+    resolveCordiaEntry: async () => '/dashboard/?workspace=workspace-1',
+    navigate: (value) => destinations.push(value),
+  });
+
+  assert.equal(destination, '/dashboard/?workspace=workspace-1');
+  assert.deepEqual(destinations, ['/dashboard/?workspace=workspace-1']);
+  assert.deepEqual(calls, []);
+});
+
 test('resumes the authoritative first safe saved workspace through the primary dashboard', async () => {
   const result = await resume(successfulInterfaces([
     { id: 'workspace-1_A.2' },

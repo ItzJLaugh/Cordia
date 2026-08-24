@@ -11,9 +11,10 @@ const INTENT_MISS_CATEGORIES = new Set([
 ])
 
 class ApiResponseError extends Error {
-  constructor(message, kind = 'error') {
+  constructor(message, kind = 'error', definitive = false) {
     super(message)
     this.kind = kind
+    this.definitive = definitive
   }
 }
 
@@ -33,9 +34,16 @@ export function apiErrorKind(error) {
   return error instanceof ApiResponseError ? error.kind : 'offline'
 }
 
-function responseKind(status) {
+function responseKind(status, body) {
   if (status === 401 || status === 403) return 'signed-out'
-  if (status === 409) return 'gate'
+  if (status === 409 && body && typeof body === 'object' && !Array.isArray(body)
+      && Object.keys(body).sort().join('|') === 'error|ok'
+      && body.ok === false && body.error === 'revision_conflict') return 'revision-conflict'
+  if (status === 402 && body && typeof body === 'object' && !Array.isArray(body)
+      && Object.keys(body).sort().join('|') === 'code|error|limit|ok|used'
+      && body.ok === false
+      && body.error === 'Free agent actions used. Upgrade to continue.'
+      && body.code === 'usage_limit' && body.used === 10 && body.limit === 10) return 'usage-limit'
   if (status === 429) return 'rate-limit'
   if (status === 503) return 'offline'
   return 'error'
@@ -46,7 +54,9 @@ async function validatedRequest(path, options) {
     const response = await fetch(API + path, options)
     const body = await response.json().catch(() => null)
     if (!response.ok || !body || body.ok !== true) {
-      throw new ApiResponseError(safeServerError(body && body.error), responseKind(response.status))
+      const kind = responseKind(response.status, body)
+      throw new ApiResponseError(safeServerError(body && body.error), kind,
+        response.status >= 400 && response.status < 500 && kind !== 'revision-conflict')
     }
     return body
   } catch (error) {
@@ -71,19 +81,21 @@ export async function getApi(path) {
 
 // Ordinary assistant submission has one fixed transport contract. It cannot
 // select another method, URL, or header surface.
-export async function postRun(workspaceId, input) {
-  if (!isSafeIdentifier(workspaceId)) {
+export async function postRun(workspaceId, revision, message, idempotencyKey) {
+  if (!isSafeIdentifier(workspaceId) || !Number.isInteger(revision) || revision < 0
+      || !isSafeIdentifier(idempotencyKey)) {
     throw new ApiResponseError('Invalid workspace request', 'error')
   }
   const headers = { 'Content-Type': 'application/json' }
   const devToken = localStorage.getItem('cordia-dev-token')
   if (devToken) headers.Authorization = `Bearer ${devToken}`
-  const boundedText = typeof input === 'string' ? input.trim().slice(0, 6000) : ''
+  const boundedText = typeof message === 'string' ? message.trim().slice(0, 6000) : ''
+  if (!boundedText) throw new ApiResponseError('Invalid workspace request', 'error')
   return validatedRequest('/surveyor/run', {
     method: 'POST',
     headers,
     credentials: 'include',
-    body: JSON.stringify({ id: workspaceId, input: boundedText }),
+    body: JSON.stringify({ id: workspaceId, revision, message: boundedText, idempotency_key: idempotencyKey }),
   })
 }
 

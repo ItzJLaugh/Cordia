@@ -3,7 +3,7 @@
 LLM proxy for live Archetype C environments. Port 9995.
 Stdlib only. Storage: /var/lib/cordia/corpus/corpus.jsonl (append-only)."""
 
-import json, os, re, time, threading, urllib.request, uuid, sys
+import json, os, re, time, threading, urllib.parse, urllib.request, uuid, sys
 from collections import deque
 from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
 
@@ -49,6 +49,18 @@ except BaseException as _surv_err:            # noqa: BLE001 - must never be fat
 
 PORT = 9995
 _GITHUB_SECRET_REF = re.compile(r'^secret_github_[0-9a-f]{16}$')
+
+
+def _complete_profile_calibration(email, result):
+    """Persist one verified calibration and recover the owner's sole workspace."""
+    calibration = surveyor.profile_calibration.validate_result(result)
+    candidate = uuid.uuid4().hex
+    prepared = surveyor.workspace_generation.prepare(
+        candidate, surveyor.pipeline.load_profile(email),
+        surveyor.store.get_connector_states(email), calibration)
+    workspace_id, created = surveyor.store.complete_profile_calibration(
+        email, calibration, prepared, surveyor.profile_calibration.compile_memory(calibration))
+    return {"ok": True, "workspace_id": workspace_id, "created": created}
 
 
 # Bind address. Defaults to loopback: these services have no authentication on
@@ -173,24 +185,6 @@ def rate_ok(ip, email=None, llm=False, admin=False):
     return True
 
 
-# LLM provider is env-driven so switching backends is a config change, not a
-# code change. Defaults preserve the original Nous behavior exactly; set
-# LLM_BASE_URL / LLM_MODEL / LLM_KEY in /etc/cordia/cordia.env to move to
-# another OpenAI-compatible provider (e.g. NVIDIA integrate.api.nvidia.com).
-def _llm_config():
-    url = os.environ.get('LLM_BASE_URL') or 'https://inference-api.nousresearch.com/v1/chat/completions'
-    model = os.environ.get('LLM_MODEL') or 'moonshotai/kimi-k3'
-    key = os.environ.get('LLM_KEY')
-    if not key:
-        d = json.load(open('/root/.hermes/auth.json'))
-        key = d['providers']['nous']['agent_key']
-    return url, model, key
-
-def nous_key():
-    # Kept as the credential probe for the surveyor status path — returns the
-    # active provider key so callers can tell configured from unconfigured.
-    return _llm_config()[2]
-
 def append(path, obj):
     with lock:
         with open(path, 'a') as f:
@@ -247,27 +241,6 @@ def _rateable_candidates(course_id='aie1'):
     for r in sorted(rows, key=lambda r: r.get('ts', 0)):
         latest[(r.get('learner') or 'anon', r.get('block'))] = r
     return [r for r in latest.values() if (r.get('value') or '').strip()]
-
-def call_llm(system, user, max_tokens=900):
-    url, model, key = _llm_config()
-    body = json.dumps({
-        'model': model,
-        'messages': [{'role': 'system', 'content': system}, {'role': 'user', 'content': user}],
-        'max_tokens': max_tokens, 'temperature': 0.4
-    }).encode()
-    # The User-Agent is load-bearing, not decoration. urllib sends
-    # "Python-urllib/3.x" by default and the upstream WAF blocks it outright
-    # with a 403 (Cloudflare 1010) before the key is ever examined — which
-    # looked exactly like an auth failure. Verified: curl reaches the API fine,
-    # urllib without this header does not, urllib with it does.
-    req = urllib.request.Request(url, data=body, headers={
-        'Content-Type': 'application/json',
-        'User-Agent': 'cordia-training/1.0',
-        'Authorization': 'Bearer ' + key
-    })
-    with urllib.request.urlopen(req, timeout=90) as r:
-        d = json.loads(r.read())
-    return d['choices'][0]['message']['content']
 
 class H(BaseHTTPRequestHandler):
     def _cors(self):
@@ -391,6 +364,8 @@ class H(BaseHTTPRequestHandler):
             self._manifest()
         elif p == '/surveyor/profile':
             self._surv_profile()
+        elif p == '/surveyor/profile-calibration':
+            self._surv_profile_calibration()
         elif p == '/surveyor/operator-profile':
             self._surv_operator_profile()
         elif p == '/account/profile':
@@ -461,20 +436,65 @@ class H(BaseHTTPRequestHandler):
         return me['email'], None
 
     def _surv_llm(self):
-        """The model callable Surveyor should use right now.
-
-        nous_key is the probe: it raises if the credential is unreadable, which
-        is currently the case in production (the file is root-only and this
-        service runs as `cordia`). When that is fixed the same call starts
-        returning the live caller with no other change."""
-        caller, _live = surveyor.llm.caller(call_llm, probe=nous_key)
-        return caller
+        """The only model callable available to authenticated Surveyor routes."""
+        return surveyor.llm.call
 
     def _surv_profile(self):
         email, stop = self._surv_guard()
         if stop: return
-        self._json({'ok': True, 'llm': surveyor.llm.status(nous_key),
+        self._json({'ok': True, 'llm': surveyor.llm.status(),
                     **surveyor.pipeline.public_profile(email)})
+
+    def _surv_profile_calibration(self):
+        """Return a fixed survey start or the owner's existing canonical workspace."""
+        email, stop = self._surv_guard()
+        if stop:
+            return
+        calibration = surveyor.store.get_profile_calibration(email)
+        interfaces = surveyor.store.list_interfaces(email)
+        workspace_id = (interfaces[0].get('id') if isinstance(interfaces, list) and interfaces
+                        and isinstance(interfaces[0], dict) else None)
+        if surveyor.profile_calibration.is_calibrated(calibration) and isinstance(workspace_id, str):
+            self._json({'ok': True, 'calibrated': True, 'workspace_id': workspace_id})
+            return
+        try:
+            survey_url = surveyor.profile_calibration.survey_start_url(email)
+        except ValueError:
+            self._json({'ok': False, 'error': 'profile survey is not configured'}, 503)
+            return
+        self._json({'ok': True, 'calibrated': False, 'survey_url': survey_url})
+
+    def _surv_profile_calibration_import(self, body):
+        """Controlled-development import only; production has no browser bypass."""
+        if os.environ.get('CORDIA_PROFILE_DEV_IMPORT') != '1':
+            self._json({'error': 'not found'}, 404)
+            return
+        email, stop = self._surv_guard()
+        if stop:
+            return
+        try:
+            self._json(_complete_profile_calibration(email, body))
+        except ValueError as exc:
+            self._json({'ok': False, 'error': str(exc)}, 400)
+
+    def _surv_profile_calibration_complete(self, body):
+        """Complete exactly one signed provider result for its authenticated owner."""
+        email, stop = self._surv_guard()
+        if stop:
+            return
+        if (not isinstance(body, dict) or set(body) != {'state', 'result_id'}
+                or not isinstance(body.get('state'), str)
+                or not isinstance(body.get('result_id'), str)):
+            self._json({'ok': False, 'error': 'profile completion requires state and result_id'}, 400)
+            return
+        try:
+            surveyor.profile_calibration.verify_state(body['state'], email)
+            result = surveyor.profile_calibration.fetch_result(body['result_id'])
+            self._json(_complete_profile_calibration(email, result))
+        except ValueError as exc:
+            self._json({'ok': False, 'error': str(exc)}, 400)
+        except Exception:
+            self._json({'ok': False, 'error': 'profile survey result could not be retrieved'}, 502)
 
     def _surv_operator_profile(self):
         """Read-only, least-privilege bridge from Surveyor to one workspace action."""
@@ -502,7 +522,7 @@ class H(BaseHTTPRequestHandler):
             return
         out = surveyor.pipeline.turn(email, str(body.get('message', '')), self._surv_llm(),
                                      choice=body.get('choice'))
-        out['llm'] = surveyor.llm.status(nous_key)
+        out['llm'] = surveyor.llm.status()
         self._json(out)
 
     def _surv_recommendation(self):
@@ -613,10 +633,17 @@ class H(BaseHTTPRequestHandler):
                 return
             definition = dict(legacy['definition'] or {})
             definition.update({'name': legacy['name'], 'description': legacy['description']})
-            state = surveyor.workspace_state.from_interface(
-                workspace_id, definition, surveyor.store.get_connector_states(email))
-            surveyor.store.save_workspace(email, workspace_id, state)
-        self._json({'ok': True, 'workspace': state})
+            materialized = surveyor.store.materialize_interface_workspace(
+                email, workspace_id, definition)
+            state = materialized.get('workspace')
+            if materialized.get('status') != 'committed' or not state:
+                self._json({'ok': False, 'error': 'workspace changed; reload and retry'}, 409)
+                return
+        try:
+            has_stored_turns = surveyor.store.has_workspace_turns(email, workspace_id)
+        except Exception:
+            has_stored_turns = True
+        self._json({'ok': True, 'workspace': state, 'has_stored_turns': has_stored_turns})
 
     def _surv_alidora_map(self):
         """Return a safe, read-only Alidora map for the signed-in workspace owner."""
@@ -648,11 +675,15 @@ class H(BaseHTTPRequestHandler):
         except ValueError as exc:
             self._json({'ok': False, 'error': str(exc)}, 400)
             return
-        surveyor.store.save_workspace(email, workspace_id, changed)
+        saved = surveyor.store.save_workspace(email, workspace_id, changed, state.get('revision', 0))
+        if saved.get('status') == 'conflict':
+            self._json({'ok': False, 'error': 'workspace changed; reload and retry',
+                        'workspace': saved.get('workspace')}, 409)
+            return
         surveyor.store.log_event(email, 'workspace_mutated',
                                  {'id': workspace_id,
                                   'kind': body.get('mutation', {}).get('kind')})
-        self._json({'ok': True, 'workspace': changed})
+        self._json({'ok': True, 'workspace': saved['workspace']})
 
     def _surv_generate_workspace(self, body):
         """Create or recover the signed-in owner's initial canonical workspace."""
@@ -704,7 +735,9 @@ class H(BaseHTTPRequestHandler):
         if not outcome['ok']:
             self._json(outcome, 409)
             return
-        self._surv_connector_runtime(email, 'github', 'live')
+        if not self._surv_connector_runtime(email, 'github', 'live'):
+            self._json({'ok': False, 'error': 'workspace changed; reload and retry'}, 409)
+            return
         surveyor.store.log_event(email, 'github_repositories_read',
                                  {'count': len(outcome['result']['repositories'])})
         self._json({'ok': True, 'capability': outcome['capability'],
@@ -763,7 +796,9 @@ class H(BaseHTTPRequestHandler):
             self._json({'ok': False, 'error': 'skill returned an unexpected result'}, 502)
             return
         repository_count = min(30, len(repositories))
-        self._surv_connector_runtime(email, 'github', 'live')
+        if not self._surv_connector_runtime(email, 'github', 'live'):
+            self._json({'ok': False, 'error': 'workspace changed; reload and retry'}, 409)
+            return
         surveyor.store.log_event(email, 'skill_executed', {
             'id': skill_id, 'repository_count': repository_count})
         self._json({
@@ -773,15 +808,10 @@ class H(BaseHTTPRequestHandler):
         })
 
     def _surv_connector_runtime(self, email, connector_id, runtime_status):
-        """Best-effort runtime health projection into every saved workspace."""
-        for workspace_id, state in surveyor.store.workspaces(email):
-            try:
-                surveyor.store.save_workspace(
-                    email, workspace_id,
-                    surveyor.workspace_state.record_connector_runtime(
-                        state, connector_id, runtime_status))
-            except Exception:
-                pass
+        """Persist runtime health and every canonical projection as one transaction."""
+        saved = surveyor.store.save_connector_runtime_projection(
+            email, connector_id, runtime_status)
+        return saved.get('status') == 'committed'
 
     def _surv_github_token(self, body):
         """Validate then encrypt a user-entered GitHub token without returning it."""
@@ -792,19 +822,17 @@ class H(BaseHTTPRequestHandler):
             validation = surveyor.github_connector.validate_token(token)
             ref, ciphertext = surveyor.vault.from_environment().seal(
                 'github', token)
-            surveyor.store.save_secret(ref, email, 'github', ciphertext)
-            states = surveyor.artifacts.merge_connector_states(
-                surveyor.store.get_connector_states(email), {'github': 'confirmed'})
-            surveyor.store.save_connector_states(email, states)
-            for workspace_id, state in surveyor.store.workspaces(email):
-                surveyor.store.save_workspace(email, workspace_id,
-                                              surveyor.workspace_state.refresh_connectors(state, states))
+            saved = surveyor.store.save_connector_projection(
+                email, {'github': 'confirmed'}, secret=(ref, 'github', ciphertext),
+                runtime_status='live')
+            if saved.get('status') != 'committed':
+                self._json({'ok': False, 'error': 'workspace changed; reload and retry'}, 409)
+                return
         except (ValueError, surveyor.vault.VaultUnavailable,
                 surveyor.github_connector.ConnectorUnavailable) as exc:
             code = 422 if isinstance(exc, surveyor.github_connector.AuthorizationRejected) else 503
             self._json({'ok': False, 'error': str(exc)}, code)
             return
-        self._surv_connector_runtime(email, 'github', 'live')
         surveyor.store.log_event(email, 'github_secret_configured',
                                  {'secret_ref': ref, 'repository_count': len(validation['repositories'])})
         self._json({'ok': True, 'secret_ref': ref, 'connector_state': 'confirmed',
@@ -814,12 +842,11 @@ class H(BaseHTTPRequestHandler):
         """Store only explicit connector confirmations; authorization comes later."""
         email, stop = self._surv_guard()
         if stop: return
-        states = surveyor.artifacts.merge_connector_states(
-            surveyor.store.get_connector_states(email), body.get('connector_states'))
-        surveyor.store.save_connector_states(email, states)
-        for workspace_id, state in surveyor.store.workspaces(email):
-            surveyor.store.save_workspace(email, workspace_id,
-                                          surveyor.workspace_state.refresh_connectors(state, states))
+        saved = surveyor.store.save_connector_projection(email, body.get('connector_states'))
+        if saved.get('status') != 'committed':
+            self._json({'ok': False, 'error': 'workspace changed; reload and retry'}, 409)
+            return
+        states = saved['connector_states']
         surveyor.store.log_event(email, 'connector_preferences_updated', {'ids': sorted(states)})
         self._json({'ok': True, 'connector_states': states,
                     'artifacts': surveyor.pipeline.artifact_bundle(email)})
@@ -884,19 +911,12 @@ class H(BaseHTTPRequestHandler):
         existing = str(body.get('id') or '').strip() or None
         if existing and not surveyor.store.get_interface(email, existing):
             self._json({'ok': False, 'error': 'not found'}, 404); return
-        iid = surveyor.store.save_interface(email, existing, name, desc, definition,
-                                            body.get('theme'))
-        workspace_definition = dict(definition)
-        workspace_definition.update({'name': name, 'description': desc})
-        workspace = surveyor.store.get_workspace(email, iid)
-        if workspace:
-            surveyor.store.save_workspace(
-                email, iid,
-                surveyor.workspace_state.merge_interface(workspace, workspace_definition))
-        else:
-            workspace = surveyor.workspace_state.from_interface(
-                iid, workspace_definition, surveyor.store.get_connector_states(email))
-            surveyor.store.save_workspace(email, iid, workspace)
+        saved = surveyor.store.save_interface_projection(
+            email, existing, name, desc, definition, body.get('theme'))
+        if saved.get('status') != 'committed':
+            self._json({'ok': False, 'error': 'workspace changed; reload and retry'}, 409)
+            return
+        iid = saved['id']
         surveyor.store.log_event(email,
                                  'interface_updated' if existing else 'interface_created',
                                  {'id': iid, 'agents': len(definition.get('agents') or []),
@@ -932,35 +952,56 @@ class H(BaseHTTPRequestHandler):
 
     def _surv_run(self, body):
         email, stop = self._surv_guard()
-        if stop: return
-        if not rate_ok(self._client_ip(), email, llm=True):
-            self._json({'ok': False, 'error': 'run limit reached — wait 10 minutes'}, 429)
+        if stop:
             return
-        iface = surveyor.store.get_interface(email, str(body.get('id') or ''))
-        if not iface:
-            self._json({'ok': False, 'error': 'not found'}, 404); return
-        prompt = str(body.get('input', ''))[:6000].strip()
-        if not prompt:
-            self._json({'ok': False, 'error': 'input required'}, 400); return
-        profile = surveyor.pipeline.load_profile(email)
-        workspace = surveyor.store.get_workspace(email, iface['id']) or {}
-        system = surveyor.prompts.runtime_system(
-            iface['definition'], surveyor.adaptation.soft_profile(profile),
-            surveyor.pipeline.artifact_bundle(email), workspace)
-        status = surveyor.llm.status(nous_key)
         try:
-            out = self._surv_llm()(system, prompt, max_tokens=1200)
-        except Exception as e:
-            self._json({'ok': False, 'error': f'run failed: {e}'}, 502); return
-        run_id = surveyor.store.add_run(iface['id'], email, prompt, out, {'llm': status['mode']})
-        approval_step = next((step for step in (iface['definition'].get('workflow') or {}).get('steps', [])
-                              if surveyor.hitl_policy.requires_approval(step)), None)
-        checkpoint = surveyor.hitl_policy.create_checkpoint(run_id, approval_step, out) if approval_step else None
-        if checkpoint:
-            surveyor.store.save_approval(email, checkpoint)
-        surveyor.store.log_event(email, 'interface_run',
-                                 {'id': iface['id'], 'llm': status['mode']})
-        self._json({'ok': True, 'output': out, 'llm': status, 'approval': checkpoint})
+            request = surveyor.cordia_agent.validate_turn_request(body)
+        except ValueError as exc:
+            self._json({'ok': False, 'error': str(exc)}, 400)
+            return
+        workspace = surveyor.store.get_workspace(email, request['id'])
+        if not workspace:
+            self._json({'ok': False, 'error': 'workspace not found'}, 404)
+            return
+        prior = surveyor.store.get_run_by_idempotency(email, request['id'], request['idempotency_key'])
+        if prior:
+            self._json(prior)
+            return
+        usage = surveyor.store.workspace_turn_usage(email)
+        if usage["used"] >= usage["limit"]:
+            self._json({"ok": False,
+                        "error": "Free agent actions used. Upgrade to continue.",
+                        "code": "usage_limit", **usage}, 402)
+            return
+        artifacts = surveyor.store.get_artifacts(email) or {}
+        memory = str(artifacts.get('source/memory.md') or '')
+        recent = surveyor.store.recent_workspace_turns(email, request['id'])
+        try:
+            context = surveyor.cordia_agent.build_context(memory, workspace, recent)
+            envelope = surveyor.cordia_agent.run_turn(context, request['message'], surveyor.llm.call)
+            next_workspace, public = surveyor.cordia_agent.apply_proposal(workspace, envelope)
+        except Exception as exc:
+            unavailable = getattr(getattr(surveyor, 'model_provider', None), 'ModelUnavailable', ())
+            if unavailable and isinstance(exc, unavailable):
+                self._json({'ok': False, 'error': 'Cordia Agent is not configured.'}, 503)
+                return
+            self._json({'ok': False, 'error': 'Cordia Agent could not complete that request.'}, 502)
+            return
+        commit = surveyor.store.commit_workspace_turn(
+            email, request['id'], request['revision'], request['idempotency_key'],
+            request['message'], public, next_workspace)
+        if commit['status'] == 'missing':
+            self._json({'ok': False, 'error': 'workspace not found'}, 404)
+            return
+        if commit['status'] == 'conflict':
+            self._json({'ok': False, 'error': 'revision_conflict'}, 409)
+            return
+        if commit['status'] == 'limit':
+            self._json({"ok": False,
+                        "error": "Free agent actions used. Upgrade to continue.",
+                        "code": "usage_limit", **commit["usage"]}, 402)
+            return
+        self._json(commit['result'])
 
     def _surv_personalization(self, body):
         email, stop = self._surv_guard()
@@ -993,7 +1034,7 @@ class H(BaseHTTPRequestHandler):
                         'interfaces': surveyor.store.list_interfaces(target, True),
                         'runs': surveyor.store.runs(target),
                         'events': surveyor.store.events(target),
-                        'llm': surveyor.llm.status(nous_key),
+                        'llm': surveyor.llm.status(),
                         'personalization_mode': surveyor.adaptation.mode()})
         except Exception as e:
             self._json({'ok': False, 'error': 'surveyor unavailable: ' + str(e)}, 503)
@@ -1307,6 +1348,10 @@ class H(BaseHTTPRequestHandler):
         self._surv_body = body if isinstance(body, dict) else {}
         if p == '/train/respond':
             self._respond(body)
+        elif p == '/surveyor/profile-calibration/import':
+            self._surv_profile_calibration_import(body)
+        elif p == '/surveyor/profile-calibration/complete':
+            self._surv_profile_calibration_complete(body)
         elif p == '/surveyor/message':
             self._surv_message(body)
         elif p == '/surveyor/interface':
@@ -1763,10 +1808,14 @@ class H(BaseHTTPRequestHandler):
         if not rate_ok(self._client_ip(), me['email'], llm=True):
             self._json({'ok': False, 'error': 'environment call limit reached — wait 10 minutes'}, 429); return
         try:
-            out = call_llm(envs[env], instruction)
+            out = surveyor.llm.call(envs[env], instruction)
             self._json({'ok': True, 'output': out, 'env': env})
-        except Exception as e:
-            self._json({'error': f'llm call failed: {e}'}, 502)
+        except surveyor.model_provider.ModelUnavailable:
+            self._json({'ok': False, 'error': 'Cordia Agent is not configured.',
+                        'kind': 'model_unavailable'}, 503)
+        except surveyor.model_provider.ModelFailure:
+            self._json({'ok': False, 'error': 'Cordia Agent could not complete that request.',
+                        'kind': 'model_failure'}, 502)
 
 
 def _fire_event(email, kind, meta=None):
@@ -1781,10 +1830,9 @@ import urllib.parse
 class Server(ThreadingHTTPServer):
     """Threaded so one slow request cannot stall the site.
 
-    This was a plain HTTPServer, which serialises every request. call_llm has a
-    90s timeout, so a single live-environment call (and now a single Surveyor
-    turn) blocked login, the exam and the payment webhook for up to a minute and
-    a half. Shared mutable state was audited before this changed: rate_ok holds
+    This was a plain HTTPServer, which serialises every request. The provider
+    has a 30-second timeout, so a single live-environment call can block only
+    one request thread. Shared mutable state was audited before this changed: rate_ok holds
     `lock` around the _rl buckets, append/read_all hold it around the corpus
     jsonl, and psycopg2 connections are opened per call rather than shared. No
     module-level caches or `global` statements exist in this process.

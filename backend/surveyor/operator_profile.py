@@ -18,8 +18,12 @@ _CREDENTIAL = re.compile(
 _LOCAL_PATH = re.compile(
     r"(?:^|[^A-Za-z0-9_/.])(?:[A-Za-z]:(?:[\\/]|(?=[^\s\\/]))|"
     r"\\\\[^\s]+|(?:file|path)://|\.{1,2}[\\/][^\s]+|"
+    r"(?<![A-Za-z0-9])[\\/](?=\S)|"
     r"/(?:tmp|home|Users|var|etc|opt|srv|run|mnt|workspace|Library)(?:/[^\s]*)?|"
-    r"/{1,2}(?:[^\s/]+/)+[^\s/]+)", re.IGNORECASE)
+    r"/{1,2}(?:[^\s/]+/)+[^\s/]+|"
+    r"(?:private|secret|credentials?|keys?)(?:[\\/][^\s]+)+|"
+    r"[A-Za-z0-9_.-]+(?:[\\/][A-Za-z0-9_.-]+)*[\\/][A-Za-z0-9_-]+\.[A-Za-z0-9]{1,10}(?:[\\/][^\s]*)?|"
+    r"/[A-Za-z0-9_-]+\.[A-Za-z0-9]{1,10})", re.IGNORECASE)
 _REMOTE_URL = re.compile(r"\b[A-Za-z][A-Za-z0-9+.-]*://[^\s<>\"']+")
 _BAD_PERCENT = re.compile(r"%(?![0-9A-Fa-f]{2})")
 _STRENGTH = {

@@ -2,12 +2,26 @@ import os
 import subprocess
 import sys
 import unittest
+from importlib.util import find_spec
 
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 
+OPTIONAL_SHADOW_SCORER_DEPENDENCIES = ('numpy', 'sentence_transformers', 'faiss')
+MISSING_OPTIONAL_SHADOW_SCORER_DEPENDENCIES = tuple(
+    dependency
+    for dependency in OPTIONAL_SHADOW_SCORER_DEPENDENCIES
+    if find_spec(dependency) is None
+)
+
+
 class TestEmbeddingRuntime(unittest.TestCase):
+    @unittest.skipIf(
+        MISSING_OPTIONAL_SHADOW_SCORER_DEPENDENCIES,
+        'optional shadow-scorer runtime dependencies unavailable: ' +
+        ', '.join(MISSING_OPTIONAL_SHADOW_SCORER_DEPENDENCIES),
+    )
     def test_declared_runtime_can_import_the_shadow_scorer(self):
         result = subprocess.run(
             [

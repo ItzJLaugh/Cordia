@@ -1,5 +1,5 @@
 import { workspaceToRendererModel } from './workspace.js'
-import { isSafeIdentifier, isSensitiveText } from './identifier.js'
+import { isSafeIdentifier, isSafeSkillIdentifier, isSensitiveText } from './identifier.js'
 
 const SAFE_TIMESTAMP = /^\d{4}-\d{2}-\d{2}T[0-9:.+-]+Z?$/
 const DECISIONS = new Set(['ALLOW', 'ASK', 'DENY'])
@@ -600,16 +600,58 @@ export function assistantReplyModel(response) {
   return { text, limited, note, ...(approvalPending ? { approvalStatus: 'pending' } : {}) }
 }
 
-export function assistantTurnStarted(state, id) {
+export function agentTurnModel(response) {
+  if (!response || typeof response !== 'object' || Array.isArray(response)
+      || Object.keys(response).sort().join('|') !== 'action|ok|revision|speech'
+      || response.ok !== true || !Number.isInteger(response.revision) || response.revision < 0) return null
+  const text = safeText(response.speech, 6000)
+  if (!text) return null
+  if (response.action === null) return { text, action: null, revision: response.revision }
+  const action = response.action
+  if (!action || typeof action !== 'object' || Array.isArray(action)) return null
+  const exact = (keys) => Object.keys(action).sort().join('|') === keys.sort().join('|')
+  if (action.kind === 'propose_connector' && exact(['kind', 'state', 'connector_id', 'setup_kind'])
+      && action.state === 'setup_required' && isSafeSkillIdentifier(action.connector_id)
+      && ['api_key', 'openapi', 'remote_mcp'].includes(action.setup_kind)) {
+    return { text, revision: response.revision, action: {
+      kind: action.kind, state: action.state, connector_id: action.connector_id,
+      setup_kind: action.setup_kind, label: `Set up ${action.connector_id.replaceAll('_', ' ')}`,
+    } }
+  }
+  if (action.kind === 'create_artifact' && exact(['kind', 'state', 'artifact_id'])
+      && action.state === 'proposal_required' && isSafeSkillIdentifier(action.artifact_id)) {
+    return { text, revision: response.revision, action: { ...action, label: 'Review artifact proposal' } }
+  }
+  if (action.kind === 'propose_skill' && exact(['kind', 'state', 'skill_id'])
+      && action.state === 'proposal_required' && isSafeSkillIdentifier(action.skill_id)) {
+    return { text, revision: response.revision, action: { ...action, label: 'Review skill proposal' } }
+  }
+  if (action.kind === 'run_approved_skill' && exact(['kind', 'state', 'skill_id'])
+      && action.state === 'approval_required' && isSafeSkillIdentifier(action.skill_id)) {
+    return { text, revision: response.revision, action: { ...action, label: 'Approval required' } }
+  }
+  return null
+}
+
+export function assistantGreeting(transcript, hasMemory, hasStoredTurns = true) {
+  if (Array.isArray(transcript) && transcript.length) return ''
+  const compiledMemory = hasMemory === true || (typeof hasMemory === 'string' && hasMemory.trim().length > 0)
+  return compiledMemory && hasStoredTurns === false
+    ? 'I have your saved profile calibration and workspace memory. What would you like to accomplish?'
+    : 'What would you like to accomplish?'
+}
+
+export function assistantTurnStarted(state, id, idempotencyKey = '') {
   const text = boundedAssistantText(state && state.draft)
   if (!text) return state
   return {
     transcript: [...(Array.isArray(state.transcript) ? state.transcript : []), { id, who: 'you', text }],
-    draft: '', note: '', busy: true, pending: { id, text },
+    draft: '', note: '', busy: true, pending: { id, text,
+      ...(idempotencyKey ? { idempotencyKey } : {}) },
   }
 }
 
-export function assistantTurnFailed(state, note) {
+export function assistantTurnFailed(state, note, preserveRetry = false) {
   if (!state || !state.pending) return state
   return {
     transcript: state.transcript.filter((message) => message.id !== state.pending.id),
@@ -617,7 +659,17 @@ export function assistantTurnFailed(state, note) {
     note: safeText(note, 240) || 'That message did not get through. Your draft is safe to send again.',
     busy: false,
     pending: null,
+    ...(preserveRetry && state.pending.idempotencyKey
+      ? { retry: { text: state.pending.text, idempotencyKey: state.pending.idempotencyKey } } : {}),
   }
+}
+
+export function assistantRevisionConflict(state, note) {
+  return assistantTurnFailed(state, note, true)
+}
+
+export function assistantUsageLimit(state) {
+  return assistantTurnFailed(state, 'Free agent actions used. Upgrade to continue.')
 }
 
 const SKILL_ACTION_KEYS = ['enabled', 'id', 'kind', 'reason', 'request']

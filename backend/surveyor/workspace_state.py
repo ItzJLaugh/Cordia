@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 from .artifacts import connector_catalog
 
 def empty(workspace_id):
- return {'id':workspace_id,'title':'','description':'','surface':{},'workflow':{},'windows':[],'connectors':[],'skills':[],'agents':[],'permissions':{},'context_sources':[],'automations':[],'mutations':[],'provenance':[]}
+ return {'id':workspace_id,'revision':0,'pending_actions':[],'title':'','description':'','surface':{},'workflow':{},'windows':[],'connectors':[],'skills':[],'agents':[],'permissions':{},'context_sources':[],'automations':[],'mutations':[],'provenance':[]}
 
 def from_interface(workspace_id, definition, connector_states=None):
  d=definition or {}; state=empty(workspace_id)

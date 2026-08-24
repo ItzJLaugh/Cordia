@@ -76,8 +76,10 @@ class MemoryStore:
         return next((deepcopy(item) for item in self.interfaces.get(email, [])
                      if item["id"] == workspace_id), None)
 
-    def save_workspace(self, email, workspace_id, state):
+    def save_workspace(self, email, workspace_id, state, expected_revision):
+        self.assertEqual(state.get('revision', 0), expected_revision)
         self.workspaces_by_owner.setdefault(email, {})[workspace_id] = deepcopy(state)
+        return {'status': 'saved', 'workspace': deepcopy(state)}
 
     def list_interfaces(self, email):
         return deepcopy(self.interfaces.get(email, []))

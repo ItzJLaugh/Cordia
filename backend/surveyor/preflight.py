@@ -3,6 +3,8 @@ from __future__ import annotations
 
 import os
 
+from surveyor import model_provider
+
 
 REQUIRED = ('CORDIA_PG_DSN', 'CORDIA_VAULT_KEY')
 EMAIL_2FA_REQUIREMENT = 'GMAIL_USER/GMAIL_APP_PASSWORD or CORDIA_DEV_2FA=1'
@@ -21,6 +23,9 @@ def report(environment=None, has_cryptography=None, has_psycopg2=None,
            database_ready=None, dependency_available=None):
     environment = environment if environment is not None else os.environ
     missing = [name for name in REQUIRED if not str(environment.get(name) or '').strip()]
+    provider_status = model_provider.status(environment)
+    if not provider_status['configured']:
+        missing.append('OpenAI model provider')
     has_email_2fa = (str(environment.get('CORDIA_DEV_2FA') or '') == '1' or
                      (str(environment.get('GMAIL_USER') or '').strip() and
                       str(environment.get('GMAIL_APP_PASSWORD') or '').strip()))
@@ -66,7 +71,8 @@ def report(environment=None, has_cryptography=None, has_psycopg2=None,
         missing.append('PostgreSQL connection')
     return {'ok': not missing, 'missing': missing, 'optional_missing': optional_missing,
             'checks': {name: name not in missing for name in REQUIRED} |
-                      {'cryptography': bool(has_cryptography),
+                      {'model_provider': provider_status,
+                       'cryptography': bool(has_cryptography),
                        'psycopg2': bool(has_psycopg2),
                        **dependency_checks,
                        'postgres_connection': database_ready is not False}}

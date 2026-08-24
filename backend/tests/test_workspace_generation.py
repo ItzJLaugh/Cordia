@@ -8,7 +8,7 @@ from unittest.mock import patch
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import surveyor
-from surveyor import freeform, scenarios, store, types
+from surveyor import freeform, scenarios, store, types, workspace_state
 
 
 def completed_profile():
@@ -33,10 +33,14 @@ def completed_profile():
 
 
 class FakeCursor:
-    def __init__(self, existing=None, fail_on=None):
+    def __init__(self, existing=None, fail_on=None, connector_states=None,
+                 owner_workspaces=None):
         self.existing = existing
         self.fail_on = fail_on
+        self.connector_states = connector_states
+        self.owner_workspaces = owner_workspaces or []
         self.calls = []
+        self._last_sql = ""
 
     def __enter__(self):
         return self
@@ -46,12 +50,22 @@ class FakeCursor:
 
     def execute(self, sql, params=None):
         compact = " ".join(str(sql).split())
+        self._last_sql = compact
         self.calls.append((compact, params))
         if self.fail_on and self.fail_on in compact:
             raise RuntimeError("forced transaction failure")
 
     def fetchone(self):
-        return (self.existing,) if self.existing else None
+        if "SELECT id FROM surveyor_interfaces" in self._last_sql:
+            return (self.existing,) if self.existing else None
+        if "SELECT connector_states FROM surveyor_connector_preferences" in self._last_sql:
+            return (self.connector_states,) if self.connector_states is not None else None
+        return None
+
+    def fetchall(self):
+        if "SELECT id, state FROM surveyor_workspaces" in self._last_sql:
+            return self.owner_workspaces
+        return []
 
 
 class FakeConnection:
@@ -99,13 +113,13 @@ class TestAtomicInitialWorkspaceStore(unittest.TestCase):
             "workspace-1", completed_profile(), {}
         )
 
-    def run_store(self, cursor):
+    def run_store(self, cursor, prepared=None):
         connection = FakeConnection(cursor)
         with patch.object(store, "_conn", return_value=connection), patch.object(
             store, "_J", side_effect=lambda value: value
         ):
             result = store.ensure_initial_workspace(
-                "owner@example.test", self.prepared()
+                "owner@example.test", prepared or self.prepared()
             )
         return result, connection
 
@@ -116,13 +130,51 @@ class TestAtomicInitialWorkspaceStore(unittest.TestCase):
 
         self.assertEqual(result, ("workspace-1", True))
         self.assertEqual(connection.outcome, "commit")
-        self.assertEqual(len(cursor.calls), 5)
+        self.assertEqual(len(cursor.calls), 9)
         self.assertIn("pg_advisory_xact_lock", cursor.calls[0][0])
         self.assertIn("WHERE email=%s AND archived=FALSE", cursor.calls[1][0])
         self.assertEqual(cursor.calls[1][1], ("owner@example.test",))
-        self.assertIn("INSERT INTO surveyor_interfaces", cursor.calls[2][0])
-        self.assertIn("INSERT INTO surveyor_workspaces", cursor.calls[3][0])
-        self.assertIn("INSERT INTO surveyor_artifacts", cursor.calls[4][0])
+        self.assertIn("pg_advisory_xact_lock", cursor.calls[2][0])
+        self.assertIn("SELECT connector_states", cursor.calls[3][0])
+        self.assertIn("pg_advisory_xact_lock", cursor.calls[4][0])
+        self.assertIn("SELECT id, state FROM surveyor_workspaces", cursor.calls[5][0])
+        self.assertIn("INSERT INTO surveyor_interfaces", cursor.calls[6][0])
+        self.assertIn("INSERT INTO surveyor_workspaces", cursor.calls[7][0])
+        self.assertIn("INSERT INTO surveyor_artifacts", cursor.calls[8][0])
+
+    def test_initial_creation_replaces_stale_candidate_runtime_with_locked_legacy_runtime(self):
+        for current_status, stale_status in (("needs_attention", "live"),
+                                             ("live", "needs_attention")):
+            legacy = workspace_state.from_interface(
+                "archived-legacy", {"name": "Archived"}, {"github": "confirmed"})
+            legacy = workspace_state.record_connector_runtime(legacy, "github", current_status)
+            cursor = FakeCursor(
+                connector_states={"github": "confirmed"},
+                owner_workspaces=[("archived-legacy", legacy)],
+            )
+            prepared = self.prepared()
+            prepared["artifacts"]["source/memory.md"] = "keep initial memory"
+            prepared["workspace"] = workspace_state.from_interface(
+                prepared["id"], prepared["definition"], {"github": "confirmed"})
+            prepared["workspace"]["pending_actions"] = [{"id": "keep-initial-action"}]
+            prepared["workspace"] = workspace_state.record_connector_runtime(
+                prepared["workspace"], "github", stale_status)
+
+            result, connection = self.run_store(cursor, prepared)
+
+            self.assertEqual(result, ("workspace-1", True))
+            self.assertEqual(connection.outcome, "commit")
+            created = next(call[1][2] for call in cursor.calls
+                           if "INSERT INTO surveyor_workspaces" in call[0])
+            github = next(item for item in created["connectors"] if item["id"] == "github")
+            self.assertEqual(github["runtime_status"], current_status)
+            self.assertEqual(created["title"], "My Workspace")
+            self.assertEqual(created["description"], "A Cordia workspace shaped from your Surveyor profile.")
+            self.assertEqual(created["pending_actions"], [{"id": "keep-initial-action"}])
+            artifacts = next(call[1] for call in cursor.calls
+                             if "INSERT INTO surveyor_artifacts" in call[0])
+            self.assertIn("source/operator.md", artifacts[1])
+            self.assertEqual(artifacts[1]["source/memory.md"], "keep initial memory")
 
     def test_returns_existing_owner_workspace_without_writes(self):
         cursor = FakeCursor(existing="existing-workspace")

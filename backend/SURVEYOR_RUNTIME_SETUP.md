@@ -19,6 +19,22 @@ GMAIL_APP_PASSWORD=<Gmail app password>
 HF_HOME=/var/lib/cordia/huggingface
 ```
 
+## Managed OpenAI configuration
+
+The server-side model provider uses only these VPS variables. Store them in
+`/etc/cordia/cordia.env`; never put `LLM_KEY` in source, browser code, logs, or
+preflight output.
+
+```text
+LLM_BASE_URL=https://api.openai.com/v1/chat/completions
+LLM_MODEL=<approved OpenAI model identifier>
+LLM_KEY=<stored only in /etc/cordia/cordia.env>
+```
+
+A ChatGPT subscription does not supply this API credential. Preflight reports
+configuration readiness only and never contacts OpenAI. No real-provider claim
+exists until Sprint 1 Task 4 authenticated observation.
+
 Generate a new Fernet key in the target environment only:
 
 ```powershell
