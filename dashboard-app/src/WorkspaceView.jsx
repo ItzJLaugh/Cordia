@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react'
 
-import { apiErrorKind, getApi, postRun, postSkillExecute } from './api.js'
+import { apiErrorKind, getApi, postRun, postSkillExecute, safeErrorMessage } from './api.js'
 import ArtifactCard from './ArtifactCard.jsx'
 import DefinitionGraph from './DefinitionGraph.jsx'
 import { alidoraMapToFlow } from './graph.js'
@@ -111,7 +111,12 @@ export function Assistant({
       else if (kind === 'signed-out') fail('Your session ended. Sign in again to send this. Your draft is safe.')
       else if (kind === 'rate-limit') fail('Message limit reached. Wait a few minutes; your draft is safe.')
       else if (kind === 'offline') fail('The server is unreachable right now. Your draft is safe to send again.', true)
-      else fail('That message did not get through. Your draft is safe to send again.', !error.definitive)
+      else {
+        const detail = safeErrorMessage(error)
+        fail(error.definitive || detail === 'Request failed'
+          ? 'That message did not get through. Your draft is safe to send again.'
+          : `${detail} Your draft is safe to send again.`, !error.definitive)
+      }
     })
   }
 

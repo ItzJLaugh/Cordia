@@ -124,6 +124,53 @@ test('rendered Assistant preserves the workspace and draft when free actions are
   }
 })
 
+test('rendered Assistant shows a sanitized backend failure instead of a generic send error', async () => {
+  const originals = new Map()
+  for (const [name, value] of Object.entries({ location: { hostname: 'cordia.example.test' },
+    localStorage: { getItem: () => null }, document: { activeElement: null } })) {
+    originals.set(name, Object.getOwnPropertyDescriptor(globalThis, name))
+    Object.defineProperty(globalThis, name, { configurable: true, writable: true, value })
+  }
+  Object.defineProperty(globalThis, 'fetch', { configurable: true, writable: true, value: async () => ({
+    ok: false, status: 502, json: async () => ({
+      ok: false, error: 'Cordia Agent could not complete that request.',
+    }),
+  }) })
+  const vite = await createServer({ configFile: false, server: { middlewareMode: true } })
+  const module = await vite.ssrLoadModule('/src/WorkspaceView.jsx')
+  const operation = { current: '' }; let renderer; globalThis.IS_REACT_ACT_ENVIRONMENT = true
+  function Harness() {
+    const [state, setState] = useState({
+      transcript: [], draft: 'Connect Drive', note: '', busy: false, pending: null, action: null,
+    })
+    const id = useRef(0)
+    return React.createElement(module.Assistant, {
+      workspaceId: 'workspace-1', workspaceRevision: 4,
+      enabled: true, readOnly: false, state, setState, nextId: () => ++id.current,
+      operationRef: operation,
+    })
+  }
+  const priorConsoleError = console.error; console.error = () => {}
+  try {
+    await act(async () => { renderer = TestRenderer.create(React.createElement(Harness)) })
+    await act(async () => {
+      renderer.root.findByProps({ className: 'composer' }).props.onSubmit({ preventDefault() {} })
+    })
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    const rendered = JSON.stringify(renderer.toJSON())
+    assert.equal(renderer.root.findByProps({ id: 'cordia-message' }).props.value, 'Connect Drive')
+    assert.equal(rendered.includes('Cordia Agent could not complete that request. Your draft is safe to send again.'), true)
+    assert.equal(rendered.includes('That message did not get through.'), false)
+  } finally {
+    if (renderer) await act(async () => { renderer.unmount() })
+    console.error = priorConsoleError; await vite.close()
+    for (const [name, descriptor] of originals) {
+      if (descriptor) Object.defineProperty(globalThis, name, descriptor)
+      else delete globalThis[name]
+    }
+  }
+})
+
 test('rendered Assistant stays locked until a deferred conflict refresh applies the new revision', async () => {
   const originals = new Map()
   for (const [name, value] of Object.entries({ location: { hostname: 'cordia.example.test' },
