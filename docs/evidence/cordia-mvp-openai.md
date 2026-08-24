@@ -15,7 +15,7 @@ Reason: No approved server-side OpenAI credential was available.
 | Verified locally | Not verified with OpenAI. |
 | Verified live | Not verified. No deployment observation was performed. |
 
-The complete backend comparison ran 272 tests: 271 passed and the optional embedding-runtime test failed because `sentence_transformers` is unavailable. This is not a full backend pass.
+The complete backend comparison ran 272 tests: 271 passed and 1 explicitly skipped optional shadow-scorer runtime test, with exit 0. The skip applies because the optional `sentence_transformers` and `faiss` dependencies are unavailable in this environment. It does not verify the shadow scorer itself.
 
 ## Authenticated observation
 

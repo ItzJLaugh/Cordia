@@ -27,9 +27,9 @@ The focused backend total is 39/39. These results prove implemented contracts ag
 
 Command: `py -3 -m unittest discover -s tests -v`
 
-Fresh result on `6441c39`: 272 tests ran; 271 passed; 1 failed. The only failure was `test_declared_runtime_can_import_the_shadow_scorer` because `sentence_transformers` is unavailable. This matches the recorded optional-dependency baseline and is not called a full backend pass.
+Fresh result after the optional-runtime test boundary correction: 272 tests ran; 271 passed; 1 explicitly skipped optional shadow-scorer runtime test; exit 0. `test_declared_runtime_can_import_the_shadow_scorer` skips only when one or more required optional modules (`numpy`, `sentence_transformers`, or `faiss`) are unavailable. In an installed runtime, it still executes the real subprocess import and callable assertion. The shadow scorer itself remains unverified in this environment.
 
-The first comparison before `6441c39` had two additional errors. Focused reproduction showed that two older route tests did not double the Task 3 `workspace_turn_usage` store interface, so each fell through to a real database connection. Task 4 made no production or test patch. Commit `6441c39` updated those fixtures, scoped review was clean, and the fresh complete comparison returned to the single known optional failure.
+The first comparison before `6441c39` had two additional errors. Focused reproduction showed that two older route tests did not double the Task 3 `workspace_turn_usage` store interface, so each fell through to a real database connection. Task 4 made no production or test patch. Commit `6441c39` updated those fixtures, scoped review was clean, and the fresh complete comparison returned to the one known optional runtime boundary; this correction makes that boundary an explicit skip.
 
 ## Safe configuration-presence check
 
@@ -72,7 +72,17 @@ The repository verifier rebuilt the committed dashboard from a clean dependency 
 ## Self-review
 
 - Simulated, configured, locally verified, live verified, and not verified are kept distinct.
-- The optional embedding failure is named and the complete backend suite is not described as passing.
+- The optional shadow-scorer runtime skip is named; the clean backend exit does not claim that scorer itself is verified.
 - No live or deployment claim is made.
 - No connector or skill execution was introduced.
 - No deploy, push, publish, or merge was performed.
+
+## Optional shadow-scorer runtime boundary correction
+
+Before: `py -3 -m unittest discover -s tests -p test_embedding_runtime.py -v` ran 1 test in 0.184s and failed with `ModuleNotFoundError: No module named 'sentence_transformers'` from the real `embedding_scoring` subprocess import.
+
+After: the same focused command ran 1 test in 0.000s and exited 0 with 1 explicit skip: `optional shadow-scorer runtime dependencies unavailable: sentence_transformers, faiss`.
+
+Final full comparison: `py -3 -m unittest discover -s tests -v` ran 272 tests in 25.502s and exited 0: 271 passed and 1 explicitly skipped optional shadow-scorer runtime test. The scorer remains unverified in this environment.
+
+Final focused Sprint backend comparison: 39/39 passed (`test_mvp_framework.py` 1/1, `test_model_provider.py` 10/10, `test_workspace_turn_route.py` 17/17, and `test_workspace_turn_store.py` 11/11).
