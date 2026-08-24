@@ -194,6 +194,22 @@ class TestCordiaAgent(unittest.TestCase):
             "speech": "This request requires OAuth, which this Cordia beta does not support yet.",
         })
 
+    def test_run_turn_rejects_api_key_claim_for_known_oauth_only_connector(self):
+        google_drive = deepcopy(CONNECTOR)
+        google_drive["proposal"].update({
+            "connector_id": "google_drive",
+            "display_name": "Google Drive",
+            "setup_kind": "api_key",
+        })
+
+        result = cordia_agent.run_turn(
+            {}, "Connect Google Drive", lambda *_args, **_kwargs: json.dumps(google_drive))
+
+        self.assertEqual(result, {
+            "kind": "speak",
+            "speech": "This request requires OAuth, which this Cordia beta does not support yet.",
+        })
+
     def test_apply_proposal_persists_only_action_and_deterministic_copy(self):
         state = workspace_state.empty("workspace_1")
         same, public = cordia_agent.apply_proposal(state, {"kind": "speak", "speech": "GitHub is live."})

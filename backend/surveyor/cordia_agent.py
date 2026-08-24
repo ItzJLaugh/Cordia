@@ -26,6 +26,7 @@ _ID = re.compile(r"^[a-z][a-z0-9_]{0,79}$")
 _REQUEST_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$")
 _CONNECTOR_DISPLAY_NAME = re.compile(r"^[A-Za-z0-9]+(?:[ -][A-Za-z0-9]+)*$")
 _SAFE_SETUP_KINDS = {"api_key", "openapi", "remote_mcp"}
+_OAUTH_ONLY_CONNECTORS = {"google_drive"}
 _SAFE_VIEW_MODES = {"dash", "list", "document"}
 _OPERATIONAL_TOKEN = re.compile(
     r"\b(?:connect\w*|configur\w*|setup|setups|run|runs|running|ran|execut\w*|"
@@ -222,7 +223,8 @@ def run_turn(context: dict, message: str, call_model) -> dict:
             and parsed.get("kind") == "propose_connector"
             and isinstance(parsed.get("proposal"), dict)
             and set(parsed["proposal"]) == _PROPOSAL_FIELDS["propose_connector"]
-            and parsed["proposal"].get("setup_kind") == "oauth"):
+            and (parsed["proposal"].get("setup_kind") == "oauth"
+                 or parsed["proposal"].get("connector_id") in _OAUTH_ONLY_CONNECTORS)):
         return {"kind": "speak", "speech": _OAUTH_UNAVAILABLE}
     try:
         return validate_envelope(parsed)
