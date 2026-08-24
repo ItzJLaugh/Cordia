@@ -46,6 +46,16 @@ def configuration() -> dict:
     return {"base_url": base_url, "model": model, "key": key}
 
 
+def status() -> dict:
+    """Return public-safe configuration readiness without contacting OpenAI."""
+    try:
+        config = configuration()
+    except ModelUnavailable:
+        return {"provider": "openai", "configured": False, "model": ""}
+    return {"provider": "openai", "configured": True,
+            "model": str(config["model"])[:120]}
+
+
 class _SameOriginRedirectHandler(urllib.request.HTTPRedirectHandler):
     """Allow HTTPS redirects only when they stay on the configured origin."""
     def __init__(self, expected_origin):

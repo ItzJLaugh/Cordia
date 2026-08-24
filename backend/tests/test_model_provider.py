@@ -65,6 +65,25 @@ class TestModelProvider(unittest.TestCase):
                                         "^Cordia Agent is not configured\\.$"):
                 model_provider.call("system", "user", opener=self.fail_opener)
 
+    def test_status_reports_only_configured_openai_readiness(self):
+        with configured_provider(LLM_MODEL="gpt-cordia"):
+            result = model_provider.status()
+        self.assertEqual(result, {"provider": "openai", "configured": True,
+                                  "model": "gpt-cordia"})
+        self.assertNotIn("test-secret", repr(result))
+        self.assertNotIn("model.example.test", repr(result))
+
+    def test_status_reports_missing_configuration_without_network_or_secret_echo(self):
+        with patch.dict(os.environ, {"LLM_KEY": "test-secret"}, clear=True):
+            result = model_provider.status()
+        self.assertEqual(result, {"provider": "openai", "configured": False, "model": ""})
+        self.assertNotIn("test-secret", repr(result))
+
+    def test_status_bounds_the_configured_model_name(self):
+        with configured_provider(LLM_MODEL="g" * 121):
+            result = model_provider.status()
+        self.assertEqual(result["model"], "g" * 120)
+
     def test_valid_response_returns_only_assistant_content(self):
         opener = FakeOpener({"choices": [{"message": {"content": "Hello"}}]})
         with configured_provider():

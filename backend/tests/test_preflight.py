@@ -1,11 +1,41 @@
 import os, sys, unittest
+from unittest.mock import patch
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from surveyor import preflight
 
 
+@patch.dict(os.environ, {
+ 'LLM_BASE_URL': 'https://api.openai.com/v1/chat/completions',
+ 'LLM_MODEL': 'gpt-cordia',
+ 'LLM_KEY': 'test-secret',
+})
 class TestPreflight(unittest.TestCase):
+ def test_reports_missing_openai_provider_as_named_not_ready_check_without_calling_it(self):
+  with patch.dict(os.environ, {}, clear=True), \
+       patch('surveyor.model_provider.call', side_effect=AssertionError('no provider call')):
+   result = preflight.report({'CORDIA_PG_DSN': 'postgres://example', 'CORDIA_VAULT_KEY': 'key',
+                              'CORDIA_DEV_2FA': '1'}, has_cryptography=True, has_psycopg2=True,
+                             database_ready=True, dependency_available=lambda _module: True)
+  self.assertFalse(result['ok'])
+  self.assertIn('OpenAI model provider', result['missing'])
+  self.assertEqual(result['checks']['model_provider'],
+                   {'provider': 'openai', 'configured': False, 'model': ''})
+
+ def test_reports_configured_openai_provider_as_ready_without_calling_it(self):
+  environment = {'CORDIA_PG_DSN': 'postgres://example', 'CORDIA_VAULT_KEY': 'key',
+                 'CORDIA_DEV_2FA': '1',
+                 'LLM_BASE_URL': 'https://api.openai.com/v1/chat/completions',
+                 'LLM_MODEL': 'gpt-cordia', 'LLM_KEY': 'test-secret'}
+  with patch.dict(os.environ, environment, clear=True), \
+       patch('surveyor.model_provider.call', side_effect=AssertionError('no provider call')):
+   result = preflight.report(environment, has_cryptography=True, has_psycopg2=True,
+                             database_ready=True, dependency_available=lambda _module: True)
+  self.assertTrue(result['ok'])
+  self.assertEqual(result['checks']['model_provider'],
+                   {'provider': 'openai', 'configured': True, 'model': 'gpt-cordia'})
+  self.assertNotIn('test-secret', repr(result))
  def test_reports_missing_live_requirements_without_reading_values(self):
   result = preflight.report({}, has_cryptography=True, has_psycopg2=True,
                             dependency_available=lambda _module: True)
