@@ -15,7 +15,7 @@
 - The five kinds remain exactly `speak`, `propose_connector`, `create_artifact`, `propose_skill`, and `run_approved_skill`.
 - Action envelopes do not accept provider-controlled `speech` or unknown fields.
 - Task 4C performs no connector request and no skill execution.
-- Only validated display labels may enter deterministic action copy.
+- Connector-proposal public copy contains no provider-controlled fields; display labels remain structured data.
 - Operational `speak` vocabulary returns fixed clarification copy; it is not a successful action and is not persisted as provider prose.
 - Every workspace creation path reads connector preference and runtime truth while holding the normalized-owner workspace-set transaction lock.
 - Revision conflicts retain draft and idempotency key, refresh canonical state once, and never automatically call the model twice.
@@ -47,7 +47,7 @@ def test_action_envelopes_reject_provider_speech_and_use_fixed_copy(self):
         ({"kind": "propose_connector", "proposal": {
             "connector_id": "google_drive", "display_name": "Google Drive",
             "setup_kind": "api_key", "purpose": "Read selected files."}},
-         "I prepared a setup card for Google Drive."),
+         "I prepared a connector setup card."),
         ({"kind": "create_artifact", "proposal": {
             "artifact_id": "drive_summary", "title": "Drive summary",
             "view_mode": "list", "summary": "Selected files."}},
@@ -129,7 +129,7 @@ _OPERATIONAL_CLARIFICATION = (
 def public_action_copy(envelope: dict, action: dict | None) -> str:
     kind = envelope["kind"]
     if kind == "propose_connector":
-        return f"I prepared a setup card for {envelope['proposal']['display_name']}."
+        return "I prepared a connector setup card."
     if kind == "create_artifact":
         return "I prepared a proposed workspace artifact."
     if kind == "propose_skill":
@@ -156,7 +156,7 @@ self.model_output = json.dumps({"kind": "propose_connector", "proposal": {
     "setup_kind": "api_key", "purpose": "Read selected files."}})
 response, status = self.post_turn()
 self.assertEqual(status, 200)
-self.assertEqual(response["speech"], "I prepared a setup card for Google Drive.")
+self.assertEqual(response["speech"], "I prepared a connector setup card.")
 self.assertNotIn("sentinel-provider-prose", repr(response) + repr(self.store.runs))
 ```
 
@@ -167,10 +167,10 @@ server copy and rejects extra provider fields:
 
 ```javascript
 assert.equal(agentTurnModel({ok:true, revision:2,
-  speech:'I prepared a setup card for Google Drive.',
+  speech:'I prepared a connector setup card.',
   action:{kind:'propose_connector', state:'setup_required',
           connector_id:'google_drive', setup_kind:'api_key'}}).text,
-  'I prepared a setup card for Google Drive.')
+  'I prepared a connector setup card.')
 assert.equal(agentTurnModel({ok:true, revision:2, speech:'safe', providerSpeech:'unsafe', action:null}), null)
 ```
 

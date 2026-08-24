@@ -7,11 +7,11 @@ import { createServer } from 'vite'
 import { agentTurnModel, assistantGreeting, assistantRevisionConflict } from '../src/workspace-view.js'
 
 test('a proposed connector accepts the fixed server copy without claiming connected', () => {
-  const next = agentTurnModel({ ok: true, speech: 'I prepared a setup card for Issue tracker.', revision: 5,
+  const next = agentTurnModel({ ok: true, speech: 'I prepared a connector setup card.', revision: 5,
     action: { kind: 'propose_connector', state: 'setup_required',
       connector_id: 'issue_tracker', setup_kind: 'api_key' } })
   assert.deepEqual(next, {
-    text: 'I prepared a setup card for Issue tracker.', revision: 5,
+    text: 'I prepared a connector setup card.', revision: 5,
     action: { kind: 'propose_connector', state: 'setup_required',
       connector_id: 'issue_tracker', setup_kind: 'api_key', label: 'Set up issue tracker' },
   })
@@ -66,7 +66,7 @@ test('rendered Assistant stays locked until a deferred conflict refresh applies 
     if (requests.length === 1) return { ok: false, status: 409,
       json: async () => ({ ok: false, error: 'revision_conflict' }) }
     return { ok: true, status: 200, json: async () => ({ ok: true,
-      speech: 'I prepared a setup card for Drive.', revision: 5,
+      speech: 'I prepared a connector setup card.', revision: 5,
       action: { kind: 'propose_connector', state: 'setup_required', connector_id: 'drive', setup_kind: 'api_key' } }) }
   } })
   const vite = await createServer({ configFile: false, server: { middlewareMode: true } })
@@ -247,7 +247,7 @@ test('rendered production Assistant submits one revisioned turn and refreshes on
   replace('fetch', async (_url, options) => {
     requests.push(options)
     return { ok: true, status: 200, json: async () => ({
-      ok: true, speech: 'I prepared a setup card for issue tracker.', revision: 5,
+      ok: true, speech: 'I prepared a connector setup card.', revision: 5,
       action: { kind: 'propose_connector', state: 'setup_required',
         connector_id: 'issue_tracker', setup_kind: 'api_key' },
     }) }
@@ -311,7 +311,7 @@ test('rendered Assistant retries an ambiguous committed proposal with the same i
   Object.defineProperty(globalThis, 'fetch', { configurable: true, writable: true, value: async (_url, options) => {
     requests.push(JSON.parse(options.body))
     if (requests.length === 1) throw new Error('lost response after commit')
-    return { ok: true, status: 200, json: async () => ({ ok: true, speech: 'I prepared a setup card for issue tracker.', revision: 5,
+    return { ok: true, status: 200, json: async () => ({ ok: true, speech: 'I prepared a connector setup card.', revision: 5,
       action: { kind: 'propose_connector', state: 'setup_required', connector_id: 'issue_tracker', setup_kind: 'api_key' } }) }
   } })
   const vite = await createServer({ configFile: false, server: { middlewareMode: true } })
@@ -358,7 +358,7 @@ test('rendered Assistant retries a malformed successful response with the same i
     requests.push(JSON.parse(options.body))
     const body = requests.length === 1
       ? { ok: true, speech: 'Committed but malformed.', revision: 5, action: {} }
-      : { ok: true, speech: 'I prepared a setup card for issue tracker.', revision: 5,
+      : { ok: true, speech: 'I prepared a connector setup card.', revision: 5,
           action: { kind: 'propose_connector', state: 'setup_required', connector_id: 'issue_tracker', setup_kind: 'api_key' } }
     return { ok: true, status: 200, json: async () => body }
   } })

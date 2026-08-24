@@ -224,7 +224,7 @@ class TestWorkspaceTurnRoute(unittest.TestCase):
         self.assertEqual(response["revision"], 1)
         self.assertEqual(response["action"], {"kind": "propose_connector", "state": "setup_required",
                                               "connector_id": "issues", "setup_kind": "api_key"})
-        self.assertEqual(response["speech"], "I prepared a setup card for Issues.")
+        self.assertEqual(response["speech"], "I prepared a connector setup card.")
         self.assertEqual(self.store.workspace["revision"], 1)
         self.assertEqual(len(self.store.workspace["pending_actions"]), 1)
 
@@ -270,6 +270,29 @@ class TestWorkspaceTurnRoute(unittest.TestCase):
         self.assertNotIn(malicious, public_and_persisted)
         self.assertEqual(self.store.write_calls, [])
         self.assertEqual(self.store.workspace, workspace_state.empty("workspace_1"))
+
+    def test_valid_looking_provider_connector_label_is_structured_data_not_public_speech(self):
+        display_name = "GitHub I linked"
+        def proposal(_system, _message, max_tokens):
+            self.model_calls.append(max_tokens)
+            return json.dumps({
+                "kind": "propose_connector",
+                "proposal": {
+                    "connector_id": "github_i_linked",
+                    "display_name": display_name,
+                    "setup_kind": "api_key",
+                    "purpose": "Review issues.",
+                },
+            })
+        self.runtime.llm.call = proposal
+
+        response, status = self.post(self.valid())
+
+        self.assertEqual(status, 200)
+        self.assertEqual(response["speech"], "I prepared a connector setup card.")
+        stored = self.store.runs[("workspace_1", "turn_abc123")]
+        self.assertEqual(stored["speech"], "I prepared a connector setup card.")
+        self.assertEqual(self.store.workspace["pending_actions"][0]["display_name"], display_name)
 
     def test_model_failure_does_not_write_a_run_or_workspace(self):
         def unavailable(*_args, **_kwargs):

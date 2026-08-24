@@ -70,9 +70,9 @@ class TestCordiaAgent(unittest.TestCase):
         with self.assertRaises(ValueError):
             cordia_agent.validate_envelope({"kind": "speak", "speech": "sk-private-token connect"})
 
-    def test_public_action_copy_is_fixed_and_uses_validated_display_name(self):
+    def test_public_action_copy_is_fixed_and_server_owned(self):
         cases = (
-            (CONNECTOR, "I prepared a setup card for Issue tracker."),
+            (CONNECTOR, "I prepared a connector setup card."),
             (ARTIFACT, "I prepared a proposed workspace artifact."),
             (SKILL, "I prepared a proposed skill for review."),
             (RUN_SKILL, "This skill requires approval before it can run."),
@@ -100,6 +100,20 @@ class TestCordiaAgent(unittest.TestCase):
                     cordia_agent.validate_envelope(envelope)
                 with self.assertRaises(ValueError):
                     cordia_agent.apply_proposal(workspace_state.empty("workspace_1"), envelope)
+
+    def test_connector_proposal_public_copy_never_uses_provider_display_name(self):
+        envelope = deepcopy(CONNECTOR)
+        envelope["proposal"].update({
+            "connector_id": "github_i_linked",
+            "display_name": "GitHub I linked",
+        })
+
+        accepted = cordia_agent.validate_envelope(envelope)
+        next_state, public = cordia_agent.apply_proposal(
+            workspace_state.empty("workspace_1"), accepted)
+
+        self.assertEqual(public["speech"], "I prepared a connector setup card.")
+        self.assertEqual(next_state["pending_actions"][0]["display_name"], "GitHub I linked")
 
     def test_turn_request_is_exact_revisioned_and_idempotent(self):
         valid = {"id": "workspace_1", "revision": 4, "message": "Review issues",
@@ -158,7 +172,7 @@ class TestCordiaAgent(unittest.TestCase):
             "speech": "I can discuss that, but workspace status and changes must use a Cordia action.",
             "action": None, "revision": 0})
         expected = {
-            "propose_connector": ("I prepared a setup card for Issue tracker.",
+            "propose_connector": ("I prepared a connector setup card.",
                 {"kind": "propose_connector", "state": "setup_required", "connector_id": "issue_tracker",
                  "setup_kind": "api_key"}),
             "create_artifact": ("I prepared a proposed workspace artifact.",

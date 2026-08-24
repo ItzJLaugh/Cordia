@@ -86,14 +86,15 @@ The same applies to `create_artifact`, `propose_skill`, and
 After deterministic processing, the server adds user-visible copy to the public
 response from fixed templates:
 
-- `propose_connector`: `I prepared a setup card for {safe display name}.`
+- `propose_connector`: `I prepared a connector setup card.`
 - `create_artifact`: `I prepared a proposed workspace artifact.`
 - `propose_skill`: `I prepared a proposed skill for review.`
 - `run_approved_skill` before execution: `This skill requires approval before it can run.`
 
-Templates may include only validated display labels. They never state that a
-connector is available, an artifact is committed, or a skill ran unless
-deterministic runtime state proves that outcome. Task 4 still executes nothing.
+Public copy contains no provider-controlled connector field. Display names remain
+structured proposal/card data only. Templates never state that a connector is
+available, an artifact is committed, or a skill ran unless deterministic runtime
+state proves that outcome. Task 4 still executes nothing.
 
 ## Data Flow
 

@@ -136,7 +136,7 @@ def public_action_copy(envelope: dict, action: dict | None) -> str:
     accepted = validate_envelope(envelope)
     kind = accepted["kind"]
     if kind == "propose_connector":
-        return f"I prepared a setup card for {accepted['proposal']['display_name']}."
+        return "I prepared a connector setup card."
     if kind == "create_artifact":
         return "I prepared a proposed workspace artifact."
     if kind == "propose_skill":

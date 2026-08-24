@@ -114,3 +114,69 @@ notice; neither was a test failure.
 - No secrets were read or written. Real-provider status remains not verified.
 
 Open findings: none.
+
+## Residual structural copy fix after `408e78f`
+
+The subsequent scoped review found that the connector-label boundary still
+compared one provider-controlled field with another. The valid-looking pair
+`github_i_linked` / `GitHub I linked` passed validation and entered public and
+stored run speech. Connector-proposal speech is now the fixed, fully server-owned
+sentence `I prepared a connector setup card.` Display names remain structured
+proposal/card data. The five envelopes and all persistence, revision, and
+idempotency behavior are unchanged.
+
+### RED evidence
+
+The sandboxed Python launcher first returned `Access is denied`; the same focused
+commands were rerun with normal local Python access:
+
+```powershell
+Set-Location backend
+py -3 -m unittest discover -s tests -p "test_cordia_agent.py" -v
+```
+
+```text
+test_connector_proposal_public_copy_never_uses_provider_display_name ... FAIL
+AssertionError: 'I prepared a setup card for GitHub I linked.' != 'I prepared a connector setup card.'
+Ran 13 tests
+FAILED (failures=1)
+```
+
+```powershell
+py -3 -m unittest discover -s tests -p "test_workspace_turn_route.py" -v
+```
+
+```text
+test_valid_looking_provider_connector_label_is_structured_data_not_public_speech ... FAIL
+AssertionError: 'I prepared a setup card for GitHub I linked.' != 'I prepared a connector setup card.'
+Ran 14 tests
+FAILED (failures=1)
+```
+
+Both failures were caused by provider text in public speech, not test setup or
+schema rejection.
+
+### GREEN verification
+
+```text
+py -3 -m unittest discover -s tests -p "test_cordia_agent.py" -v
+13 tests, OK
+
+py -3 -m unittest discover -s tests -p "test_workspace_turn_route.py" -v
+14 tests, OK
+
+py -3 -m unittest discover -s tests -p "test_workspace_turn_store.py" -v
+5 tests, OK
+
+npm.cmd test
+96 tests, 96 passed, 0 failed
+
+py -3 -m unittest discover -s tests -v
+255 tests run; 1 known optional failure: sentence_transformers is not installed
+```
+
+No connector-label classifier, word list, or provider-field comparison was added
+or changed. The production change is only the fixed connector sentence. Searches
+confirmed that `propose_connector` public speech no longer interpolates any
+provider-controlled field. No connector or skill was executed, and no secret or
+real-provider credential was accessed.

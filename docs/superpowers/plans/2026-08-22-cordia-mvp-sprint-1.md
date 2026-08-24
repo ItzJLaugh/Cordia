@@ -58,7 +58,7 @@ def test_simulated_kernel_carries_memory_action_and_revision(self):
     envelope = cordia_agent.run_turn(context, "Connect our status API", simulated_model)
     updated, public = cordia_agent.apply_proposal(workspace, envelope)
     self.assertIn("Start with the outcome", seen["system"])
-    self.assertEqual(public["speech"], "I prepared a setup card for Status API.")
+    self.assertEqual(public["speech"], "I prepared a connector setup card.")
     self.assertEqual(public["revision"], 1)
     self.assertEqual(updated["pending_actions"][0]["kind"], "propose_connector")
 ```
