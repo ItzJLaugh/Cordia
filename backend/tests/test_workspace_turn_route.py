@@ -206,6 +206,12 @@ class TestWorkspaceTurnRoute(unittest.TestCase):
         self.assertEqual(self.store.workspace["revision"], 0)
         self.assertEqual(len(self.store.write_calls), 1)
 
+    def test_turn_revision_conflict_uses_the_exact_dashboard_contract(self):
+        self.store.workspace["revision"] = 1
+        response, status = self.post(self.valid())
+        self.assertEqual((response, status),
+                         ({"ok": False, "error": "revision_conflict"}, 409))
+
     def test_proposal_commits_one_pending_action_and_one_revision(self):
         def proposal(_system, _message, max_tokens):
             self.model_calls.append(max_tokens)

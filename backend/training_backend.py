@@ -988,7 +988,7 @@ class H(BaseHTTPRequestHandler):
             self._json({'ok': False, 'error': 'workspace not found'}, 404)
             return
         if commit['status'] == 'conflict':
-            self._json({'ok': False, 'error': 'workspace changed; reload and retry'}, 409)
+            self._json({'ok': False, 'error': 'revision_conflict'}, 409)
             return
         self._json(commit['result'])
 
