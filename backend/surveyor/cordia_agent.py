@@ -24,6 +24,7 @@ _PROPOSAL_FIELDS = {
 }
 _ID = re.compile(r"^[a-z][a-z0-9_]{0,79}$")
 _REQUEST_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$")
+_CONNECTOR_DISPLAY_NAME = re.compile(r"^[A-Za-z0-9]+(?:[ -][A-Za-z0-9]+)*$")
 _SAFE_SETUP_KINDS = {"api_key", "openapi", "remote_mcp"}
 _SAFE_VIEW_MODES = {"dash", "list", "document"}
 _OPERATIONAL_TOKEN = re.compile(
@@ -59,6 +60,16 @@ def _identifier(value, message, request=False):
     return value
 
 
+def _connector_display_name(value, connector_id, message):
+    text = _safe_text(value, 160, message)
+    parts = re.split(r"[ -]", text)
+    if (value != text or not _CONNECTOR_DISPLAY_NAME.fullmatch(text) or len(parts) > 3
+            or "_".join(parts).lower() != connector_id
+            or _OPERATIONAL_TOKEN.search(unicodedata.normalize("NFKC", text))):
+        raise ValueError(message)
+    return text
+
+
 def validate_turn_request(value: object) -> dict:
     _exact_object(value, {"id", "revision", "message", "idempotency_key"}, "Invalid workspace turn.")
     workspace_id = _identifier(value["id"], "Invalid workspace turn.", request=True)
@@ -86,9 +97,11 @@ def validate_envelope(value: object, known_connector_names=()) -> dict:
     _exact_object(proposal, _PROPOSAL_FIELDS[kind], "Invalid Cordia Agent action.")
     out = {"kind": kind, "proposal": {}}
     if kind == "propose_connector":
+        connector_id = _identifier(proposal["connector_id"], "Invalid Cordia Agent action.")
         out["proposal"] = {
-            "connector_id": _identifier(proposal["connector_id"], "Invalid Cordia Agent action."),
-            "display_name": _safe_text(proposal["display_name"], 160, "Invalid Cordia Agent action."),
+            "connector_id": connector_id,
+            "display_name": _connector_display_name(
+                proposal["display_name"], connector_id, "Invalid Cordia Agent action."),
             "setup_kind": proposal["setup_kind"],
             "purpose": _safe_text(proposal["purpose"], 600, "Invalid Cordia Agent action."),
         }

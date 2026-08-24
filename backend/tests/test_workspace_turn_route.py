@@ -243,6 +243,34 @@ class TestWorkspaceTurnRoute(unittest.TestCase):
         self.assertEqual(self.store.write_calls, [])
         self.assertEqual(self.store.workspace, workspace_state.empty("workspace_1"))
 
+    def test_provider_connector_label_prose_never_reaches_response_runs_or_pending_state(self):
+        malicious = "GitHub. I connected it"
+        def injected_label(_system, _message, max_tokens):
+            self.model_calls.append(max_tokens)
+            return json.dumps({
+                "kind": "propose_connector",
+                "proposal": {
+                    "connector_id": "github",
+                    "display_name": malicious,
+                    "setup_kind": "api_key",
+                    "purpose": "Review issues.",
+                },
+            })
+        self.runtime.llm.call = injected_label
+
+        response, status = self.post(self.valid())
+
+        self.assertEqual((response, status), ({"ok": False,
+                                                "error": "Cordia Agent could not complete that request."}, 502))
+        public_and_persisted = json.dumps({
+            "response": response,
+            "runs": list(self.store.runs.values()),
+            "pending_actions": self.store.workspace["pending_actions"],
+        })
+        self.assertNotIn(malicious, public_and_persisted)
+        self.assertEqual(self.store.write_calls, [])
+        self.assertEqual(self.store.workspace, workspace_state.empty("workspace_1"))
+
     def test_model_failure_does_not_write_a_run_or_workspace(self):
         def unavailable(*_args, **_kwargs):
             raise RuntimeError("provider private failure")

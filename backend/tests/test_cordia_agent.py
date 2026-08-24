@@ -2,6 +2,7 @@ import json
 import os
 import sys
 import unittest
+from copy import deepcopy
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -80,6 +81,25 @@ class TestCordiaAgent(unittest.TestCase):
             with self.subTest(kind=envelope["kind"]):
                 accepted = cordia_agent.validate_envelope(envelope)
                 self.assertEqual(cordia_agent.public_action_copy(accepted, accepted["proposal"]), expected)
+
+    def test_connector_display_name_rejects_provider_action_prose(self):
+        for connector_id, display_name in (
+            ("github", "GitHub. I connected it"),
+            ("github_i_connected_it", "GitHub I connected it"),
+            ("github_ready_now", "GitHub Ready Now"),
+            ("github_tools", "GitHub\nTools"),
+            ("github_i_support_you", "GitHub I Support You"),
+        ):
+            with self.subTest(connector_id=connector_id, display_name=display_name):
+                envelope = deepcopy(CONNECTOR)
+                envelope["proposal"].update({
+                    "connector_id": connector_id,
+                    "display_name": display_name,
+                })
+                with self.assertRaises(ValueError):
+                    cordia_agent.validate_envelope(envelope)
+                with self.assertRaises(ValueError):
+                    cordia_agent.apply_proposal(workspace_state.empty("workspace_1"), envelope)
 
     def test_turn_request_is_exact_revisioned_and_idempotent(self):
         valid = {"id": "workspace_1", "revision": 4, "message": "Review issues",

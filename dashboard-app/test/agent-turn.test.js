@@ -51,7 +51,7 @@ test('revision conflict restores the draft and retains the turn identity', () =>
   })
 })
 
-test('rendered Assistant refreshes one revision conflict and retries only on the next user click', async () => {
+test('rendered Assistant stays locked until a deferred conflict refresh applies the new revision', async () => {
   const originals = new Map()
   for (const [name, value] of Object.entries({ location: { hostname: 'cordia.example.test' },
     localStorage: { getItem: () => null }, document: { activeElement: null } })) {
@@ -60,7 +60,7 @@ test('rendered Assistant refreshes one revision conflict and retries only on the
   }
   const originalNow = Date.now
   Date.now = () => Number.parseInt('fixed', 36)
-  const requests = []; let refreshes = 0
+  const requests = []; let refreshes = 0; let resolveRefresh
   Object.defineProperty(globalThis, 'fetch', { configurable: true, writable: true, value: async (_url, options) => {
     requests.push(JSON.parse(options.body))
     if (requests.length === 1) return { ok: false, status: 409,
@@ -78,7 +78,11 @@ test('rendered Assistant refreshes one revision conflict and retries only on the
     const id = useRef(0)
     return React.createElement(module.Assistant, { workspaceId: 'workspace-1', workspaceRevision: revision,
       enabled: true, readOnly: false, state, setState, nextId: () => ++id.current, operationRef: operation,
-      refresh: async () => { refreshes += 1; setRevision(5) } })
+      refresh: async () => {
+        refreshes += 1
+        await new Promise((resolve) => { resolveRefresh = resolve })
+        setRevision(5)
+      } })
   }
   const priorConsoleError = console.error; console.error = () => {}
   try {
@@ -88,6 +92,14 @@ test('rendered Assistant refreshes one revision conflict and retries only on the
     await new Promise((resolve) => setTimeout(resolve, 0))
     assert.equal(refreshes, 1)
     assert.equal(requests.length, 1)
+    assert.equal(operation.current, 'assistant')
+    await act(async () => { form().props.onSubmit({ preventDefault() {} }) })
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    assert.equal(requests.length, 1)
+    await act(async () => {
+      resolveRefresh()
+      await new Promise((resolve) => setTimeout(resolve, 0))
+    })
     assert.equal(operation.current, '')
     assert.equal(JSON.stringify(renderer.toJSON()).includes('Workspace changed. Review the refreshed workspace and retry.'), true)
     await act(async () => { form().props.onSubmit({ preventDefault() {} }) })
@@ -107,7 +119,7 @@ test('rendered Assistant refreshes one revision conflict and retries only on the
   }
 })
 
-test('rendered Assistant keeps the conflict retry identity when its refresh fails', async () => {
+test('rendered Assistant fails closed when a deferred conflict refresh rejects', async () => {
   const originals = new Map()
   for (const [name, value] of Object.entries({ location: { hostname: 'cordia.example.test' },
     localStorage: { getItem: () => null }, document: { activeElement: null } })) {
@@ -116,7 +128,7 @@ test('rendered Assistant keeps the conflict retry identity when its refresh fail
   }
   const originalNow = Date.now
   Date.now = () => Number.parseInt('fixed', 36)
-  const requests = []; let refreshes = 0
+  const requests = []; let refreshes = 0; let rejectRefresh
   Object.defineProperty(globalThis, 'fetch', { configurable: true, writable: true, value: async (_url, options) => {
     requests.push(JSON.parse(options.body))
     if (requests.length === 1) return { ok: false, status: 409,
@@ -131,7 +143,10 @@ test('rendered Assistant keeps the conflict retry identity when its refresh fail
     const id = useRef(0)
     return React.createElement(module.Assistant, { workspaceId: 'workspace-1', workspaceRevision: 4,
       enabled: true, readOnly: false, state, setState, nextId: () => ++id.current, operationRef: operation,
-      refresh: async () => { refreshes += 1; throw new Error('refresh unavailable') } })
+      refresh: async () => {
+        refreshes += 1
+        await new Promise((_resolve, reject) => { rejectRefresh = reject })
+      } })
   }
   const priorConsoleError = console.error; console.error = () => {}
   try {
@@ -141,10 +156,19 @@ test('rendered Assistant keeps the conflict retry identity when its refresh fail
     await new Promise((resolve) => setTimeout(resolve, 0))
     assert.equal(refreshes, 1)
     assert.equal(requests.length, 1)
+    assert.equal(operation.current, 'assistant')
+    await act(async () => { form().props.onSubmit({ preventDefault() {} }) })
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    assert.equal(requests.length, 1)
+    await act(async () => {
+      rejectRefresh(new Error('refresh unavailable'))
+      await new Promise((resolve) => setTimeout(resolve, 0))
+    })
     assert.equal(JSON.stringify(renderer.toJSON()).includes('Workspace refresh failed. Reload before retrying.'), true)
     await act(async () => { form().props.onSubmit({ preventDefault() {} }) })
     await new Promise((resolve) => setTimeout(resolve, 0))
-    assert.deepEqual(requests.map(({ idempotency_key }) => idempotency_key), ['turn-fixed-1', 'turn-fixed-1'])
+    assert.equal(requests.length, 1)
+    assert.equal(operation.current, 'assistant')
   } finally {
     if (renderer) await act(async () => { renderer.unmount() })
     console.error = priorConsoleError; Date.now = originalNow; await vite.close()

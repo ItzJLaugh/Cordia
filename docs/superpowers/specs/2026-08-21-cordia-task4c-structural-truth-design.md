@@ -1,7 +1,7 @@
 # Cordia Task 4C Structural Truth Design
 
-**Status:** Proposed for implementation  
-**Parent:** `2026-08-20-cordia-thin-spine-design.md` and Task 4 of the thin-spine plan  
+**Status:** Proposed for implementation
+**Parent:** `2026-08-20-cordia-thin-spine-design.md` and Task 4 of the thin-spine plan
 **Purpose:** Remove semantic regex policing from the Cordia Agent's operational truth boundary.
 
 ## Problem

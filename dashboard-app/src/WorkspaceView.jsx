@@ -92,13 +92,15 @@ export function Assistant({
       if (!aliveRef.current) return
       const kind = apiErrorKind(error)
       if (kind === 'revision-conflict') {
-        operationRef.current = ''
-        setState((current) => assistantRevisionConflict(
-          current, 'Workspace changed. Review the refreshed workspace and retry.'))
         try { await refresh() } catch (_refreshError) {
           if (aliveRef.current) setState((current) => ({ ...current,
             note: 'Workspace refresh failed. Reload before retrying.' }))
+          return
         }
+        if (!aliveRef.current) return
+        operationRef.current = ''
+        setState((current) => assistantRevisionConflict(
+          current, 'Workspace changed. Review the refreshed workspace and retry.'))
         return
       }
       if (kind === 'signed-out') fail('Your session ended. Sign in again to send this. Your draft is safe.')
