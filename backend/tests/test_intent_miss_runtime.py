@@ -26,6 +26,7 @@ class TestIntentMissRuntime(unittest.TestCase):
             'artifacts': {'source/memory.md': 'Compiled profile memory.'},
             'workspace': workspace_state.empty(workspace_id),
             'runs': {},
+            'successful_turns': 0,
         }
         systems = []
 
@@ -45,16 +46,23 @@ class TestIntentMissRuntime(unittest.TestCase):
         def get_run(owner, requested_id, key):
             return copy.deepcopy(state['runs'].get((owner, requested_id, key)))
 
+        def workspace_turn_usage(owner):
+            self.assertEqual(owner, email)
+            return {'used': state['successful_turns'], 'limit': 10}
+
         def commit_workspace_turn(owner, requested_id, revision, key, _message, result, next_state):
             if (owner, requested_id) != (email, workspace_id):
                 return {'status': 'missing'}
-            if revision != state['workspace']['revision']:
-                return {'status': 'conflict'}
             prior = state['runs'].get((owner, requested_id, key))
             if prior:
                 return {'status': 'prior', 'result': copy.deepcopy(prior)}
+            if revision != state['workspace']['revision']:
+                return {'status': 'conflict'}
+            if state['successful_turns'] >= 10:
+                return {'status': 'limit', 'usage': {'used': 10, 'limit': 10}}
             state['workspace'] = copy.deepcopy(next_state)
             state['runs'][(owner, requested_id, key)] = copy.deepcopy(result)
+            state['successful_turns'] += 1
             return {'status': 'committed', 'result': copy.deepcopy(result)}
 
         def deterministic_model(system, _user, max_tokens=900):
@@ -82,6 +90,7 @@ class TestIntentMissRuntime(unittest.TestCase):
                 patch.object(store, 'get_artifacts', side_effect=lambda owner: copy.deepcopy(state['artifacts'])), \
                 patch.object(store, 'get_workspace', side_effect=get_workspace), \
                 patch.object(store, 'get_run_by_idempotency', side_effect=get_run), \
+                patch.object(store, 'workspace_turn_usage', side_effect=workspace_turn_usage), \
                 patch.object(store, 'recent_workspace_turns', return_value=[]), \
                 patch.object(store, 'commit_workspace_turn', side_effect=commit_workspace_turn), \
                 patch.object(store, 'log_event'):

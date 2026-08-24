@@ -206,3 +206,54 @@ This was the expected missing-double-behavior failure: the existing
 Commit-phase failure is now distinct from statement failure and proves the
 deterministic double's real-database atomicity model: workspace, successful run,
 and owner usage are all restored before the commit exception escapes.
+
+## Fix round 2/5: full-suite store-fixture compatibility
+
+### Root cause and RED evidence
+
+Task 4's full-backend comparison exposed two pre-Task-3 test fixtures that
+patched the old route store surface but omitted `workspace_turn_usage`. The
+production `/surveyor/run` route therefore reached the real DSN-backed store
+instead of the tests' deterministic store boundary.
+
+Both focused tests reproduced before fixture changes:
+
+| Command | RED result |
+| --- | --- |
+| `py backend/tests/test_agent_model_status.py` | 2 ran; 1 error at `store.workspace_turn_usage(email)` because `CORDIA_PG_DSN` was not set |
+| `py backend/tests/test_intent_miss_runtime.py` | 1 ran; 1 error at the same usage read because `CORDIA_PG_DSN` was not set |
+
+The stack traces reached `training_backend._surv_run`, then the real
+`surveyor.store.workspace_turn_usage`, then `_conn`. This confirmed a stale
+test-store interface rather than a production route defect.
+
+### Minimal fixture-only change
+
+- `test_agent_model_status.py` now supplies the complete read shape
+  `{"used": 0, "limit": 10}` while leaving the real route and model-unavailable
+  behavior under test.
+- `test_intent_miss_runtime.py` now owns an in-memory `successful_turns`
+  counter and returns the same complete usage shape.
+- Its `commit_workspace_turn` double now mirrors the production status
+  contract and ordering: `missing`, prior replay before revision/limit checks,
+  `conflict`, `limit` with `{"used": 10, "limit": 10}`, or `committed` with one
+  successful-turn increment.
+- No production code or route behavior was changed or mocked.
+
+### GREEN and full-suite evidence
+
+| Command | Result |
+| --- | --- |
+| `py backend/tests/test_agent_model_status.py` | 2 passed |
+| `py backend/tests/test_intent_miss_runtime.py` | 1 passed |
+| `py backend/tests/test_workspace_turn_store.py` | 11 passed |
+| `py backend/tests/test_workspace_turn_route.py` | 17 passed; existing optional dependency/local DSN warnings only |
+| `py -m unittest discover -s backend/tests -p "test_*.py"` | 272 total; 271 passed; 1 known optional dependency failure |
+
+The sole full-suite failure was
+`test_embedding_runtime.TestEmbeddingRuntime.test_declared_runtime_can_import_the_shadow_scorer`:
+the subprocess could not import `sentence_transformers`. There were no Task 3,
+model-status, or intent-miss failures.
+
+The interrupted Task 4 generated `web/dashboard` changes were preserved without
+modification and excluded from this fix's staged files.

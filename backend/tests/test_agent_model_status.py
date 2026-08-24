@@ -34,6 +34,8 @@ class TestAgentModelStatus(unittest.TestCase):
         with patch.object(training_backend, "rate_ok", return_value=True), \
                 patch.object(store, "get_workspace", return_value=workspace), \
                 patch.object(store, "get_run_by_idempotency", return_value=None), \
+                patch.object(store, "workspace_turn_usage",
+                             return_value={"used": 0, "limit": 10}), \
                 patch.object(store, "get_artifacts", return_value={}), \
                 patch.object(store, "recent_workspace_turns", return_value=[]), \
                 patch.object(store, "commit_workspace_turn") as commit_turn, \
