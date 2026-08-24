@@ -81,3 +81,44 @@ observation.
 ## Commit
 
 `feat: expose safe OpenAI provider readiness`
+
+## Review round 1/5
+
+### RED evidence
+
+The class-wide process-environment patch was removed. The following crossed
+configuration tests were added and run with the focused preflight command:
+
+- `test_uses_passed_missing_provider_configuration_over_a_configured_process`
+  failed because the old implementation returned configured readiness from the
+  global process environment.
+- `test_uses_passed_configured_provider_configuration_over_a_missing_process`
+  failed because the old implementation returned unavailable readiness from
+  the global process environment.
+
+The first run completed 13 tests with 6 failures. The two new failures were
+the intended mapping-source mismatch; the remaining four exposed old tests
+that had depended on the removed masking patch.
+
+### Minimal correction
+
+`configuration(environment=None)` and `status(environment=None)` retain their
+normal zero-argument behavior while accepting the preflight report mapping.
+`preflight.report(environment=...)` now calls `status(environment)`. The
+configuration parser remains the single parser, and no global environment is
+mutated.
+
+### GREEN evidence
+
+| Command | Result |
+| --- | --- |
+| `py -3 -m unittest discover -s tests -p test_model_provider.py -v` | 10 passed |
+| `py -3 -m unittest discover -s tests -p test_preflight.py -v` | 13 passed |
+| `git diff --check` | passed; no whitespace errors |
+
+### Review conclusion
+
+Preflight now uses one configuration source for its existing requirements and
+provider readiness. The public status shape remains provider, configured, and
+model only. No provider, network, credential, connector, skill, or live system
+was called.

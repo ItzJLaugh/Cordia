@@ -23,7 +23,7 @@ def report(environment=None, has_cryptography=None, has_psycopg2=None,
            database_ready=None, dependency_available=None):
     environment = environment if environment is not None else os.environ
     missing = [name for name in REQUIRED if not str(environment.get(name) or '').strip()]
-    provider_status = model_provider.status()
+    provider_status = model_provider.status(environment)
     if not provider_status['configured']:
         missing.append('OpenAI model provider')
     has_email_2fa = (str(environment.get('CORDIA_DEV_2FA') or '') == '1' or

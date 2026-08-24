@@ -27,11 +27,12 @@ def _origin(url: str) -> tuple[str, str, int | None]:
     return (parsed.scheme.lower(), (parsed.hostname or "").lower(), parsed.port or 443)
 
 
-def configuration() -> dict:
+def configuration(environment=None) -> dict:
     """Return only an explicitly configured, HTTPS OpenAI-compatible endpoint."""
-    base_url = os.environ.get("LLM_BASE_URL", "").strip()
-    model = os.environ.get("LLM_MODEL", "").strip()
-    key = os.environ.get("LLM_KEY", "").strip()
+    environment = environment if environment is not None else os.environ
+    base_url = str(environment.get("LLM_BASE_URL") or "").strip()
+    model = str(environment.get("LLM_MODEL") or "").strip()
+    key = str(environment.get("LLM_KEY") or "").strip()
     if not base_url or not model or not key:
         raise ModelUnavailable(PUBLIC_UNAVAILABLE)
     try:
@@ -46,10 +47,10 @@ def configuration() -> dict:
     return {"base_url": base_url, "model": model, "key": key}
 
 
-def status() -> dict:
+def status(environment=None) -> dict:
     """Return public-safe configuration readiness without contacting OpenAI."""
     try:
-        config = configuration()
+        config = configuration(environment)
     except ModelUnavailable:
         return {"provider": "openai", "configured": False, "model": ""}
     return {"provider": "openai", "configured": True,
